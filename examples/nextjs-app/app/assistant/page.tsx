@@ -146,7 +146,7 @@ export default function AssistantPage() {
     bottom.current?.scrollIntoView({ behavior: "smooth" });
   }, [items]);
 
-  async function send(override?: string) {
+  async function send(override?: string, speakReply = false) {
     const prompt = (override ?? input).trim();
     if (!prompt || busy) return;
     setInput("");
@@ -183,9 +183,10 @@ export default function AssistantPage() {
       }
     } finally {
       setBusy(false);
-      // Text-to-speech the reply (browser SpeechSynthesis — no deps, no server).
+      // Speak the reply only when the request came from VOICE — typed messages
+      // stay silent. (browser SpeechSynthesis — no deps, no server.)
       const text = spoken.trim();
-      if (text && typeof window !== "undefined" && "speechSynthesis" in window) {
+      if (speakReply && text && typeof window !== "undefined" && "speechSynthesis" in window) {
         try {
           window.speechSynthesis.cancel();
           window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
@@ -215,7 +216,7 @@ export default function AssistantPage() {
     rec.onresult = (e: any) => {
       const transcript = String(e.results[0][0].transcript);
       setInput(transcript);
-      void send(transcript); // STT → the same assistant pipeline
+      void send(transcript, true); // STT → pipeline, and speak the reply back
     };
     rec.onerror = () => setListening(false);
     rec.onend = () => setListening(false);
