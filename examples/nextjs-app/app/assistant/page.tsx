@@ -75,6 +75,7 @@ export default function AssistantPage() {
   const [connName, setConnName] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [connError, setConnError] = useState("");
+  const [connNote, setConnNote] = useState("");
   const bottom = useRef<HTMLDivElement>(null);
 
   // Only touch browser-only APIs after mount so SSR and the first client render
@@ -87,17 +88,45 @@ export default function AssistantPage() {
   }
   useEffect(refreshServers, []);
 
+  // When an OAuth popup finishes, it postMessages back here.
+  useEffect(() => {
+    function onMsg(e: MessageEvent) {
+      if (e.origin !== window.location.origin) return;
+      const data = e.data as { type?: string; ok?: boolean };
+      if (data?.type !== "mcp-oauth") return;
+      setConnNote("");
+      if (data.ok) {
+        setConnUrl("");
+        setConnName("");
+        setShowConnect(false);
+        setConnError("");
+      } else {
+        setConnError("Authorization failed or was denied.");
+      }
+      refreshServers();
+    }
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, []);
+
   async function connectServer() {
     const url = connUrl.trim();
     if (!url || connecting) return;
     setConnecting(true);
     setConnError("");
+    setConnNote("");
     try {
-      await api.mcp.connect({ url, name: connName.trim() || undefined });
-      setConnUrl("");
-      setConnName("");
-      setShowConnect(false);
-      refreshServers();
+      const res = await api.mcp.connect({ url, name: connName.trim() || undefined });
+      if (res.status === "auth_required") {
+        // Server needs OAuth — send the user through the flow in a popup.
+        setConnNote("Complete sign-in in the popup to finish connecting…");
+        window.open(res.authorizeUrl, "mcp-oauth", "width=520,height=720");
+      } else {
+        setConnUrl("");
+        setConnName("");
+        setShowConnect(false);
+        refreshServers();
+      }
     } catch (e) {
       setConnError((e as Error).message || "Could not connect");
     } finally {
@@ -233,6 +262,7 @@ export default function AssistantPage() {
             </button>
           </div>
         )}
+        {connNote && <div style={S.connNote}>🔐 {connNote}</div>}
         {connError && <div style={S.connErr}>⚠️ {connError}</div>}
 
         {servers.map((srv) => (
@@ -384,6 +414,7 @@ const S: Record<string, React.CSSProperties> = {
   addBtn: { marginLeft: "auto", fontSize: 12, color: "#5b21b6", background: "white", border: "1px solid #ddd6fe", borderRadius: 8, padding: "3px 10px", cursor: "pointer" },
   connectForm: { display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" },
   connErr: { marginTop: 6, fontSize: 12, color: "#c62828" },
+  connNote: { marginTop: 6, fontSize: 12, color: "#6d28d9" },
   srvRow: { marginTop: 10, paddingTop: 8, borderTop: "1px solid #ede9fe" },
   srvHead: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
   disconnectBtn: { marginLeft: "auto", fontSize: 12, color: "#999", background: "transparent", border: "none", cursor: "pointer", lineHeight: 1 },

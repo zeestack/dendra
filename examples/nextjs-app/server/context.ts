@@ -14,6 +14,8 @@ import { pubsub } from "./pubsub.ts";
 export interface Ctx {
   tenantId: string;
   userId: string;
+  /** Origin of the request (e.g. http://localhost:3100) — used for OAuth redirect URIs. */
+  origin: string;
   db: typeof db;
   pubsub: PubSub;
   signal?: AbortSignal;
@@ -28,6 +30,7 @@ export async function createContext(req: Request): Promise<Ctx> {
     // instead pass explicit x-tenant / x-user headers.
     tenantId: req.headers.get("x-tenant") ?? tenantFromHost(host),
     userId: req.headers.get("x-user") ?? parseSession(cookie) ?? "anonymous",
+    origin: originOf(req, host),
     db,
     pubsub,
     signal: req.signal,
@@ -36,7 +39,16 @@ export async function createContext(req: Request): Promise<Ctx> {
 
 /** In-process context for Server Components / the AI executor (no Request). */
 export function directContext(userId: string, tenantId = "public"): Ctx {
-  return { tenantId, userId, db, pubsub };
+  return { tenantId, userId, origin: "", db, pubsub };
+}
+
+function originOf(req: Request, host: string): string {
+  try {
+    return new URL(req.url).origin;
+  } catch {
+    const proto = req.headers.get("x-forwarded-proto") ?? "http";
+    return host ? `${proto}://${host}` : "";
+  }
 }
 
 /**

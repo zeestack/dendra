@@ -20,7 +20,7 @@ import {
   connectMcpServer,
   disconnectMcpServer,
 } from "./mcp-tools.ts";
-import type { McpServerInfo } from "./mcp-tools.ts";
+import type { McpServerInfo, ConnectResult } from "./mcp-tools.ts";
 import type { ChatPart } from "../lib/chat-types.ts";
 import { UsersController } from "./users.controller.ts";
 
@@ -113,9 +113,12 @@ const coreRouter = {
     servers: route.handler((): Promise<McpServerInfo[]> => listMcpServers()),
 
     // Add a connector: connect a remote MCP server by URL (Streamable HTTP).
+    // Returns { status: "auth_required", authorizeUrl } if the server needs OAuth.
     connect: route
       .input(s.object({ url: s.string(), name: s.optional(s.string()) }))
-      .handler(({ input }): Promise<McpServerInfo> => connectMcpServer(input)),
+      .handler(({ input, ctx }): Promise<ConnectResult> =>
+        connectMcpServer({ ...input, origin: ctx.origin }),
+      ),
 
     // Remove a connector.
     disconnect: route

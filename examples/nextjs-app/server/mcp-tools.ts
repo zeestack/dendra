@@ -13,9 +13,11 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { createMcpToolSource, type ToolFormat, type ToolSource } from "dendra";
 import { createExternalMcpServer } from "./external-mcp-server.ts";
+import { AppOAuthProvider, authStore, type PendingAuth } from "./mcp-oauth.ts";
 
 interface Connection {
   id: string;
@@ -130,11 +132,21 @@ export async function listMcpServers(): Promise<McpServerInfo[]> {
   return out;
 }
 
-/** Connect a new remote MCP server by URL (Streamable HTTP). */
+export type ConnectResult =
+  | { status: "connected"; server: McpServerInfo }
+  | { status: "auth_required"; id: string; authorizeUrl: string };
+
+/**
+ * Connect a new remote MCP server by URL (Streamable HTTP). If the server needs
+ * OAuth, returns { status: "auth_required", authorizeUrl } — the browser opens
+ * that URL; after the user approves, /mcp/callback calls finishMcpAuth().
+ */
 export async function connectMcpServer(input: {
   url: string;
   name?: string;
-}): Promise<McpServerInfo> {
+  /** App origin (from ctx) — used to build the OAuth redirect URI. */
+  origin: string;
+}): Promise<ConnectResult> {
   await ensureSeeded();
   const s = store();
 
@@ -151,19 +163,76 @@ export async function connectMcpServer(input: {
   // id + prefix from the given name or the host; keep them unique.
   const base = (input.name?.trim() || url.hostname).replace(/[^a-zA-Z0-9]+/g, "_");
   let id = base;
-  for (let i = 2; s.conns.has(id); i++) id = `${base}_${i}`;
+  for (let i = 2; s.conns.has(id) || authStore().has(id); i++) id = `${base}_${i}`;
   const prefix = `${id}.`;
 
-  const client = await newClient(new StreamableHTTPClientTransport(url));
-  const info = client.getServerVersion?.();
+  // Register a pending auth up front; the OAuth provider reads/writes it. If the
+  // server needs no auth, the handshake just succeeds and we discard it.
+  const pending: PendingAuth = {
+    id,
+    url: url.toString(),
+    name: input.name,
+    prefix,
+    redirectUri: `${input.origin}/mcp/callback`,
+    createdAt: Date.now(),
+  };
+  authStore().set(id, pending);
+
+  const transport = new StreamableHTTPClientTransport(url, {
+    authProvider: new AppOAuthProvider(pending),
+  });
+
+  try {
+    const client = await newClient(transport);
+    authStore().delete(id); // no auth needed
+    return { status: "connected", server: await register(id, prefix, url, client) };
+  } catch (e) {
+    if (e instanceof UnauthorizedError && pending.authorizeUrl) {
+      // The browser must send the user here to authorize.
+      return { status: "auth_required", id, authorizeUrl: pending.authorizeUrl };
+    }
+    authStore().delete(id);
+    throw e;
+  }
+}
+
+/**
+ * Complete an OAuth connection after the user is redirected back with a code.
+ * Exchanges the code for tokens (via the same provider state), finishes the MCP
+ * handshake, and registers the connection.
+ */
+export async function finishMcpAuth(state: string, code: string): Promise<McpServerInfo> {
+  const pending = authStore().get(state);
+  if (!pending) throw new Error("Unknown or expired authorization request");
+
+  const url = new URL(pending.url);
+  const provider = new AppOAuthProvider(pending);
+  const transport = new StreamableHTTPClientTransport(url, { authProvider: provider });
+
+  await transport.finishAuth(code); // code → tokens (saved on `pending`)
+  const client = await newClient(transport); // retry handshake, now authorized
+
+  const info = await register(pending.id, pending.prefix, url, client);
+  authStore().delete(state);
+  return info;
+}
+
+/** Add a connected client to the registry and return its UI snapshot. */
+async function register(
+  id: string,
+  prefix: string,
+  url: URL,
+  client: Client,
+): Promise<McpServerInfo> {
+  const v = client.getServerVersion?.();
   const conn: Connection = {
     id,
     prefix,
     transport: `HTTP · ${url.host}`,
-    server: info ? `${info.name} v${info.version}` : "unknown",
+    server: v ? `${v.name} v${v.version}` : "unknown",
     client,
   };
-  s.conns.set(id, conn);
+  store().conns.set(id, conn);
 
   const src = await createMcpToolSource(client, { format: "plain", prefix });
   return {
