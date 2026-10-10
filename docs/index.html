@@ -91,10 +91,15 @@
     min-width: 170px; }
   .surfaces .arrow { color: var(--muted); }
 
-  .arch-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-top: 8px; }
+  .arch-grid { display: grid; grid-template-columns: 1fr; gap: 30px; margin-top: 8px; }
   .arch-grid figure { margin: 0; }
   .arch-grid img { width: 100%; border: 1px solid var(--border); border-radius: 12px; display: block; }
-  .arch-grid figcaption { color: var(--muted); font-size: 13px; margin-top: 8px; }
+  .arch-grid figcaption { color: var(--muted); font-size: 13px; margin-top: 10px; text-align: center; }
+
+  .hero-banner { display: block; width: min(440px, 82%); margin: 0 auto 26px; }
+  .hero-figure { margin: 40px auto 0; max-width: 900px; }
+  .hero-figure img { width: 100%; border: 1px solid var(--border); border-radius: 14px; display: block; }
+  .hero-figure figcaption { color: var(--muted); font-size: 13px; margin-top: 10px; }
 
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; }
   .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
@@ -179,6 +184,7 @@
   <main class="content">
     <header class="hero" id="top">
       <div class="wrap">
+        <img class="hero-banner" src="img/dendra-banner.svg" alt="dendra — one definition, many surfaces" />
         <div class="badge-row">
           <span class="pill">zero dependencies</span>
           <span class="pill">no decorators</span>
@@ -193,6 +199,11 @@
           <a class="btn primary" href="#quickstart">Get started</a>
           <a class="btn" href="https://github.com/zeestack/dendra">Star on GitHub</a>
         </div>
+
+        <figure class="hero-figure">
+          <a href="architecture/framework.html"><img src="img/arch-framework.png" alt="dendra: one definition branches into typed client, REST, OpenAPI, streaming, LLM tools, and an MCP server" /></a>
+          <figcaption>One definition → many surfaces · <a href="architecture/framework.html">open the interactive diagram →</a></figcaption>
+        </figure>
 
         <div class="code-hero">
 <pre><code><span class="k">export const</span> appRouter = {
