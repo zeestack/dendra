@@ -15,10 +15,11 @@ type ToolPart = Extract<ChatPart, { type: "tool" }>;
 type Item =
   | { role: "user"; text: string }
   | { role: "assistant"; parts: ChatPart[] };
-type McpInfo = {
-  connected: boolean;
+type McpServer = {
+  id: string;
   server: string;
   transport: string;
+  prefix: string;
   tools: Array<{ name: string; description: string }>;
 };
 
@@ -68,17 +69,49 @@ export default function AssistantPage() {
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const [mcp, setMcp] = useState<McpInfo | null>(null);
+  const [servers, setServers] = useState<McpServer[]>([]);
+  const [showConnect, setShowConnect] = useState(false);
+  const [connUrl, setConnUrl] = useState("");
+  const [connName, setConnName] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [connError, setConnError] = useState("");
   const bottom = useRef<HTMLDivElement>(null);
 
   // Only touch browser-only APIs after mount so SSR and the first client render
   // agree (avoids a hydration mismatch on the voice button).
   useEffect(() => setMounted(true), []);
 
-  // Which external MCP server is wired into the toolset (shown at the top).
-  useEffect(() => {
-    api.mcp.external().then(setMcp).catch(() => setMcp(null));
-  }, []);
+  // Which external MCP servers are wired into the toolset (shown at the top).
+  function refreshServers() {
+    api.mcp.servers().then(setServers).catch(() => setServers([]));
+  }
+  useEffect(refreshServers, []);
+
+  async function connectServer() {
+    const url = connUrl.trim();
+    if (!url || connecting) return;
+    setConnecting(true);
+    setConnError("");
+    try {
+      await api.mcp.connect({ url, name: connName.trim() || undefined });
+      setConnUrl("");
+      setConnName("");
+      setShowConnect(false);
+      refreshServers();
+    } catch (e) {
+      setConnError((e as Error).message || "Could not connect");
+    } finally {
+      setConnecting(false);
+    }
+  }
+
+  async function disconnectServer(id: string) {
+    try {
+      await api.mcp.disconnect({ id });
+    } finally {
+      refreshServers();
+    }
+  }
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth" });
@@ -168,30 +201,66 @@ export default function AssistantPage() {
         “show my notes” or “create a note titled Groceries with body milk, eggs”.
       </p>
 
-      {mcp && (
-        <div style={S.mcpPanel}>
-          <div style={S.mcpHead}>
-            <span style={{ ...S.dot, background: mcp.connected ? "#16a34a" : "#999" }} />
-            <strong style={{ fontSize: 13 }}>
-              {mcp.connected ? "MCP server connected" : "No MCP server"}
-            </strong>
-            {mcp.connected && (
-              <span style={S.mcpMeta}>
-                {mcp.server} · {mcp.transport}
-              </span>
-            )}
+      <div style={S.mcpPanel}>
+        <div style={S.mcpHead}>
+          <span style={{ ...S.dot, background: servers.length ? "#16a34a" : "#999" }} />
+          <strong style={{ fontSize: 13 }}>
+            MCP connectors ({servers.length})
+          </strong>
+          <button style={S.addBtn} onClick={() => setShowConnect((v) => !v)}>
+            {showConnect ? "Cancel" : "+ Add connector"}
+          </button>
+        </div>
+
+        {showConnect && (
+          <div style={S.connectForm}>
+            <input
+              style={{ ...S.input, flex: 2 }}
+              value={connUrl}
+              onChange={(e) => setConnUrl(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && connectServer()}
+              placeholder="https://your-mcp-server.com/mcp"
+            />
+            <input
+              style={{ ...S.input, flex: 1 }}
+              value={connName}
+              onChange={(e) => setConnName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && connectServer()}
+              placeholder="name (optional)"
+            />
+            <button style={S.btn} onClick={connectServer} disabled={connecting}>
+              {connecting ? "…" : "Connect"}
+            </button>
           </div>
-          {mcp.tools.length > 0 && (
+        )}
+        {connError && <div style={S.connErr}>⚠️ {connError}</div>}
+
+        {servers.map((srv) => (
+          <div key={srv.id} style={S.srvRow}>
+            <div style={S.srvHead}>
+              <strong style={{ fontSize: 13 }}>{srv.server}</strong>
+              <span style={S.mcpMeta}>{srv.transport}</span>
+              {srv.id !== "default" && (
+                <button
+                  style={S.disconnectBtn}
+                  title="Disconnect"
+                  onClick={() => disconnectServer(srv.id)}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
             <div style={S.mcpTools}>
-              {mcp.tools.map((t) => (
+              {srv.tools.length === 0 && <span style={S.dim}>no tools</span>}
+              {srv.tools.map((t) => (
                 <span key={t.name} style={S.mcpTool} title={t.description}>
                   🔌 {t.name}
                 </span>
               ))}
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        ))}
+      </div>
 
       <div style={S.thread}>
         {items.map((it, i) =>
@@ -310,8 +379,14 @@ const S: Record<string, React.CSSProperties> = {
   mcpHead: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
   mcpMeta: { fontSize: 12, color: "#6d28d9" },
   dot: { width: 8, height: 8, borderRadius: "50%", display: "inline-block" },
-  mcpTools: { display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 },
+  mcpTools: { display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 },
   mcpTool: { fontSize: 12, color: "#5b21b6", background: "white", border: "1px solid #ddd6fe", borderRadius: 999, padding: "2px 10px", cursor: "default" },
+  addBtn: { marginLeft: "auto", fontSize: 12, color: "#5b21b6", background: "white", border: "1px solid #ddd6fe", borderRadius: 8, padding: "3px 10px", cursor: "pointer" },
+  connectForm: { display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" },
+  connErr: { marginTop: 6, fontSize: 12, color: "#c62828" },
+  srvRow: { marginTop: 10, paddingTop: 8, borderTop: "1px solid #ede9fe" },
+  srvHead: { display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" },
+  disconnectBtn: { marginLeft: "auto", fontSize: 12, color: "#999", background: "transparent", border: "none", cursor: "pointer", lineHeight: 1 },
   inputRow: { display: "flex", gap: 8, position: "sticky", bottom: 16 },
   input: { flex: 1, padding: "10px 12px", borderRadius: 8, border: "1px solid #ccc" },
   btn: { padding: "10px 16px", borderRadius: 8, border: "1px solid #ccc", background: "#fafafa", cursor: "pointer" },

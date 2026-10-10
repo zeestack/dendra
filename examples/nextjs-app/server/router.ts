@@ -14,8 +14,13 @@ import type { Ctx } from "./context.ts";
 import type { Note, NoteEvent } from "./db.ts";
 import { db } from "./db.ts";
 import { streamChat, streamAssistant, summarize } from "./llm.ts";
-import { getExternalToolSource, getExternalMcpInfo } from "./mcp-tools.ts";
-import type { ExternalMcpInfo } from "./mcp-tools.ts";
+import {
+  getExternalToolSources,
+  listMcpServers,
+  connectMcpServer,
+  disconnectMcpServer,
+} from "./mcp-tools.ts";
+import type { McpServerInfo } from "./mcp-tools.ts";
 import type { ChatPart } from "../lib/chat-types.ts";
 import { UsersController } from "./users.controller.ts";
 
@@ -101,9 +106,24 @@ const coreRouter = {
   },
 
   mcp: {
-    // UI-only (no .ai()): lists the connected EXTERNAL MCP server + its tools so
-    // the assistant page can show what's wired in. Not exposed to the model.
-    external: route.handler((): Promise<ExternalMcpInfo> => getExternalMcpInfo()),
+    // UI-only (no .ai()): manage external MCP connections from the app. Not
+    // exposed to the model — these drive the "connectors" panel, not the agent.
+
+    // List every connected MCP server and the tools it exposes.
+    servers: route.handler((): Promise<McpServerInfo[]> => listMcpServers()),
+
+    // Add a connector: connect a remote MCP server by URL (Streamable HTTP).
+    connect: route
+      .input(s.object({ url: s.string(), name: s.optional(s.string()) }))
+      .handler(({ input }): Promise<McpServerInfo> => connectMcpServer(input)),
+
+    // Remove a connector.
+    disconnect: route
+      .input(s.object({ id: s.string() }))
+      .handler(async ({ input }) => {
+        await disconnectMcpServer(input.id);
+        return { disconnected: true, id: input.id };
+      }),
   },
 
   ui: {
@@ -138,12 +158,12 @@ const coreRouter = {
     assistant: route
       .input(s.object({ prompt: s.string() }))
       .stream(async function* ({ input, ctx }): AsyncGenerator<ChatPart> {
-        // Local tools (this app's procedures) + tools from an EXTERNAL MCP
-        // server, merged into one flat toolset. The model can't tell them apart;
-        // mergeToolsets routes each call to the source that owns the name.
+        // Local tools (this app's procedures) + tools from every connected
+        // EXTERNAL MCP server, merged into one flat toolset. The model can't
+        // tell them apart; mergeToolsets routes each call to the owning source.
         const local = toToolSource(appRouter, ctx, { format: "anthropic" });
-        const external = await getExternalToolSource("anthropic");
-        const merged = mergeToolsets(local, external);
+        const external = await getExternalToolSources("anthropic");
+        const merged = mergeToolsets(local, ...external);
         yield* streamAssistant(input.prompt, {
           tools: merged.tools,
           execute: merged.execute,
