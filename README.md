@@ -60,9 +60,14 @@ against.
 
 ## Quickstart
 
-```bash
-npm install nexus-rpc   # pre-1.0 — see Status
-```
+> **Not yet on npm.** The bare name `nexus-rpc` is taken by an unrelated package
+> (Temporal's SDK), so a published build would use a scoped name such as
+> `@zeestack/nexus-rpc`. For now, use it from source:
+>
+> ```bash
+> git clone https://github.com/zeestack/nexus-rpc
+> cd nexus-rpc && npm install && npm run build
+> ```
 
 **Define** once:
 
@@ -187,8 +192,9 @@ client (unary + streaming), NDJSON streaming with cancellation, WebSocket
 transport, AI tools, MCP (stdio + HTTP), in-memory pub/sub. A build pipeline
 (tsup) and test suite (vitest, runtime + type tests) are in place.
 
-Not yet: request batching, auth middleware chains, Redis-backed pub/sub, OAuth for
-the remote MCP endpoint. APIs may change before 1.0.
+Not yet: published to npm (planned under a scoped name like `@zeestack/nexus-rpc`),
+request batching, auth middleware chains, Redis-backed pub/sub, OAuth for the
+remote MCP endpoint. APIs may change before 1.0.
 
 ## License
 
