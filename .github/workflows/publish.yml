@@ -29,6 +29,13 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - run: npm publish --provenance --access public
+      - name: Publish if this version is new
+        run: |
+          VER=$(node -p "require('./package.json').version")
+          if npm view "dendra@$VER" version >/dev/null 2>&1; then
+            echo "dendra@$VER is already on npm — skipping publish."
+          else
+            npm publish --provenance --access public
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

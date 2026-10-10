@@ -271,6 +271,47 @@ export const appRouter = {
 
 Not trying to out-tRPC tRPC on HTTP — winning on the AI/MCP seam.
 
+### dendra vs tRPC + MCP
+
+tRPC is excellent — for a plain typed HTTP API, use it. The difference shows up
+when you want your API callable by an LLM or Claude over MCP: with tRPC you bolt on
+a parallel tool layer and keep it in sync by hand; with dendra the same definition
+*is* the tool.
+
+```ts
+// tRPC + MCP: define once, then hand-build a separate tool layer…
+const caller = appRouter.createCaller(ctx);
+server.setRequestHandler(ListTools, async () => ({
+  tools: [{ name: "createNote", description: "…",
+    inputSchema: zodToJsonSchema(CreateNoteInput) }],   // keep in sync by hand
+}));
+server.setRequestHandler(CallTool, async (r) =>
+  wrap(await caller[r.params.name](r.params.arguments)));  // route + re-validate yourself
+// …repeat the schema→format work per provider; consuming other MCP servers is DIY.
+
+// dendra: one definition is the tool.
+createNote: route
+  .input(s.object({ title: s.string(), body: s.string() }))
+  .ai({ description: "Create a note" })     // ← becomes an LLM + MCP tool
+  .handler(({ input, ctx }) => ctx.db.create(input));
+```
+
+| Making your API usable by an LLM / Claude | tRPC + MCP | **dendra** |
+|---|---|---|
+| Tool JSON Schema | hand-convert from Zod | same schema, automatic |
+| Which procedures are tools | maintain a separate list | `.ai()` on the procedure |
+| Validation + auth on tool calls | re-wire yourself | same path as HTTP |
+| Anthropic + OpenAI formats | convert per provider | one `format` option |
+| MCP server (stdio + HTTP) | write with the SDK | built-in bridge |
+| Consume external MCP servers | DIY client + merge | `createMcpToolSource` + `mergeToolsets` |
+| Drift risk | high — two sources of truth | none — one definition |
+
+**Choose tRPC** for the largest ecosystem, its React Query integration, or an
+existing tRPC codebase. **Choose dendra** when your API should be callable by
+agents with no parallel tool layer, kept to one source of truth, and able to both
+*expose* and *consume* MCP. Full side-by-side on the
+[site](https://products.techfoundry.io/dendra/#vs).
+
 ## Also in the box
 
 - **REST + OpenAPI** — give a procedure `.get("/users/:id")` and `.output(schema)`
