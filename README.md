@@ -1,9 +1,22 @@
-# dendra
+<div align="center">
 
-[![CI](https://github.com/zeestack/dendra/actions/workflows/ci.yml/badge.svg)](https://github.com/zeestack/dendra/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+<img src="assets/dendra-banner.svg" alt="dendra — one definition, many surfaces" width="620">
+
+<br>
 
 **The typed API framework where every procedure is also an LLM tool and an MCP server — with zero extra work.**
+
+[![CI](https://github.com/zeestack/dendra/actions/workflows/ci.yml/badge.svg)](https://github.com/zeestack/dendra/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-7c9cff.svg)](LICENSE)
+[![runtime deps](https://img.shields.io/badge/runtime%20deps-0-5be3b3.svg)](package.json)
+[![types](https://img.shields.io/badge/types-included-7c9cff.svg)](#)
+[![no codegen](https://img.shields.io/badge/codegen-none-5be3b3.svg)](#)
+
+[Quickstart](#quickstart) · [AI / MCP](#the-ai--mcp-story) · [Architecture](#architecture) · [Example app](#examples) · [Compare](#how-it-compares)
+
+</div>
+
+---
 
 Define a procedure once. Get a typed client, a REST endpoint, an OpenAPI schema,
 streaming, real-time subscriptions — **and** an AI tool your agents can call and
@@ -25,8 +38,6 @@ That one definition is now callable as a **typed client method**, a **REST route
 (`POST /notes`), an **OpenAPI** operation, and — because of `.ai()` — a validated
 **tool for Claude** over MCP. Same validation, same auth context, every surface.
 
----
-
 ## Why another API framework?
 
 The typed-RPC space is crowded (tRPC, ts-rest, Hono, oRPC) and they're all good at
@@ -45,14 +56,11 @@ table stakes it also happens to get right.
 
 ## One definition → many surfaces
 
-```
-                    ┌─▶ typed client            (pure inference, no codegen)
-  procedure         ├─▶ REST endpoint + OpenAPI  (give it a path)
-  .input(schema)    ├─▶ streaming / real-time    (async generators + pub/sub)
-  .ai()             ├─▶ in-process caller         (RSC, zero round-trip)
-  .handler(fn)      ├─▶ LLM tool                  (Anthropic / OpenAI)
-                    └─▶ MCP server               (stdio + remote HTTP)
-```
+<div align="center">
+<img src="assets/arch-framework.png" alt="dendra framework architecture: one definition branches into typed client, REST + OpenAPI, in-process caller, streaming, LLM tools, and an MCP server" width="820">
+<br>
+<sub><a href="https://htmlpreview.github.io/?https://github.com/zeestack/dendra/blob/main/docs/architecture/framework.html">▶ open the interactive diagram</a></sub>
+</div>
 
 The router is used **twice from one definition**: as a *type* that flows to the
 client (erased at build — zero runtime), and as a *value* the adapters dispatch
@@ -60,9 +68,7 @@ against.
 
 ## Quickstart
 
-> **Not yet on npm.** The bare name `dendra` is taken by an unrelated package
-> (Temporal's SDK), so a published build would use a scoped name such as
-> `@zeestack/dendra`. For now, use it from source:
+> **Not yet on npm.** Use it from source for now:
 >
 > ```bash
 > git clone https://github.com/zeestack/dendra
@@ -140,9 +146,9 @@ its chunks are **collected** into the tool result (string chunks are joined; oth
 chunks become an array), so you can expose streaming work without a special path.
 
 The [Next.js example](examples/nextjs-app/) ships a working MCP server both ways:
-a **stdio** server for Claude Desktop (`mcp-server.ts`) and a **remote HTTP**
-endpoint (`app/api/mcp/route.ts`) for claude.ai — so Claude can list, create, and
-delete your app's data through the exact procedures you already wrote.
+a **stdio** server for Claude Desktop and a **remote HTTP** endpoint for claude.ai
+(with optional OAuth 2.1) — so Claude can list, create, and delete your app's data
+through the exact procedures you already wrote.
 
 ### Consuming external MCP servers (inbound tools)
 
@@ -155,29 +161,19 @@ two-method `McpClientLike` shape, which the official SDK's `Client` satisfies, s
 ```ts
 import { toToolSource, mergeToolsets, createMcpToolSource } from "dendra";
 
-// Your local procedures as a tool source…
 const local = toToolSource(appRouter, ctx, { format: "anthropic" });
-
-// …and an external MCP server (any connected @modelcontextprotocol/sdk Client):
 const external = await createMcpToolSource(mcpClient, {
   format: "anthropic",
   prefix: "gh.",            // optional: namespace to avoid name clashes
 });
 
-// One flat toolset; each call is routed back to the source that owns the name.
+// One flat toolset; each call routes back to the source that owns the name.
 const { tools, execute } = mergeToolsets(local, external);
-// → hand `tools` + `execute` to your agent loop. The model can't tell a local
-//   procedure from a remote MCP tool; `mergeToolsets` dispatches each correctly.
 ```
-
-The example wires this into the chat: set `EXTERNAL_MCP_URL` (remote HTTP) or
-`EXTERNAL_MCP_CMD` (stdio) to connect a real server, or leave both unset for a
-zero-config in-process demo server (`ext.weather.get`, `ext.time.now`). See
-[`server/mcp-tools.ts`](examples/nextjs-app/server/mcp-tools.ts).
 
 ### Optional helpers: the agentic loop + a React hook
 
-The core stays zero-dependency, but two **optional subpath exports** remove the
+Core stays zero-dependency, but two **optional subpath exports** remove the
 boilerplate of a tool-using chat. They exchange one shared `AgentPart` type, so
 they snap together — the loop emits parts, the hook renders them:
 
@@ -186,24 +182,19 @@ they snap together — the loop emits parts, the hook renders them:
 import { runAgent } from "dendra/anthropic";
 const { tools, execute } = mergeToolsets(toToolSource(appRouter, ctx), external);
 yield* runAgent({ client, model, tools, execute, prompt, system });
-// yields { type:"text" } / { type:"tool", … } — model↔tool loop, name sanitizing,
-// and thinking-block handling all done for you.
 ```
 
 ```tsx
 // client — dendra/react (peer dep: react)
 import { useAssistant } from "dendra/react";
 const { items, input, setInput, busy, send } = useAssistant({
-  stream: (prompt) => api.ai.assistant({ prompt }),   // the runAgent stream
-  onPart: (p) => { /* e.g. act on a tool as it arrives */ },
-  onDone: (parts, { spoken }) => { /* e.g. speak the reply */ },
+  stream: (prompt) => api.ai.assistant({ prompt }),
+  onPart: (p) => { /* act on a tool as it arrives */ },
+  onDone: (parts, { spoken }) => { /* speak the reply */ },
 });
-// You keep rendering (your generative-UI registry) and side effects; the hook
-// owns the thread, streaming, and part accumulation.
 ```
 
-Neither is required — bring your own loop/UI and just use `mergeToolsets`. The
-[Next.js example](examples/nextjs-app/) uses both.
+Neither is required — bring your own loop/UI and just use `mergeToolsets`.
 
 ## Middleware & auth (`.use()`)
 
@@ -225,23 +216,23 @@ export const appRouter = {
 } satisfies RouterRecord;
 ```
 
-Middlewares **stack** (each sees the previous one's ctx additions) and **throw a
-`DendraError` to reject**. Because an AI/MCP tool runs through the same dispatch
-path, a procedure behind `.use(auth)` is authorization-guarded for the model too
-— the model inherits the user's permissions, it can't bypass them.
+Middlewares **stack** and **throw a `DendraError` to reject**. Because an AI/MCP
+tool runs through the same dispatch path, a procedure behind `.use(auth)` is
+authorization-guarded for the model too — it inherits the user's permissions, it
+can't bypass them.
 
 ## Class-based controllers (NestJS-style, no decorators)
 
 Prefer classes for grouping and dependency injection? A controller is just a
-class whose **fields are procedures** — put an *instance* in the router. You get
-NestJS-style structure and constructor DI without decorators, `reflect-metadata`,
-or `experimentalDecorators`.
+class whose **fields are procedures** — put an *instance* in the router. NestJS
+structure and constructor DI without decorators, `reflect-metadata`, or
+`experimentalDecorators`.
 
 ```ts
 export class UsersController {
   #db: Db;                                        // #private: not part of the
-  constructor(db: Db) { this.#db = db; }          // public type, so the
-                                                  // controller stays pure procedures
+  constructor(db: Db) { this.#db = db; }          // public (procedures-only) type
+
   list = route.get("/users").handler(() => this.#db.users.all());
   create = route
     .post("/users")
@@ -250,12 +241,8 @@ export class UsersController {
     .handler(({ input }) => this.#db.users.insert(input));
 }
 
-// A class instance has no index signature, so a class-containing router skips
-// `satisfies RouterRecord`; the consumer functions accept it and `Client<R>`
-// validates the shape structurally.
 export const appRouter = {
   users: new UsersController(db),                 // an instance = a sub-router
-  posts: new PostsController(db),
 };
 ```
 
@@ -267,11 +254,6 @@ export const appRouter = {
 | `@Module()` | compose the router object |
 | decorators / `reflect-metadata` | none |
 
-Handlers are arrow-function fields, so they close over `this` for injected
-dependencies. Keep injected deps in `#private` fields — a public non-procedure
-field would break the `RouterRecord` shape. Inference, dispatch, REST, OpenAPI,
-and MCP all work unchanged.
-
 ## How it compares
 
 | | tRPC | ts-rest | Hono | **dendra** |
@@ -282,6 +264,7 @@ and MCP all work unchanged.
 | Real-time / WebSocket | subs | — | ✅ | ✅ |
 | **LLM tools from procedures** | — | — | — | ✅ |
 | **MCP server (stdio + HTTP)** | — | — | — | ✅ |
+| **Consume external MCP servers** | — | — | — | ✅ |
 | Decorators / codegen | none | none | none | **none** |
 | Runtime deps | few | few | 0 | **0** |
 
@@ -290,30 +273,18 @@ Not trying to out-tRPC tRPC on HTTP — winning on the AI/MCP seam.
 ## Also in the box
 
 - **REST + OpenAPI** — give a procedure `.get("/users/:id")` and `.output(schema)`
-  (which both **type-checks the handler's return** and documents the response);
-  `toRestHandler` serves it and `toOpenApiDocument` emits a 3.1 spec (feed Swagger
-  UI or `openapi-typescript` for cross-language clients).
+  (type-checks the handler's return *and* documents the response); `toRestHandler`
+  serves it, `toOpenApiDocument` emits a 3.1 spec.
 - **Real-time** — a subscription is a streaming procedure fed by a `PubSub`
   interface: `createInMemoryPubSub()` for dev, `createRedisPubSub(client)` for
-  multi-instance fan-out (zero-dep — you pass your own redis client).
-- **External MCP tools** — `createMcpToolSource(client)` turns any connected MCP
-  server into a dendra tool source; `mergeToolsets(local, external)` blends them
-  into one toolset for your agent loop (zero-dep — you pass your own MCP client).
+  multi-instance fan-out.
+- **External MCP tools** — `createMcpToolSource(client)` + `mergeToolsets(...)`
+  blend remote tools into your agent loop.
 - **WebSocket** — `attachWs` / `connectWs` multiplex unary calls + subscriptions
-  over one socket, same router, outside Next's serverless model.
+  over one socket, same router.
 - **Request batching** — `createClient(url, { batch: true })` collects unary calls
   made in the same tick into one HTTP round-trip (streaming stays direct).
 - **Standard Schema** — Zod, Valibot, ArkType, or the built-in `s.*` validators.
-
-## Develop
-
-```bash
-npm install
-npm run build      # tsup → ESM + CJS + .d.ts in dist/
-npm test           # vitest: runtime + type-level inference tests
-npm run demo       # boots a server + typed client, exercises everything
-npm run demo:restws
-```
 
 ## Architecture
 
@@ -324,25 +295,41 @@ the typed-procedure and tool-shaping primitives live in the framework.
 
 ## Examples
 
+<div align="center">
+<img src="assets/arch-example.png" alt="dendra example app architecture: browser and Claude talk to Next.js routes and the appRouter, which uses SQLite, pub/sub, runAgent, and an MCP connection registry with OAuth" width="820">
+<br>
+<sub><a href="https://htmlpreview.github.io/?https://github.com/zeestack/dendra/blob/main/docs/architecture/example.html">▶ open the interactive diagram</a></sub>
+</div>
+
 - [`examples/demo.ts`](examples/demo.ts) — caller, unary, validation, streaming, AI tools, pub/sub.
 - [`examples/rest-ws-demo.ts`](examples/rest-ws-demo.ts) — REST, OpenAPI, WebSocket transport.
-- [`examples/nextjs-app/`](examples/nextjs-app/) — full Next.js 15 app: RPC + REST,
-  Server Components, generative-UI chat, real LLM, subdomain multi-tenancy,
-  resilient real-time notes, a NestJS-style class controller
-  ([`UsersController`](examples/nextjs-app/server/users.controller.ts)) reachable
-  over RPC/REST/MCP, and MCP (stdio + remote HTTP).
+- [`examples/nextjs-app/`](examples/nextjs-app/) — full Next.js app: RPC + REST,
+  Server Components, generative-UI chat with voice, real LLM, subdomain
+  multi-tenancy, resilient real-time notes, a NestJS-style class controller, MCP
+  both ways (serve to Claude **and** connect out to external MCP servers with
+  OAuth 2.1).
+
+## Develop
+
+```bash
+npm install
+npm run build      # tsup → ESM + CJS + .d.ts in dist/ (core + /anthropic + /react)
+npm test           # vitest: runtime + type-level inference tests
+npm run demo       # boots a server + typed client, exercises everything
+npm run demo:restws
+```
 
 ## Status
 
-**Pre-1.0 (v0.0.1) — experimental.** Implemented and tested: builder/router/dispatch,
-Standard Schema validation, Next/Fetch/Node adapters, REST + OpenAPI, inferred
-client (unary + streaming), NDJSON streaming with cancellation, WebSocket
-transport, AI tools, MCP (stdio + HTTP), in-memory pub/sub. A build pipeline
-(tsup) and test suite (vitest, runtime + type tests) are in place.
+**Pre-1.0 (v0.1.0) — experimental, but broad.** Implemented and tested
+(32 tests, runtime + type-level): builder/router/dispatch, Standard Schema
+validation, Next/Fetch/Node adapters, REST + OpenAPI, inferred client (unary +
+streaming), NDJSON streaming with cancellation, WebSocket transport, middleware
+(`.use()`), typed `.output()`, request batching, in-memory **and** Redis pub/sub,
+class controllers, AI tools, MCP (stdio + remote HTTP, consume external MCP
+servers), and optional `dendra/anthropic` + `dendra/react` helpers.
 
-Not yet: published to npm (planned under a scoped name like `@zeestack/dendra`),
-request batching, auth middleware chains, Redis-backed pub/sub, OAuth for the
-remote MCP endpoint. APIs may change before 1.0.
+Not yet: published to npm. APIs may change before 1.0.
 
 ## License
 

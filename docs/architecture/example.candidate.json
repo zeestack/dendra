@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "dendra example — the Next.js app",
+    "subtitle": "What the app owns, what the framework provides, and MCP in both directions.",
+    "output": "example.html",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    { "id": "claude", "type": "external", "label": "Claude", "sublabel": "claude.ai / Desktop", "pos": [40, 110], "size": [200, 60] },
+    { "id": "browser", "type": "external", "label": "Browser", "sublabel": "assistant page · useAssistant", "pos": [40, 250], "size": [200, 64] },
+    { "id": "routes", "type": "frontend", "label": "Next.js routes", "sublabel": "/rpc · /api · /api/mcp", "pos": [300, 250], "size": [180, 64] },
+    { "id": "router", "type": "backend", "label": "appRouter", "sublabel": "notes · users · ai · mcp", "pos": [540, 220], "size": [180, 120] },
+    { "id": "db", "type": "database", "label": "SQLite", "sublabel": "Drizzle ORM", "pos": [790, 110], "size": [180, 60] },
+    { "id": "pubsub", "type": "messagebus", "label": "PubSub", "sublabel": "live note events", "pos": [790, 210], "size": [180, 60] },
+    { "id": "llm", "type": "external", "label": "runAgent", "sublabel": "Anthropic · dendra/anthropic", "pos": [790, 310], "size": [210, 60], "tag": "framework" },
+    { "id": "registry", "type": "backend", "label": "MCP registry", "sublabel": "mcp-tools · connect", "pos": [540, 430], "size": [180, 64] },
+    { "id": "extmcp", "type": "cloud", "label": "External MCP", "sublabel": "demo · HTTP · stdio", "pos": [850, 432], "size": [190, 60] },
+    { "id": "oauth", "type": "security", "label": "OAuth 2.1", "sublabel": "mcp-oauth · /mcp/callback", "pos": [540, 560], "size": [200, 60], "tag": "PKCE" }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "App server (your code, built on dendra)", "wraps": ["routes", "router", "db", "pubsub", "llm", "registry", "oauth"] }
+  ],
+  "connections": [
+    { "id": "browser-routes", "from": "browser", "to": "routes", "label": "RPC / HTTPS", "variant": "emphasis", "fromSide": "right", "toSide": "left" },
+    { "id": "claude-mcp", "from": "claude", "to": "routes", "label": "MCP /api/mcp", "variant": "dashed", "fromSide": "right", "toSide": "top" },
+    { "id": "routes-router", "from": "routes", "to": "router", "label": "dispatch", "fromSide": "right", "toSide": "left" },
+    { "id": "router-db", "from": "router", "to": "db", "label": "SQL", "fromSide": "right", "toSide": "left" },
+    { "id": "router-pubsub", "from": "router", "to": "pubsub", "label": "publish", "fromSide": "right", "toSide": "left" },
+    { "id": "router-llm", "from": "router", "to": "llm", "label": "ai.assistant", "variant": "emphasis", "fromSide": "right", "toSide": "left" },
+    { "id": "router-registry", "from": "router", "to": "registry", "label": "mcp.connect", "fromSide": "bottom", "toSide": "top" },
+    { "id": "registry-extmcp", "from": "registry", "to": "extmcp", "label": "tools/call", "fromSide": "right", "toSide": "left" },
+    { "id": "registry-oauth", "from": "registry", "to": "oauth", "label": "authorize", "variant": "security", "fromSide": "bottom", "toSide": "top" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "App (your code)", "items": ["Procedures, SQLite, pub/sub, chat UI", "Connection registry + OAuth client"] },
+    { "dot": "emerald", "title": "Framework (dendra)", "items": ["Typed client + request handlers", "runAgent · createMcpToolSource · mergeToolsets"] },
+    { "dot": "amber", "title": "MCP, both directions", "items": ["Serves /api/mcp to Claude", "Connects out to external MCP servers"] }
+  ]
+}

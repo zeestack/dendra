@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>dendra — typed APIs that are also LLM tools & MCP servers</title>
 <meta name="description" content="A typed RPC/REST framework for Next.js where every procedure is also an LLM tool and an MCP server. No decorators, no codegen, zero deps." />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'%3E%3Cdefs%3E%3ClinearGradient id='m' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%237c9cff'/%3E%3Cstop offset='1' stop-color='%235be3b3'/%3E%3C/linearGradient%3E%3C/defs%3E%3Cg transform='translate(26,64)' stroke='url(%23m)' stroke-width='8' fill='none' stroke-linecap='round'%3E%3Cpath d='M0,0 C22,0 22,-30 44,-30'/%3E%3Cpath d='M0,0 C22,0 22,30 44,30'/%3E%3Cpath d='M44,-30 C66,-30 66,-50 88,-50'/%3E%3Cpath d='M44,-30 C66,-30 66,-10 88,-10'/%3E%3Cpath d='M44,30 C66,30 66,10 88,10'/%3E%3Cpath d='M44,30 C66,30 66,50 88,50'/%3E%3C/g%3E%3Cg transform='translate(26,64)' fill='%237c9cff'%3E%3Ccircle cx='0' cy='0' r='11' fill='%235be3b3'/%3E%3Ccircle cx='88' cy='-50' r='8'/%3E%3Ccircle cx='88' cy='-10' r='8'/%3E%3Ccircle cx='88' cy='10' r='8'/%3E%3Ccircle cx='88' cy='50' r='8'/%3E%3C/g%3E%3C/svg%3E" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -101,7 +102,17 @@
 
 <nav>
   <div class="wrap">
-    <div class="brand">den<span>dra</span></div>
+    <div class="brand" style="display:flex;align-items:center;gap:8px">
+      <svg width="26" height="26" viewBox="0 0 128 128" fill="none" aria-hidden="true" style="flex:none">
+        <defs><linearGradient id="bm" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#7c9cff"/><stop offset="1" stop-color="#5be3b3"/></linearGradient></defs>
+        <g transform="translate(26,64)" stroke="url(#bm)" stroke-width="8" fill="none" stroke-linecap="round">
+          <path d="M0,0 C22,0 22,-30 44,-30"/><path d="M0,0 C22,0 22,30 44,30"/>
+          <path d="M44,-30 C66,-30 66,-50 88,-50"/><path d="M44,-30 C66,-30 66,-10 88,-10"/>
+          <path d="M44,30 C66,30 66,10 88,10"/><path d="M44,30 C66,30 66,50 88,50"/>
+        </g>
+        <g transform="translate(26,64)" fill="#7c9cff"><circle cx="0" cy="0" r="11" fill="#5be3b3"/><circle cx="88" cy="-50" r="8"/><circle cx="88" cy="-10" r="8"/><circle cx="88" cy="10" r="8"/><circle cx="88" cy="50" r="8"/></g>
+      </svg>den<span>dra</span>
+    </div>
     <div class="nav-links">
       <a href="#why">Why</a>
       <a href="#quickstart">Quickstart</a>

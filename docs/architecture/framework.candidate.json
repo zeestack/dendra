@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "dendra — one definition, many surfaces",
+    "subtitle": "The framework: define a procedure once; it becomes every surface.",
+    "output": "framework.html",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    { "id": "define", "type": "backend", "label": "Define", "sublabel": "route.input().ai().handler()", "pos": [40, 250], "size": [190, 64] },
+    { "id": "schema", "type": "security", "label": "Standard Schema", "sublabel": "Zod · Valibot · s.*", "pos": [40, 370], "size": [190, 60], "tag": "validation" },
+    { "id": "router", "type": "backend", "label": "Router", "sublabel": "one object of procedures", "pos": [300, 220], "size": [170, 120] },
+    { "id": "client", "type": "frontend", "label": "Typed client", "sublabel": "pure inference", "pos": [550, 70], "size": [180, 60] },
+    { "id": "adapters", "type": "cloud", "label": "HTTP adapters", "sublabel": "Next · Fetch · Node", "pos": [550, 160], "size": [180, 60] },
+    { "id": "rest", "type": "cloud", "label": "REST + OpenAPI", "sublabel": "paths → 3.1 spec", "pos": [550, 250], "size": [180, 60] },
+    { "id": "caller", "type": "backend", "label": "In-process caller", "sublabel": "Server Components", "pos": [550, 340], "size": [180, 60] },
+    { "id": "tools", "type": "backend", "label": "Tool layer", "sublabel": "toToolset · executor", "pos": [550, 440], "size": [180, 64], "tag": ".ai()" },
+    { "id": "mcpserver", "type": "cloud", "label": "MCP server", "sublabel": "stdio + remote HTTP", "pos": [800, 442], "size": [180, 60] },
+    { "id": "mcpclient", "type": "external", "label": "External MCP", "sublabel": "createMcpToolSource", "pos": [550, 560], "size": [180, 60], "tag": "inbound" }
+  ],
+  "connections": [
+    { "id": "define-router", "from": "define", "to": "router", "label": "compose", "fromSide": "right", "toSide": "left" },
+    { "id": "schema-router", "from": "schema", "to": "router", "label": "validate", "variant": "security", "fromSide": "right", "toSide": "bottom" },
+    { "id": "router-client", "from": "router", "to": "client", "label": "types only", "variant": "dashed", "fromSide": "right", "toSide": "left" },
+    { "id": "router-adapters", "from": "router", "to": "adapters", "label": "HTTP", "fromSide": "right", "toSide": "left" },
+    { "id": "router-rest", "from": "router", "to": "rest", "label": "paths", "fromSide": "right", "toSide": "left" },
+    { "id": "router-caller", "from": "router", "to": "caller", "fromSide": "right", "toSide": "left" },
+    { "id": "router-tools", "from": "router", "to": "tools", "label": ".ai()", "variant": "emphasis", "fromSide": "right", "toSide": "left" },
+    { "id": "tools-mcp", "from": "tools", "to": "mcpserver", "label": "expose", "fromSide": "right", "toSide": "left" },
+    { "id": "mcp-inbound", "from": "mcpclient", "to": "tools", "label": "merge", "variant": "dashed", "fromSide": "top", "toSide": "bottom" }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "Define once", "items": ["route.input().ai().handler()", "Standard Schema validation, zero deps"] },
+    { "dot": "cyan", "title": "Many surfaces", "items": ["Typed client with no codegen", "REST + OpenAPI, in-process caller, streaming"] },
+    { "dot": "amber", "title": "AI / MCP native", "items": ["Procedures become LLM tools via .ai()", "MCP server, and consume external MCP servers"] }
+  ]
+}
