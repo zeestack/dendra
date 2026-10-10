@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>nexus-rpc — typed APIs that are also LLM tools & MCP servers</title>
+<title>dendra — typed APIs that are also LLM tools & MCP servers</title>
 <meta name="description" content="A typed RPC/REST framework for Next.js where every procedure is also an LLM tool and an MCP server. No decorators, no codegen, zero deps." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -101,14 +101,14 @@
 
 <nav>
   <div class="wrap">
-    <div class="brand">nexus<span>-rpc</span></div>
+    <div class="brand">den<span>dra</span></div>
     <div class="nav-links">
       <a href="#why">Why</a>
       <a href="#quickstart">Quickstart</a>
       <a href="#ai">AI / MCP</a>
       <a href="#middleware">Middleware</a>
       <a href="#controllers">Classes</a>
-      <a class="btn" href="https://github.com/zeestack/nexus-rpc">GitHub ↗</a>
+      <a class="btn" href="https://github.com/zeestack/dendra">GitHub ↗</a>
     </div>
   </div>
 </nav>
@@ -127,7 +127,7 @@
       tool your AI agents and Claude can call over MCP.</p>
     <div class="cta">
       <a class="btn primary" href="#quickstart">Get started</a>
-      <a class="btn" href="https://github.com/zeestack/nexus-rpc">Star on GitHub</a>
+      <a class="btn" href="https://github.com/zeestack/dendra">Star on GitHub</a>
     </div>
 
     <div class="code-hero">
@@ -148,9 +148,9 @@
   <div class="wrap">
     <h2>Why another API framework?</h2>
     <p class="lead">The typed-RPC space is crowded — tRPC, ts-rest, Hono, oRPC are all good at HTTP.
-      nexus-rpc's wedge is the part they bolt on or skip: it's <strong>AI- and MCP-native by construction.</strong>
+      dendra's wedge is the part they bolt on or skip: it's <strong>AI- and MCP-native by construction.</strong>
       A procedure and an LLM tool are the same shape — a name, an input schema, a validated handler —
-      so nexus-rpc treats them as one thing. Mark a procedure <code>.ai()</code> and it's instantly a tool
+      so dendra treats them as one thing. Mark a procedure <code>.ai()</code> and it's instantly a tool
       for Claude over MCP and for the Anthropic/OpenAI APIs, executed with the same validation that guards
       your HTTP endpoints.</p>
 
@@ -171,7 +171,7 @@
     <div class="steps">
       <div class="step">
         <h3><span class="n">1</span> Define</h3>
-<pre><code><span class="k">import</span> { initNexus, s, <span class="k">type</span> RouterRecord } <span class="k">from</span> <span class="s">"nexus-rpc"</span>;
+<pre><code><span class="k">import</span> { initNexus, s, <span class="k">type</span> RouterRecord } <span class="k">from</span> <span class="s">"dendra"</span>;
 
 <span class="k">const</span> { route } = <span class="f">initNexus</span>&lt;{ userId: string | null }&gt;();
 
@@ -186,7 +186,7 @@
       <div class="step">
         <h3><span class="n">2</span> Serve — Next.js App Router</h3>
 <pre><code><span class="c">// app/rpc/[...nexus]/route.ts</span>
-<span class="k">import</span> { toNextHandler } <span class="k">from</span> <span class="s">"nexus-rpc"</span>;
+<span class="k">import</span> { toNextHandler } <span class="k">from</span> <span class="s">"dendra"</span>;
 <span class="k">import</span> { appRouter } <span class="k">from</span> <span class="s">"@/server/router"</span>;
 
 <span class="k">export const</span> { GET, POST } = <span class="f">toNextHandler</span>(appRouter, {
@@ -195,7 +195,7 @@
       </div>
       <div class="step">
         <h3><span class="n">3</span> Call — typed, no codegen</h3>
-<pre><code><span class="k">import</span> { createClient } <span class="k">from</span> <span class="s">"nexus-rpc"</span>;
+<pre><code><span class="k">import</span> { createClient } <span class="k">from</span> <span class="s">"dendra"</span>;
 <span class="k">import</span> <span class="k">type</span> { AppRouter } <span class="k">from</span> <span class="s">"@/server/router"</span>;
 
 <span class="k">const</span> api = <span class="f">createClient</span>&lt;AppRouter&gt;(<span class="s">""</span>);
@@ -210,7 +210,7 @@
     <h2>The AI / MCP story</h2>
     <p class="lead">Your <code>.ai()</code> procedures become tools for LLMs and an MCP server Claude can
       connect to — the same handlers, the same validation, the same auth context.</p>
-<pre><code><span class="k">import</span> { toToolset, createToolExecutor, mcpToolDefinitions } <span class="k">from</span> <span class="s">"nexus-rpc"</span>;
+<pre><code><span class="k">import</span> { toToolset, createToolExecutor, mcpToolDefinitions } <span class="k">from</span> <span class="s">"dendra"</span>;
 
 <span class="c">// Tool defs for Anthropic / OpenAI from your .ai() procedures:</span>
 <span class="k">const</span> tools = <span class="f">toToolset</span>(appRouter, { format: <span class="s">"anthropic"</span> });
@@ -269,7 +269,7 @@
 
 <span class="k">const</span> appRouter = { users: <span class="k">new</span> <span class="f">UsersController</span>(db) };  <span class="c">// instance = sub-router</span></code></pre>
     <table style="margin-top:18px">
-      <thead><tr><th>NestJS</th><th class="nx">nexus-rpc</th></tr></thead>
+      <thead><tr><th>NestJS</th><th class="nx">dendra</th></tr></thead>
       <tbody>
         <tr><td><code>@Controller()</code> class</td><td>plain class with procedure fields</td></tr>
         <tr><td><code>@Get()</code> / <code>@Post()</code></td><td><code>.get()</code> / <code>.post()</code> on the builder</td></tr>
@@ -285,7 +285,7 @@
   <div class="wrap">
     <h2>How it compares</h2>
     <table>
-      <thead><tr><th>Feature</th><th>tRPC</th><th>ts-rest</th><th>Hono</th><th class="nx">nexus-rpc</th></tr></thead>
+      <thead><tr><th>Feature</th><th>tRPC</th><th>ts-rest</th><th>Hono</th><th class="nx">dendra</th></tr></thead>
       <tbody>
         <tr><td>Typed client, no codegen</td><td class="y">✅</td><td class="n">—</td><td class="y">✅</td><td class="y">✅</td></tr>
         <tr><td>REST URLs + OpenAPI</td><td class="n">plugin</td><td class="y">✅</td><td class="n">plugin</td><td class="y">✅</td></tr>
@@ -317,8 +317,8 @@
 
 <footer>
   <div class="wrap">
-    <a class="btn primary" href="https://github.com/zeestack/nexus-rpc">View on GitHub ↗</a>
-    <p style="margin-top:18px">MIT licensed · built with nexus-rpc</p>
+    <a class="btn primary" href="https://github.com/zeestack/dendra">View on GitHub ↗</a>
+    <p style="margin-top:18px">MIT licensed · built with dendra</p>
     <p class="disclaimer">Pre-1.0 and experimental — APIs may change before 1.0.</p>
   </div>
 </footer>

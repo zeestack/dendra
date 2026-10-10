@@ -7,7 +7,7 @@
 // adapters. Visit acme.localhost:3100 vs beta.localhost:3100 to see isolation.
 
 import { headers } from "next/headers";
-import { createCaller } from "nexus-rpc";
+import { createCaller } from "dendra";
 import { appRouter } from "@/server/router";
 import { directContext, tenantFromHost } from "@/server/context";
 import { NotesClient } from "./notes-client";

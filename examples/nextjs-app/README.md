@@ -1,4 +1,4 @@
-# nexus-rpc × Next.js App Router — example
+# dendra × Next.js App Router — example
 
 Illustrative source to drop into a **Next.js 15** App Router project. It shows
 every integration point: RPC, REST, OpenAPI, Server Components, live
@@ -8,12 +8,12 @@ subscriptions, AI streaming, AI tools, and the standalone WebSocket server.
 
 ```bash
 cd examples/nextjs-app
-npm install          # installs Next + React and links nexus-rpc from source
+npm install          # installs Next + React and links dendra from source
 npm run dev          # http://localhost:3100
 npm run ws           # (optional, separate terminal) WebSocket server on :4000
 ```
 
-`nexus-rpc` is linked from the repo (`"nexus-rpc": "file:../.."`) and compiled by
+`dendra` is linked from the repo (`"dendra": "file:../.."`) and compiled by
 Next via `transpilePackages`, so there's no publish step.
 
 ## Demo all features in one place
@@ -46,7 +46,7 @@ node mcp-test.ts       # verify: lists tools, creates + lists a note via MCP
 ```json
 {
   "mcpServers": {
-    "nexus-notes": {
+    "dendra-notes": {
       "command": "node",
       "args": ["/ABS/PATH/examples/nextjs-app/mcp-server.ts"],
       "env": { "APP_URL": "http://localhost:3100", "TENANT": "acme", "MCP_USER": "claude" }
@@ -58,7 +58,7 @@ node mcp-test.ts       # verify: lists tools, creates + lists a note via MCP
 **Claude Code** — from the app folder:
 
 ```bash
-claude mcp add nexus-notes \
+claude mcp add dendra-notes \
   --env APP_URL=http://localhost:3100 --env TENANT=acme --env MCP_USER=claude \
   -- node "$(pwd)/mcp-server.ts"
 ```
@@ -134,7 +134,7 @@ ws-server.ts       standalone WebSocket server (same router, outside serverless)
 ```bash
 npx create-next-app@latest my-app --ts --app
 cd my-app
-npm i nexus-rpc
+npm i dendra
 # optional extras used by the example:
 npm i ws @anthropic-ai/sdk
 npm i -D @types/ws

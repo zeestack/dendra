@@ -10,7 +10,7 @@
 // To use from claude.ai: expose this over public HTTPS (a tunnel like cloudflared
 // or a deploy), then add <url>/api/mcp as a custom connector in Claude settings.
 
-import { mcpToolDefinitions, createToolExecutor } from "nexus-rpc";
+import { mcpToolDefinitions, createToolExecutor } from "dendra";
 import { appRouter } from "@/server/router";
 import { createContext } from "@/server/context";
 import { oauth, baseUrl } from "@/server/oauth-store";
@@ -77,7 +77,7 @@ export async function POST(req: Request): Promise<Response> {
         return reply({
           protocolVersion: (m.params?.protocolVersion as string) ?? "2025-06-18",
           capabilities: { tools: {} },
-          serverInfo: { name: "nexus-notes", version: "0.0.1" },
+          serverInfo: { name: "dendra-notes", version: "0.0.1" },
         });
       case "tools/list":
         return reply({ tools: toolDefs });
@@ -115,7 +115,7 @@ export async function POST(req: Request): Promise<Response> {
 }
 
 export function GET(): Response {
-  return new Response("nexus-notes MCP endpoint — POST JSON-RPC here.", { status: 405 });
+  return new Response("dendra-notes MCP endpoint — POST JSON-RPC here.", { status: 405 });
 }
 
 function json(body: unknown, status: number): Response {

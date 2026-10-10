@@ -1,7 +1,7 @@
 // Serves the OpenAPI 3.1 document at /openapi.json — point Swagger UI at it, or
 // generate clients with `npx openapi-typescript http://localhost:3000/openapi.json`.
 
-import { toOpenApiDocument } from "nexus-rpc";
+import { toOpenApiDocument } from "dendra";
 import { appRouter } from "@/server/router";
 
 export function GET() {

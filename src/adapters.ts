@@ -6,7 +6,7 @@
 // Usage in a Next app — app/rpc/[...nexus]/route.ts:
 //
 //   import { appRouter } from "@/server/router";
-//   import { toNextHandler } from "nexus-rpc";
+//   import { toNextHandler } from "dendra";
 //   export const { GET, POST } = toNextHandler(appRouter, {
 //     createContext: (req) => ({ userId: getSession(req) }),
 //   });

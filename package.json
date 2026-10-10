@@ -1,7 +1,11 @@
 {
-  "name": "nexus-rpc",
-  "version": "0.0.1",
-  "private": true,
+  "name": "dendra",
+  "version": "0.1.0",
+  "private": false,
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/zeestack/dendra.git" },
+  "homepage": "https://github.com/zeestack/dendra#readme",
+  "bugs": "https://github.com/zeestack/dendra/issues",
   "description": "Lightweight, decorator-free, codegen-free typed RPC/REST framework for Next.js and any Web-standard runtime — with first-class AI/MCP tool support.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -36,7 +40,6 @@
     "streaming",
     "typed-client"
   ],
-  "license": "MIT",
   "devDependencies": {
     "@types/node": "^22.7.0",
     "tsup": "^8.3.0",

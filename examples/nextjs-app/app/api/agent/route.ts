@@ -5,7 +5,7 @@
 // or TanStack AI.
 
 import Anthropic from "@anthropic-ai/sdk";
-import { toToolset, createToolExecutor } from "nexus-rpc";
+import { toToolset, createToolExecutor } from "dendra";
 import { appRouter } from "@/server/router";
 import { directContext } from "@/server/context";
 

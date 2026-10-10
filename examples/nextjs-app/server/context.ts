@@ -7,7 +7,7 @@
 // just read ctx.tenantId. Swap adapters (WS, tests) and tenancy still works
 // because each adapter builds ctx the same way.
 
-import type { PubSub } from "nexus-rpc";
+import type { PubSub } from "dendra";
 import { db } from "./db.ts";
 import { pubsub } from "./pubsub.ts";
 

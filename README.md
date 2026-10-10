@@ -1,6 +1,6 @@
-# nexus-rpc
+# dendra
 
-[![CI](https://github.com/zeestack/nexus-rpc/actions/workflows/ci.yml/badge.svg)](https://github.com/zeestack/nexus-rpc/actions/workflows/ci.yml)
+[![CI](https://github.com/zeestack/dendra/actions/workflows/ci.yml/badge.svg)](https://github.com/zeestack/dendra/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **The typed API framework where every procedure is also an LLM tool and an MCP server — with zero extra work.**
@@ -30,9 +30,9 @@ That one definition is now callable as a **typed client method**, a **REST route
 ## Why another API framework?
 
 The typed-RPC space is crowded (tRPC, ts-rest, Hono, oRPC) and they're all good at
-HTTP. nexus-rpc's wedge is the part they bolt on or skip entirely: **AI- and
+HTTP. dendra's wedge is the part they bolt on or skip entirely: **AI- and
 MCP-native by construction.** A procedure and an LLM tool are the same shape —
-a name, an input schema, a validated handler — so nexus-rpc treats them as one
+a name, an input schema, a validated handler — so dendra treats them as one
 thing. Mark a procedure `.ai()` and it's instantly:
 
 - an **MCP tool** (stdio for Claude Desktop, or remote HTTP for claude.ai), and
@@ -60,19 +60,19 @@ against.
 
 ## Quickstart
 
-> **Not yet on npm.** The bare name `nexus-rpc` is taken by an unrelated package
+> **Not yet on npm.** The bare name `dendra` is taken by an unrelated package
 > (Temporal's SDK), so a published build would use a scoped name such as
-> `@zeestack/nexus-rpc`. For now, use it from source:
+> `@zeestack/dendra`. For now, use it from source:
 >
 > ```bash
-> git clone https://github.com/zeestack/nexus-rpc
-> cd nexus-rpc && npm install && npm run build
+> git clone https://github.com/zeestack/dendra
+> cd dendra && npm install && npm run build
 > ```
 
 **Define** once:
 
 ```ts
-import { initNexus, s, type RouterRecord } from "nexus-rpc";
+import { initNexus, s, type RouterRecord } from "dendra";
 
 interface Ctx { userId: string | null }
 const { route } = initNexus<Ctx>();
@@ -95,7 +95,7 @@ export type AppRouter = typeof appRouter;
 **Serve** (Next.js App Router — `app/rpc/[...nexus]/route.ts`):
 
 ```ts
-import { toNextHandler } from "nexus-rpc";
+import { toNextHandler } from "dendra";
 import { appRouter } from "@/server/router";
 
 export const { GET, POST } = toNextHandler(appRouter, {
@@ -109,7 +109,7 @@ Other runtimes use the same router: `toFetchHandler` (Hono/Bun/Deno/Workers),
 **Call** — the client type comes straight from `typeof appRouter`, no generated files:
 
 ```ts
-import { createClient } from "nexus-rpc";
+import { createClient } from "dendra";
 import type { AppRouter } from "@/server/router";
 
 const api = createClient<AppRouter>("");
@@ -122,7 +122,7 @@ In a Server Component, skip HTTP entirely with `createCaller(appRouter, ctx)`.
 ## The AI / MCP story
 
 ```ts
-import { toToolset, createToolExecutor, mcpToolDefinitions } from "nexus-rpc";
+import { toToolset, createToolExecutor, mcpToolDefinitions } from "dendra";
 
 // LLM tool definitions (Anthropic/OpenAI shapes) from your .ai() procedures:
 const tools = toToolset(appRouter, { format: "anthropic" });
@@ -198,7 +198,7 @@ export const appRouter = {
 };
 ```
 
-| NestJS | nexus-rpc |
+| NestJS | dendra |
 |---|---|
 | `@Controller()` class | plain class with procedure fields |
 | `@Get()` / `@Post()` decorators | `.get()` / `.post()` on the builder |
@@ -213,7 +213,7 @@ and MCP all work unchanged.
 
 ## How it compares
 
-| | tRPC | ts-rest | Hono | **nexus-rpc** |
+| | tRPC | ts-rest | Hono | **dendra** |
 |---|---|---|---|---|
 | Typed client, no codegen | ✅ | — | ✅ | ✅ |
 | REST URLs + OpenAPI | plugin | ✅ | plugin | ✅ |
@@ -269,7 +269,7 @@ client (unary + streaming), NDJSON streaming with cancellation, WebSocket
 transport, AI tools, MCP (stdio + HTTP), in-memory pub/sub. A build pipeline
 (tsup) and test suite (vitest, runtime + type tests) are in place.
 
-Not yet: published to npm (planned under a scoped name like `@zeestack/nexus-rpc`),
+Not yet: published to npm (planned under a scoped name like `@zeestack/dendra`),
 request batching, auth middleware chains, Redis-backed pub/sub, OAuth for the
 remote MCP endpoint. APIs may change before 1.0.
 

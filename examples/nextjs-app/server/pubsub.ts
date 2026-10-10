@@ -5,7 +5,7 @@
 // Cached on `globalThis` so every route module instance in Next's dev server
 // shares ONE bus (otherwise publishes and subscribes land on different copies).
 
-import { createInMemoryPubSub, type PubSub } from "nexus-rpc";
+import { createInMemoryPubSub, type PubSub } from "dendra";
 
 const g = globalThis as unknown as { __nexusPubSub?: PubSub };
 

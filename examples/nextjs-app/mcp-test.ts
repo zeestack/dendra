@@ -29,7 +29,7 @@ console.log("notes_list   ->", JSON.stringify(listed.content));
 
 const summary = await client.callTool({
   name: "ai_summarize",
-  arguments: { text: "nexus-rpc exposes one router as RPC, REST, OpenAPI, typed clients, and MCP tools." },
+  arguments: { text: "dendra exposes one router as RPC, REST, OpenAPI, typed clients, and MCP tools." },
 });
 console.log("ai_summarize ->", JSON.stringify(summary.content));
 

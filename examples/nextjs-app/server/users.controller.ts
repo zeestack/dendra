@@ -3,7 +3,7 @@
 // Dependencies are injected via the constructor and kept in #private fields so
 // the controller's public shape stays pure procedures.
 
-import { initNexus, s } from "nexus-rpc";
+import { initNexus, s } from "dendra";
 import type { Ctx } from "./context.ts";
 import { db } from "./db.ts";
 import type { User } from "./db.ts";

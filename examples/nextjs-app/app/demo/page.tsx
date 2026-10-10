@@ -1,6 +1,6 @@
 "use client";
 
-// One page that exercises every nexus-rpc feature against the live Next app.
+// One page that exercises every dendra feature against the live Next app.
 // Each card runs a real call and shows the result. The "Real-time feed" stays
 // subscribed, so creating a note (card 1) makes it appear there live.
 
@@ -12,7 +12,7 @@ import type { Note } from "@/server/db";
 export default function DemoPage() {
   return (
     <main style={S.page}>
-      <h1>nexus-rpc — feature demo</h1>
+      <h1>dendra — feature demo</h1>
       <p style={S.sub}>
         Every card calls the live router. Open your network tab to watch the
         actual requests.
@@ -193,7 +193,7 @@ function AiToolsCard() {
             // ai.summarize is the exposed tool — calling it via the client is the
             // same code path the tool executor uses server-side.
             const r = await api.ai.summarize({
-              text: "nexus-rpc turns one procedure definition into RPC, REST, OpenAPI, a typed client, and an LLM tool.",
+              text: "dendra turns one procedure definition into RPC, REST, OpenAPI, a typed client, and an LLM tool.",
             });
             setExec(JSON.stringify(r, null, 2));
           }}

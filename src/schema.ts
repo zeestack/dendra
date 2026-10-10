@@ -66,7 +66,7 @@ function make<T>(
   isOptional = false,
 ): Schema<T> {
   return {
-    "~standard": { version: 1, vendor: "nexus", validate },
+    "~standard": { version: 1, vendor: "dendra", validate },
     jsonSchema,
     isOptional,
     describe(description: string) {

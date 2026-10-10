@@ -5,7 +5,7 @@
 
 "use client";
 
-import { connectWs, type WhatwgSocket } from "nexus-rpc";
+import { connectWs, type WhatwgSocket } from "dendra";
 import type { AppRouter } from "@/server/router";
 
 let cached: ReturnType<typeof connectWs<AppRouter>> | null = null;

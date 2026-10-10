@@ -17,7 +17,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { createClient, mcpToolDefinitions } from "nexus-rpc";
+import { createClient, mcpToolDefinitions } from "dendra";
 import { appRouter, type AppRouter } from "./server/router.ts";
 
 const APP_URL = process.env.APP_URL ?? "http://localhost:3100";
@@ -31,7 +31,7 @@ const api = createClient<AppRouter>(APP_URL, {
 });
 
 const server = new Server(
-  { name: "nexus-notes", version: "0.0.1" },
+  { name: "dendra-notes", version: "0.0.1" },
   { capabilities: { tools: {} } },
 );
 

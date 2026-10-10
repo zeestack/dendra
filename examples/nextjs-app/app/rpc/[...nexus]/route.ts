@@ -1,7 +1,7 @@
 // RPC mount — the typed client (lib/api.ts) talks to this.
 // Catch-all so every procedure path resolves here: /rpc/notes.list, /rpc/ai.chat, …
 
-import { toNextHandler } from "nexus-rpc";
+import { toNextHandler } from "dendra";
 import { appRouter } from "@/server/router";
 import { createContext } from "@/server/context";
 

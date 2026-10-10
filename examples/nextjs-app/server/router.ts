@@ -9,7 +9,7 @@ import {
   createToolExecutor,
   NexusError,
   type RouterRecord,
-} from "nexus-rpc";
+} from "dendra";
 import type { Ctx } from "./context.ts";
 import type { Note, NoteEvent } from "./db.ts";
 import { db } from "./db.ts";
@@ -81,9 +81,9 @@ const coreRouter = {
           "Get information about this app and the actions available. Call this first to ground yourself before answering questions about the app.",
       })
       .handler(({ ctx }) => ({
-        app: "nexus-notes",
+        app: "dendra-notes",
         description:
-          "A multi-tenant notes app built on nexus-rpc — a lightweight, decorator-free, codegen-free typed RPC/REST framework for Next.js. One procedure definition becomes an RPC call, a REST endpoint, an OpenAPI schema, a typed client, a streaming subscription, and an MCP tool.",
+          "A multi-tenant notes app built on dendra — a lightweight, decorator-free, codegen-free typed RPC/REST framework for Next.js. One procedure definition becomes an RPC call, a REST endpoint, an OpenAPI schema, a typed client, a streaming subscription, and an MCP tool.",
         currentContext: { tenant: ctx.tenantId, user: ctx.userId },
         actions: [
           "notes.list — list the notes in this workspace",

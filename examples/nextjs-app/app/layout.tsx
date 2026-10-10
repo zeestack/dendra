@@ -1,5 +1,5 @@
 export const metadata = {
-  title: "nexus-rpc × Next.js example",
+  title: "dendra × Next.js example",
   description: "Typed RPC/REST, streaming, real-time, and AI tools on Next.js",
 };
 

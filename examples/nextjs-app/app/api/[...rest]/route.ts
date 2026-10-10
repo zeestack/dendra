@@ -2,7 +2,7 @@
 // consumers, webhooks, and anything that reads the OpenAPI spec. Same router,
 // same validation, different doorway.
 
-import { toRestHandler } from "nexus-rpc";
+import { toRestHandler } from "dendra";
 import { appRouter } from "@/server/router";
 import { createContext } from "@/server/context";
 
