@@ -54,6 +54,46 @@ The focused set (the four that move the needle) is marked ⭐.
   registry (transports, lifecycle) into a thin opt-in helper; core stays
   auth-agnostic and takes an already-connected client.
 
+### `create-dendra-app` — spec
+
+Goal: `npm create dendra-app@latest my-app` → a **running, typechecking** app in
+under a minute that models dendra's conventions (so people learn the right
+patterns from line one).
+
+**Templates** (prompt or `--template`), each a runnable Next.js App Router app:
+- `minimal` — the define→serve→call trio in the fewest files: `server/router.ts`
+  (an `add` + a small `notes` example), `server/context.ts`,
+  `app/rpc/[...path]/route.ts`, `lib/api.ts`, and a `page.tsx` calling the typed
+  client. No DB, no AI.
+- `mcp` ⭐ — `minimal` plus `.ai()` tools, a remote MCP route (`app/api/mcp`), a
+  stdio `mcp-server.ts`, and a printed snippet to connect Claude. The flagship demo.
+- `full` — trimmed showcase: SQLite+Drizzle notes, real-time pub/sub, a
+  generative-UI chat (`dendra/anthropic` + `dendra/react`), MCP both directions.
+
+A `--mcp` flag can also layer MCP onto `minimal`.
+
+**Every generated app ships with:** correct `runtime = "nodejs"` + `dynamic` on
+streaming routes; `createContext` building `ctx` with auth as a commented `.use()`
+stub (never in the framework); `satisfies RouterRecord`; `.env.example`,
+`.gitignore`, scripts (`dev`/`build`/`typecheck`), and a short README with run +
+"connect Claude" steps.
+
+**CLI UX:** interactive prompts, fully flaggable for CI (`--template`, `--mcp`,
+`--pm`, `--no-install`, `--no-git`, `--yes`); detects the package manager from the
+invocation; prints next steps on finish.
+
+**Implementation:** its own tiny, near-zero-dep package `create-dendra-app`;
+templates are real files copied + token-replaced; templates versioned against the
+dendra version they target.
+
+**Quality bar:** CI scaffolds every template and runs `tsc --noEmit` + `next build`
+— a generated app must never be broken. (This is the whole point.)
+
+**Out of scope (v1):** no auth-provider wiring, no ORM menu beyond the `full`
+default, no CSS-framework choice — keep it to 2–3 questions; link docs for the rest.
+
+**Build order:** `minimal` + `mcp` first (ship), then `full`.
+
 ---
 
 ## 0.3.0 and later — candidates
