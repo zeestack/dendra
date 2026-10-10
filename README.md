@@ -1,5 +1,8 @@
 # nexus-rpc
 
+[![CI](https://github.com/zeestack/nexus-rpc/actions/workflows/ci.yml/badge.svg)](https://github.com/zeestack/nexus-rpc/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 **The typed API framework where every procedure is also an LLM tool and an MCP server — with zero extra work.**
 
 Define a procedure once. Get a typed client, a REST endpoint, an OpenAPI schema,
