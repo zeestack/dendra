@@ -45,6 +45,13 @@ The focused set (the four that move the needle) is marked ⭐.
 ### Deepen the AI / MCP differentiator
 - [ ] ⭐ **`dendra/openai`** — a `runAgent` for the OpenAI SDK, mirroring
   `dendra/anthropic`, so the agentic loop isn't Anthropic-only.
+- [ ] **Amazon Bedrock support** — two parts:
+  (a) make `runAgent`'s `client` type **structural** (only requires `messages.stream`)
+  so `@anthropic-ai/bedrock-sdk`'s `AnthropicBedrock` drops in with no cast — Claude
+  on Bedrock works today, this just removes the friction;
+  (b) **`dendra/bedrock`** — a `runAgent` over the Bedrock **Converse** API that maps
+  the plain toolset to `toolSpec`, so *any* Bedrock model (Claude, Llama, Titan,
+  Mistral) works, not just Claude.
 - [ ] **MCP tool annotations** — mark tools `readOnly` / `destructive` and emit the
   corresponding MCP hints, with a **confirmation / human-in-the-loop hook** for
   dangerous calls.
