@@ -6,6 +6,7 @@ export type {
   RouterRecord,
   HttpMethod,
   ProcedureKind,
+  Middleware,
 } from "./core.ts";
 
 export { createCaller } from "./caller.ts";

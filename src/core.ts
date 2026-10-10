@@ -14,6 +14,17 @@ import { NexusError } from "./errors.ts";
 export type ProcedureKind = "unary" | "stream";
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
+// A middleware runs before the handler. It can reject (throw a NexusError) or
+// return an object that is MERGED into ctx for everything downstream — so the
+// handler sees an enriched, typed context. Returning nothing leaves ctx as-is.
+export type Middleware<Ctx, In, CtxAdd> = (opts: {
+  ctx: Ctx;
+  input: In;
+}) => CtxAdd | void | Promise<CtxAdd | void>;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyMiddleware = (opts: { ctx: any; input: any }) => any;
+
 export interface Proc<
   Ctx = unknown,
   In = unknown,
@@ -29,6 +40,7 @@ export interface Proc<
   readonly inputSchema?: StandardSchemaV1<unknown, In>;
   readonly inputJsonSchema?: JSONSchema;
   readonly outputJsonSchema?: JSONSchema;
+  readonly middlewares?: ReadonlyArray<AnyMiddleware>;
   readonly handler: (input: In, ctx: Ctx) => Promise<Out> | AsyncIterable<Out>;
   // Phantom carrier so inference can recover In/Out even when erased elsewhere.
   readonly _types?: { in: In; out: Out };
@@ -53,6 +65,7 @@ interface State<Ctx, In> {
   inputSchema?: StandardSchemaV1<unknown, In>;
   inputJsonSchema?: JSONSchema;
   outputJsonSchema?: JSONSchema;
+  middlewares?: AnyMiddleware[];
 }
 
 class Builder<Ctx, In> {
@@ -88,6 +101,23 @@ class Builder<Ctx, In> {
   ai(cfg: { description?: string } = {}) {
     return this.next<In>({ ai: { expose: true, description: cfg.description } });
   }
+  /**
+   * Add a middleware. It runs before the handler (across RPC, REST, the caller,
+   * WebSocket, and AI/MCP tool execution). Throw a NexusError to reject; return
+   * an object to merge it into ctx — the downstream handler sees the enriched,
+   * typed context.
+   */
+  use<CtxAdd extends Record<string, unknown> | void>(
+    mw: Middleware<Ctx, In, CtxAdd>,
+  ): Builder<Ctx & (CtxAdd extends void ? unknown : CtxAdd), In> {
+    return new Builder<Ctx & (CtxAdd extends void ? unknown : CtxAdd), In>({
+      ...(this.state as unknown as State<
+        Ctx & (CtxAdd extends void ? unknown : CtxAdd),
+        In
+      >),
+      middlewares: [...(this.state.middlewares ?? []), mw as AnyMiddleware],
+    });
+  }
   /** Attach an input schema. Any Standard Schema works (Zod/Valibot/built-in). */
   input<S extends StandardSchemaV1>(schema: S) {
     const jsonSchema = (schema as { jsonSchema?: JSONSchema }).jsonSchema;
@@ -115,6 +145,7 @@ class Builder<Ctx, In> {
       inputSchema: s.inputSchema,
       inputJsonSchema: s.inputJsonSchema,
       outputJsonSchema: s.outputJsonSchema,
+      middlewares: s.middlewares,
       handler: async (input: In, ctx: Ctx) => fn({ input, ctx }),
     } as Proc<Ctx, In, Awaited<Out>, "unary">;
   }
@@ -133,6 +164,7 @@ class Builder<Ctx, In> {
       inputSchema: s.inputSchema,
       inputJsonSchema: s.inputJsonSchema,
       outputJsonSchema: s.outputJsonSchema,
+      middlewares: s.middlewares,
       handler: (input: In, ctx: Ctx) => fn({ input, ctx }),
     } as Proc<Ctx, In, Out, "stream">;
   }
@@ -170,22 +202,43 @@ async function validateInput(proc: AnyProc, raw: unknown): Promise<unknown> {
   return (res as { value: unknown }).value;
 }
 
-/** Run a unary procedure: validate, then call the handler. */
+// Run the middleware chain: each one may reject (throw) or return a ctx patch
+// that is merged in for everything downstream.
+async function runMiddleware(
+  proc: AnyProc,
+  input: unknown,
+  ctx: unknown,
+): Promise<unknown> {
+  const mws = proc.middlewares;
+  if (!mws || mws.length === 0) return ctx;
+  let acc = ctx;
+  for (const mw of mws) {
+    const patch = await mw({ ctx: acc, input });
+    if (patch && typeof patch === "object") {
+      acc = { ...(acc as object), ...(patch as object) };
+    }
+  }
+  return acc;
+}
+
+/** Run a unary procedure: validate, run middleware, then call the handler. */
 export async function invokeUnary(
   proc: AnyProc,
   raw: unknown,
   ctx: unknown,
 ): Promise<unknown> {
   const input = await validateInput(proc, raw);
-  return (await proc.handler(input, ctx)) as unknown;
+  const ctx2 = await runMiddleware(proc, input, ctx);
+  return (await proc.handler(input, ctx2)) as unknown;
 }
 
-/** Run a streaming procedure: validate, then yield from the handler. */
+/** Run a streaming procedure: validate, run middleware, then yield. */
 export async function* invokeStream(
   proc: AnyProc,
   raw: unknown,
   ctx: unknown,
 ): AsyncIterable<unknown> {
   const input = await validateInput(proc, raw);
-  yield* proc.handler(input, ctx) as AsyncIterable<unknown>;
+  const ctx2 = await runMiddleware(proc, input, ctx);
+  yield* proc.handler(input, ctx2) as AsyncIterable<unknown>;
 }

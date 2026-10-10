@@ -140,6 +140,31 @@ a **stdio** server for Claude Desktop (`mcp-server.ts`) and a **remote HTTP**
 endpoint (`app/api/mcp/route.ts`) for claude.ai — so Claude can list, create, and
 delete your app's data through the exact procedures you already wrote.
 
+## Middleware & auth (`.use()`)
+
+Run logic before a handler — authentication, logging, rate-limiting — and enrich
+the context. One `.use()` runs across **every** transport (RPC, REST, the
+in-process caller, WebSocket, and AI/MCP tool execution).
+
+```ts
+const authed = route.use(({ ctx }) => {
+  if (!ctx.token) throw new NexusError("UNAUTHORIZED", "Sign in required");
+  return { userId: lookup(ctx.token) };   // merged into ctx, typed downstream
+});
+
+export const appRouter = {
+  me:     authed.handler(({ ctx }) => ctx.userId),          // ctx.userId is typed
+  delete: authed.input(s.object({ id: s.string() }))
+                .ai({ description: "Delete an item" })        // tool is auth-guarded too
+                .handler(({ ctx, input }) => db.remove(ctx.userId, input.id)),
+} satisfies RouterRecord;
+```
+
+Middlewares **stack** (each sees the previous one's ctx additions) and **throw a
+`NexusError` to reject**. Because an AI/MCP tool runs through the same dispatch
+path, a procedure behind `.use(auth)` is authorization-guarded for the model too
+— the model inherits the user's permissions, it can't bypass them.
+
 ## Class-based controllers (NestJS-style, no decorators)
 
 Prefer classes for grouping and dependency injection? A controller is just a
