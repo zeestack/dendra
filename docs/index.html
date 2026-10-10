@@ -106,6 +106,7 @@
       <a href="#why">Why</a>
       <a href="#quickstart">Quickstart</a>
       <a href="#ai">AI / MCP</a>
+      <a href="#controllers">Classes</a>
       <a class="btn" href="https://github.com/zeestack/nexus-rpc">GitHub ↗</a>
     </div>
   </div>
@@ -219,6 +220,39 @@
 
 <span class="c">// MCP: the same procedures become tools Claude can call (stdio + HTTP).</span>
 <span class="k">const</span> defs = <span class="f">mcpToolDefinitions</span>(appRouter);</code></pre>
+  </div>
+</section>
+
+<section id="controllers">
+  <div class="wrap">
+    <h2>Class controllers (NestJS-style, no decorators)</h2>
+    <p class="lead">Prefer classes for grouping and dependency injection? A
+      controller is a class whose <strong>fields are procedures</strong> — put an
+      instance in the router. You get NestJS structure and constructor DI without
+      decorators, <code>reflect-metadata</code>, or <code>experimentalDecorators</code>.</p>
+<pre><code><span class="k">export class</span> <span class="f">UsersController</span> {
+  #db: Db;                                   <span class="c">// #private: not part of the public type</span>
+  <span class="f">constructor</span>(db: Db) { <span class="k">this</span>.#db = db; }     <span class="c">// constructor injection</span>
+
+  list = route.<span class="f">get</span>(<span class="s">"/users"</span>).<span class="f">handler</span>(() => <span class="k">this</span>.#db.users.<span class="f">all</span>());
+  create = route
+    .<span class="f">post</span>(<span class="s">"/users"</span>)
+    .<span class="f">input</span>(s.<span class="f">object</span>({ name: s.<span class="f">string</span>() }))
+    .<span class="f">ai</span>({ description: <span class="s">"Create a user"</span> })        <span class="c">// still an LLM/MCP tool</span>
+    .<span class="f">handler</span>(({ input }) => <span class="k">this</span>.#db.users.<span class="f">insert</span>(input));
+}
+
+<span class="k">const</span> appRouter = { users: <span class="k">new</span> <span class="f">UsersController</span>(db) };  <span class="c">// instance = sub-router</span></code></pre>
+    <table style="margin-top:18px">
+      <thead><tr><th>NestJS</th><th class="nx">nexus-rpc</th></tr></thead>
+      <tbody>
+        <tr><td><code>@Controller()</code> class</td><td>plain class with procedure fields</td></tr>
+        <tr><td><code>@Get()</code> / <code>@Post()</code></td><td><code>.get()</code> / <code>.post()</code> on the builder</td></tr>
+        <tr><td><code>@Injectable()</code> + DI container</td><td>constructor injection (<code>new Ctrl(deps)</code>)</td></tr>
+        <tr><td><code>@Module()</code></td><td>compose the router object</td></tr>
+        <tr><td>decorators / <code>reflect-metadata</code></td><td class="y">none</td></tr>
+      </tbody>
+    </table>
   </div>
 </section>
 

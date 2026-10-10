@@ -224,7 +224,9 @@ npm run demo:restws
 - [`examples/rest-ws-demo.ts`](examples/rest-ws-demo.ts) — REST, OpenAPI, WebSocket transport.
 - [`examples/nextjs-app/`](examples/nextjs-app/) — full Next.js 15 app: RPC + REST,
   Server Components, generative-UI chat, real LLM, subdomain multi-tenancy,
-  resilient real-time notes, and MCP (stdio + remote HTTP).
+  resilient real-time notes, a NestJS-style class controller
+  ([`UsersController`](examples/nextjs-app/server/users.controller.ts)) reachable
+  over RPC/REST/MCP, and MCP (stdio + remote HTTP).
 
 ## Status
 
