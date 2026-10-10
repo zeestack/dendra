@@ -140,6 +140,43 @@ a **stdio** server for Claude Desktop (`mcp-server.ts`) and a **remote HTTP**
 endpoint (`app/api/mcp/route.ts`) for claude.ai — so Claude can list, create, and
 delete your app's data through the exact procedures you already wrote.
 
+## Class-based controllers (NestJS-style, no decorators)
+
+Prefer classes for grouping and dependency injection? A controller is just a
+class whose **fields are procedures** — put an *instance* in the router. You get
+NestJS-style structure and constructor DI without decorators, `reflect-metadata`,
+or `experimentalDecorators`.
+
+```ts
+export class UsersController {
+  private db: Db;
+  constructor(db: Db) { this.db = db; }          // constructor injection
+
+  list = route.get("/users").handler(() => this.db.users.all());
+  create = route
+    .post("/users")
+    .input(s.object({ name: s.string() }))
+    .ai({ description: "Create a user" })         // still an LLM/MCP tool
+    .handler(({ input }) => this.db.users.insert(input));
+}
+
+export const appRouter = {
+  users: new UsersController(db),                 // an instance = a sub-router
+  posts: new PostsController(db),
+} satisfies RouterRecord;
+```
+
+| NestJS | nexus-rpc |
+|---|---|
+| `@Controller()` class | plain class with procedure fields |
+| `@Get()` / `@Post()` decorators | `.get()` / `.post()` on the builder |
+| `@Injectable()` + DI container | constructor injection (`new Ctrl(deps)`) |
+| `@Module()` | compose the router object |
+| decorators / `reflect-metadata` | none |
+
+Handlers are arrow-function fields, so they close over `this` for injected
+dependencies. Inference, dispatch, REST, OpenAPI, and MCP all work unchanged.
+
 ## How it compares
 
 | | tRPC | ts-rest | Hono | **nexus-rpc** |
