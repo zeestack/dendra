@@ -6,6 +6,7 @@
 
 **The typed API framework where every procedure is also an LLM tool and an MCP server — with zero extra work.**
 
+[![npm](https://img.shields.io/npm/v/dendra?color=7c9cff&label=npm)](https://www.npmjs.com/package/dendra)
 [![CI](https://github.com/zeestack/dendra/actions/workflows/ci.yml/badge.svg)](https://github.com/zeestack/dendra/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-7c9cff.svg)](LICENSE)
 [![runtime deps](https://img.shields.io/badge/runtime%20deps-0-5be3b3.svg)](package.json)
@@ -68,12 +69,12 @@ against.
 
 ## Quickstart
 
-> **Not yet on npm.** Use it from source for now:
->
-> ```bash
-> git clone https://github.com/zeestack/dendra
-> cd dendra && npm install && npm run build
-> ```
+```bash
+npm i dendra
+```
+
+The core is zero-dependency. The optional helpers pull their own peers only if you
+use them: `npm i @anthropic-ai/sdk` for `dendra/anthropic`, `react` for `dendra/react`.
 
 **Define** once:
 
@@ -329,7 +330,8 @@ streaming), NDJSON streaming with cancellation, WebSocket transport, middleware
 class controllers, AI tools, MCP (stdio + remote HTTP, consume external MCP
 servers), and optional `dendra/anthropic` + `dendra/react` helpers.
 
-Not yet: published to npm. APIs may change before 1.0.
+Published on npm as [`dendra`](https://www.npmjs.com/package/dendra). APIs may
+change before 1.0.
 
 ## License
 
