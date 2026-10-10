@@ -60,6 +60,11 @@ export type { RedisPubSubClient } from "./redis-pubsub.ts";
 export { DendraError, DendraClientError } from "./errors.ts";
 export type { ErrorCode } from "./errors.ts";
 
+// Shared agent types. The agentic loop (`dendra/anthropic`) and the React hook
+// (`dendra/react`) are optional subpath exports (they pull in peer deps), but the
+// part type they exchange is dependency-free and lives in core.
+export type { AgentPart, AgentTextPart, AgentToolPart } from "./agent.ts";
+
 // Built-in Standard-Schema validators, namespaced as `s`.
 export * as s from "./schema.ts";
 export type {

@@ -7,6 +7,7 @@
 // override with ANTHROPIC_MODEL (e.g. claude-haiku-5-5 for a snappier demo).
 
 import Anthropic from "@anthropic-ai/sdk";
+import { runAgent } from "dendra/anthropic";
 import type { ChatPart } from "../lib/chat-types.ts";
 
 const MODEL = process.env.ANTHROPIC_MODEL ?? "claude-opus-5-5";
@@ -83,10 +84,11 @@ export async function summarize(text: string): Promise<string> {
 }
 
 /**
- * Generative-UI assistant: runs the agentic loop and yields typed PARTS —
- * text deltas as they stream, and a tool part (with its result) each time the
- * model calls a tool. The client renders a component per tool part.
- * `tools` and `execute` are supplied by the router (from the same appRouter).
+ * Generative-UI assistant. The agentic loop itself is the framework's `runAgent`
+ * (from `dendra/anthropic`) — tool-name sanitizing, thinking-block handling, the
+ * model↔tool loop, and typed-part streaming are all handled there. This wrapper
+ * just supplies the client/model and the no-key fallback. `tools` and `execute`
+ * come from the router (via mergeToolsets).
  */
 export async function* streamAssistant(
   prompt: string,
@@ -102,75 +104,16 @@ export async function* streamAssistant(
     yield { type: "text", text: "(no valid ANTHROPIC_API_KEY — set one in .env.local)" };
     return;
   }
-
-  // Anthropic tool names must match ^[a-zA-Z0-9_-]+$ — our names are dotted
-  // (notes.list), so sanitize for the model and map back on execution. The
-  // client registry stays keyed by the real dotted name.
-  const safeToOriginal = new Map<string, string>();
-  const tools = (opts.tools as Anthropic.Tool[]).map((t) => {
-    const safe = t.name.replace(/[^a-zA-Z0-9_-]/g, "_");
-    safeToOriginal.set(safe, t.name);
-    return { ...t, name: safe };
+  // AgentPart and ChatPart are the same shape — one line, the whole loop.
+  yield* runAgent({
+    client: c,
+    model: MODEL,
+    tools: opts.tools,
+    execute: opts.execute,
+    prompt,
+    system: opts.system,
+    signal: opts.signal,
   });
-
-  const messages: Anthropic.MessageParam[] = [
-    { role: "user", content: prompt },
-  ];
-
-  // A few hops max: model → tool(s) → model → … → final text.
-  for (let step = 0; step < 4; step++) {
-    const stream = c.messages.stream(
-      { model: MODEL, max_tokens: 1024, system: opts.system, tools, messages },
-      { signal: opts.signal },
-    );
-    for await (const event of stream) {
-      if (
-        event.type === "content_block_delta" &&
-        event.delta.type === "text_delta"
-      ) {
-        yield { type: "text", text: event.delta.text };
-      }
-    }
-
-    const final = await stream.finalMessage();
-    // Opus 5.5 always thinks; with display "omitted" (default) the thinking blocks
-    // come back empty, and echoing an empty thinking block into the next request
-    // is a 400 ("each thinking block must contain thinking"). Strip them before
-    // re-sending — we only need the text + tool_use blocks to continue the loop.
-    const replayContent = final.content.filter((b) => {
-      const t = (b as { type: string }).type;
-      return t !== "thinking" && t !== "redacted_thinking";
-    });
-    messages.push({ role: "assistant", content: replayContent });
-
-    const toolUses = final.content.filter(
-      (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
-    );
-    if (final.stop_reason !== "tool_use" || toolUses.length === 0) return;
-
-    const toolResults: Anthropic.ToolResultBlockParam[] = [];
-    for (const tu of toolUses) {
-      const original = safeToOriginal.get(tu.name) ?? tu.name;
-      let result: unknown;
-      let isError = false;
-      try {
-        result = await opts.execute(original, tu.input);
-      } catch (e) {
-        result = (e as Error).message;
-        isError = true;
-      }
-      // This is the generative-UI event: the client renders a component for it.
-      // Use the original dotted name so the client registry matches.
-      yield { type: "tool", name: original, input: tu.input, result, isError };
-      toolResults.push({
-        type: "tool_result",
-        tool_use_id: tu.id,
-        content: JSON.stringify(result),
-        is_error: isError,
-      });
-    }
-    messages.push({ role: "user", content: toolResults });
-  }
 }
 
 function echoReply(prompt: string): string {

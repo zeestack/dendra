@@ -7,14 +7,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAssistant } from "dendra/react";
 import { api } from "@/lib/api";
 import type { ChatPart } from "@/lib/chat-types";
 import type { Note } from "@/server/db";
 
 type ToolPart = Extract<ChatPart, { type: "tool" }>;
-type Item =
-  | { role: "user"; text: string }
-  | { role: "assistant"; parts: ChatPart[] };
 type McpServer = {
   id: string;
   server: string;
@@ -64,9 +62,6 @@ const REGISTRY: Record<string, React.FC<{ part: ToolPart }>> = {
 
 export default function AssistantPage() {
   const router = useRouter();
-  const [items, setItems] = useState<Item[]>([]);
-  const [input, setInput] = useState("show my notes");
-  const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [servers, setServers] = useState<McpServer[]>([]);
@@ -77,6 +72,37 @@ export default function AssistantPage() {
   const [connError, setConnError] = useState("");
   const [connNote, setConnNote] = useState("");
   const bottom = useRef<HTMLDivElement>(null);
+
+  // The chat thread + streaming is the framework's useAssistant hook. The page
+  // only supplies the stream source and the app-specific side effects.
+  const { items, input, setInput, busy, send } = useAssistant({
+    stream: (prompt) => api.ai.assistant({ prompt }),
+    initialInput: "show my notes",
+    // ui.navigate is a client action: the server tool returns a path; we route.
+    onPart: (part) => {
+      if (part.type === "tool" && part.name === "ui.navigate") {
+        const to = (part.result as { to?: string })?.to;
+        if (to) router.push(to);
+      }
+    },
+    // Speak the reply only when the turn came from voice (meta.spoken).
+    onDone: (parts, meta) => {
+      if (!meta.spoken) return;
+      const text = parts
+        .filter((p): p is Extract<ChatPart, { type: "text" }> => p.type === "text")
+        .map((p) => p.text)
+        .join("")
+        .trim();
+      if (text && typeof window !== "undefined" && "speechSynthesis" in window) {
+        try {
+          window.speechSynthesis.cancel();
+          window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+        } catch {
+          /* TTS unavailable — ignore */
+        }
+      }
+    },
+  });
 
   // Only touch browser-only APIs after mount so SSR and the first client render
   // agree (avoids a hydration mismatch on the voice button).
@@ -146,57 +172,6 @@ export default function AssistantPage() {
     bottom.current?.scrollIntoView({ behavior: "smooth" });
   }, [items]);
 
-  async function send(override?: string, speakReply = false) {
-    const prompt = (override ?? input).trim();
-    if (!prompt || busy) return;
-    setInput("");
-    setBusy(true);
-    setItems((c) => [
-      ...c,
-      { role: "user", text: prompt },
-      { role: "assistant", parts: [] },
-    ]);
-    let spoken = ""; // accumulate the reply text to speak (TTS)
-    try {
-      for await (const part of api.ai.assistant({ prompt })) {
-        if (part.type === "text") spoken += part.text;
-        setItems((c) => {
-          const copy = c.slice();
-          const last = copy[copy.length - 1];
-          if (last?.role !== "assistant") return c;
-          const parts = last.parts.slice();
-          const prev = parts[parts.length - 1];
-          if (part.type === "text" && prev?.type === "text") {
-            parts[parts.length - 1] = { type: "text", text: prev.text + part.text };
-          } else {
-            parts.push(part);
-          }
-          copy[copy.length - 1] = { role: "assistant", parts };
-          return copy;
-        });
-        // ui.navigate is a client action: the server tool just returns the path;
-        // the client performs the actual route change.
-        if (part.type === "tool" && part.name === "ui.navigate") {
-          const to = (part.result as { to?: string })?.to;
-          if (to) router.push(to);
-        }
-      }
-    } finally {
-      setBusy(false);
-      // Speak the reply only when the request came from VOICE — typed messages
-      // stay silent. (browser SpeechSynthesis — no deps, no server.)
-      const text = spoken.trim();
-      if (speakReply && text && typeof window !== "undefined" && "speechSynthesis" in window) {
-        try {
-          window.speechSynthesis.cancel();
-          window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
-        } catch {
-          /* TTS unavailable — ignore */
-        }
-      }
-    }
-  }
-
   // --- Voice input (browser SpeechRecognition — Chrome/Edge, HTTPS/localhost) --
   const voiceSupported =
     mounted &&
@@ -216,7 +191,8 @@ export default function AssistantPage() {
     rec.onresult = (e: any) => {
       const transcript = String(e.results[0][0].transcript);
       setInput(transcript);
-      void send(transcript, true); // STT → pipeline, and speak the reply back
+      // Passing an override marks the turn as voice (meta.spoken) → reply is read.
+      void send(transcript);
     };
     rec.onerror = () => setListening(false);
     rec.onend = () => setListening(false);

@@ -47,6 +47,15 @@ specific MCP server. You define a procedure once and it becomes every surface.
 | **Your app AS an MCP server** | `mcpToolDefinitions`, `createMcpBridge` | `mcp.ts` |
 | **Consume OTHER MCP servers** | `createMcpToolSource`, `mergeToolsets`, `toToolSource` | `tools.ts`, `mcp.ts` |
 | Errors | `DendraError`, `DendraClientError` | `errors.ts` |
+| _Optional:_ agentic loop (`dendra/anthropic`) | `runAgent` | `anthropic.ts` |
+| _Optional:_ chat hook (`dendra/react`) | `useAssistant` | `react.ts` |
+
+**Optional subpaths.** `dendra/anthropic` and `dendra/react` are separate exports
+with **optional peer dependencies** (`@anthropic-ai/sdk`, `react`). They remove
+the boilerplate of a tool-using chat — the model↔tool loop and the chat
+thread/streaming — but importing them is opt-in, so `import … from "dendra"` stays
+zero-dependency. They exchange one shared `AgentPart` type (defined dep-free in
+`agent.ts`), which is what lets the loop's output feed the hook directly.
 
 ### The subtle one: consuming external MCP servers
 

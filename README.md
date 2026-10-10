@@ -175,6 +175,36 @@ The example wires this into the chat: set `EXTERNAL_MCP_URL` (remote HTTP) or
 zero-config in-process demo server (`ext.weather.get`, `ext.time.now`). See
 [`server/mcp-tools.ts`](examples/nextjs-app/server/mcp-tools.ts).
 
+### Optional helpers: the agentic loop + a React hook
+
+The core stays zero-dependency, but two **optional subpath exports** remove the
+boilerplate of a tool-using chat. They exchange one shared `AgentPart` type, so
+they snap together — the loop emits parts, the hook renders them:
+
+```ts
+// server — dendra/anthropic (peer dep: @anthropic-ai/sdk)
+import { runAgent } from "dendra/anthropic";
+const { tools, execute } = mergeToolsets(toToolSource(appRouter, ctx), external);
+yield* runAgent({ client, model, tools, execute, prompt, system });
+// yields { type:"text" } / { type:"tool", … } — model↔tool loop, name sanitizing,
+// and thinking-block handling all done for you.
+```
+
+```tsx
+// client — dendra/react (peer dep: react)
+import { useAssistant } from "dendra/react";
+const { items, input, setInput, busy, send } = useAssistant({
+  stream: (prompt) => api.ai.assistant({ prompt }),   // the runAgent stream
+  onPart: (p) => { /* e.g. act on a tool as it arrives */ },
+  onDone: (parts, { spoken }) => { /* e.g. speak the reply */ },
+});
+// You keep rendering (your generative-UI registry) and side effects; the hook
+// owns the thread, streaming, and part accumulation.
+```
+
+Neither is required — bring your own loop/UI and just use `mergeToolsets`. The
+[Next.js example](examples/nextjs-app/) uses both.
+
 ## Middleware & auth (`.use()`)
 
 Run logic before a handler — authentication, logging, rate-limiting — and enrich

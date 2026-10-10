@@ -16,10 +16,28 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./anthropic": {
+      "types": "./dist/anthropic.d.ts",
+      "import": "./dist/anthropic.js",
+      "require": "./dist/anthropic.cjs"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
+      "require": "./dist/react.cjs"
     }
   },
   "files": ["dist", "src", "README.md"],
   "sideEffects": false,
+  "peerDependencies": {
+    "@anthropic-ai/sdk": ">=0.30.0",
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "@anthropic-ai/sdk": { "optional": true },
+    "react": { "optional": true }
+  },
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
@@ -41,7 +59,10 @@
     "typed-client"
   ],
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.30.1",
     "@types/node": "^22.7.0",
+    "@types/react": "^18.3.11",
+    "react": "^18.3.1",
     "tsup": "^8.3.0",
     "typescript": "^5.6.3",
     "vitest": "^2.1.9"

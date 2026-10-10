@@ -1,14 +1,6 @@
-// The streamed "parts" of an assistant turn. Text parts render as text; tool
-// parts render a React component chosen by `name` (see the client registry).
-// Shared by server (what it yields) and client (what it renders) — one type,
-// so the generative-UI contract is typesafe end to end.
+// The streamed "parts" of an assistant turn, shared by server (what it yields)
+// and client (what it renders). This IS the framework's AgentPart — `runAgent`
+// (dendra/anthropic) emits it and `useAssistant` (dendra/react) consumes it — so
+// the generative-UI contract is one type, end to end.
 
-export type ChatPart =
-  | { type: "text"; text: string }
-  | {
-      type: "tool";
-      name: string;
-      input: unknown;
-      result: unknown;
-      isError?: boolean;
-    };
+export type { AgentPart as ChatPart } from "dendra";
