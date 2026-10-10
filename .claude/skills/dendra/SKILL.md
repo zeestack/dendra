@@ -1,0 +1,105 @@
+---
+name: dendra
+description: "Build and extend typed APIs with the dendra framework — define a procedure once and get a typed client, REST + OpenAPI, streaming, real-time, an LLM tool, and an MCP server, with no decorators or codegen. Use when the user asks to scaffold a dendra app or Next.js API, add or change a procedure/route/REST endpoint/subscription, expose procedures to an LLM or as an MCP server (stdio or remote HTTP), consume tools from an external MCP server, or wire a tool-using chat/agent. Also use when a repo already depends on `dendra` and the task touches its router, client, adapters, or AI/MCP layer."
+license: MIT
+metadata:
+  version: "0.1.0"
+  homepage: https://github.com/zeestack/dendra
+---
+
+# Building with dendra
+
+dendra turns one procedure definition into every surface: a typed client, a REST
+endpoint, OpenAPI, streaming, an in-process caller, an LLM tool, and an MCP server.
+No decorators, no codegen; the core is zero-dependency. Author in TypeScript and
+let inference do the rest — never hand-write client types or `.d.ts`.
+
+## Before writing code
+
+- Check `package.json` for `dendra`; if absent, `npm i dendra`.
+- Find the router (usually `server/router.ts`) and the context factory
+  (`server/context.ts`). Match the existing file layout and style.
+- Optional peers, only if the task needs them: `@anthropic-ai/sdk` for
+  `dendra/anthropic`, `react` for `dendra/react`.
+
+## The core pattern — define → serve → call
+
+1. **Define** procedures on the router (`initDendra<Ctx>()` → `route`):
+   - Unary: `route.input(schema).handler(({ input, ctx }) => …)`.
+   - REST: add a path — `.get("/x")`, `.post("/x")`, `.delete("/x/:id")`.
+   - Streaming / real-time: `.stream(async function* ({ ctx }) { yield … })`.
+   - Typed output (and OpenAPI response): `.output(schema)`.
+   - Expose to an LLM/MCP as a tool: `.ai({ description: "…" })` (opt-in).
+   - Keep the object `satisfies RouterRecord` — unless it contains a class
+     controller instance, which has no index signature (then drop `satisfies`;
+     `Client<AppRouter>` still validates it).
+   - `export type AppRouter = typeof appRouter;`
+2. **Serve** with the right adapter:
+   - Next.js App Router: `toNextHandler(appRouter, { prefix: "/rpc/", createContext })`
+     in `app/rpc/[...path]/route.ts`, with `export const runtime = "nodejs"` and
+     `dynamic = "force-dynamic"` (streaming needs Node, not edge).
+   - Else: `toFetchHandler` (Hono/Bun/Deno/Workers), `toNodeHandler` (`node:http`),
+     `toRestHandler` (plain REST). `toOpenApiDocument(appRouter, info)` emits 3.1.
+3. **Call** with the inferred client: `createClient<AppRouter>(baseUrl, { prefix })`.
+   In a Server Component, use `createCaller(appRouter, ctx)` (no HTTP).
+
+## Context, auth, middleware
+
+`createContext(req)` builds `ctx` (user/tenant/db/pubsub). dendra never
+authenticates — guard with middleware, which runs on **every** transport
+(RPC, REST, caller, WS, and AI/MCP tools):
+
+```ts
+const authed = route.use(({ ctx }) => {
+  if (!ctx.user) throw new DendraError("UNAUTHORIZED", "Sign in");
+  return { user: ctx.user };            // merged into ctx, typed downstream
+});
+```
+
+A tool behind `.use(auth)` is auth-guarded for the model too — it inherits the
+user's permissions.
+
+## AI / MCP
+
+```ts
+import { toToolset, createToolExecutor, mcpToolDefinitions,
+         toToolSource, mergeToolsets, createMcpToolSource } from "dendra";
+
+const tools = toToolset(appRouter, { format: "anthropic" }); // openai | plain
+const execute = createToolExecutor(appRouter, ctx);          // validated, ctx-scoped
+
+// Serve your procedures AS an MCP server: feed mcpToolDefinitions(appRouter) +
+// createMcpBridge to the official @modelcontextprotocol/sdk transport.
+
+// Consume an EXTERNAL MCP server and merge its tools with your local ones:
+const local = toToolSource(appRouter, ctx, { format: "anthropic" });
+const external = await createMcpToolSource(connectedClient, { prefix: "gh." });
+const { tools, execute } = mergeToolsets(local, external);   // one flat toolset
+```
+
+Optional, opt-in helpers:
+- `dendra/anthropic` → `runAgent({ client, model, tools, execute, prompt, system })`
+  runs the model↔tool loop, yielding typed `AgentPart`s (text + tool parts).
+- `dendra/react` → `useAssistant({ stream, onPart, onDone })` owns the chat thread
+  and streaming; the app keeps rendering and side effects.
+
+## The framework ↔ app boundary — enforce it
+
+> Would **every** dendra user want this, regardless of their DB, auth, UI, or
+> which servers they connect to? Yes → it belongs in the framework. No → the app.
+
+So put these in the **app**, never inside framework calls: authentication, UI and
+navigation, voice, and MCP **connection** management (transports, a connection
+registry, OAuth to remote servers). dendra provides only the typed-procedure and
+tool-shaping primitives; it takes an already-connected MCP client, never a token.
+
+## Checklist before finishing
+
+- `tsc --noEmit` is clean and the client type infers (no `any`, no codegen files).
+- New tool procedures have `.ai({ description })`; sensitive ones sit behind `.use()`.
+- Streaming routes run on the Node runtime.
+- No auth/UI/connection/OAuth logic leaked into framework wiring.
+- Prefer `mergeToolsets` + your own loop unless `runAgent`/`useAssistant` clearly help.
+
+Full reference: the project's `README.md`, `ARCHITECTURE.md`, and the worked
+`examples/nextjs-app/`.

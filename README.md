@@ -294,6 +294,19 @@ Not trying to out-tRPC tRPC on HTTP — winning on the AI/MCP seam.
 navigation, voice, and MCP connection/OAuth management are app concerns while only
 the typed-procedure and tool-shaping primitives live in the framework.
 
+## For AI coding agents
+
+Building an app *with* dendra? Two aids ship in the repo:
+
+- [`AGENTS.md`](AGENTS.md) — a compact cheat sheet (install, the define→serve→call
+  pattern, conventions, and the framework-vs-app rule) that any coding agent can read.
+- A packaged skill at [`.claude/skills/dendra/`](.claude/skills/dendra/SKILL.md) —
+  available automatically when this repo is opened in Claude Code; it teaches an
+  agent to scaffold and extend a dendra app idiomatically.
+
+(Consuming a running dendra app's tools *at runtime* needs no skill — that's just
+MCP; point any MCP client at its `/api/mcp` or stdio server.)
+
 ## Examples
 
 <div align="center">
