@@ -18,8 +18,19 @@ export type NoteEvent =
   | { type: "created"; note: Note }
   | { type: "deleted"; id: string };
 
-const g = globalThis as unknown as { __nexusNotes?: Note[] };
+export interface User {
+  id: string;
+  tenantId: string;
+  name: string;
+  email: string;
+}
+
+const g = globalThis as unknown as {
+  __nexusNotes?: Note[];
+  __nexusUsers?: User[];
+};
 const store: Note[] = (g.__nexusNotes ??= []);
+const userStore: User[] = (g.__nexusUsers ??= []);
 
 export const db = {
   notes: {
@@ -50,6 +61,25 @@ export const db = {
       if (i === -1) return false;
       store.splice(i, 1);
       return true;
+    },
+  },
+  users: {
+    all: async (tenantId: string): Promise<User[]> =>
+      userStore.filter((u) => u.tenantId === tenantId),
+    find: async (tenantId: string, id: string): Promise<User | null> =>
+      userStore.find((u) => u.tenantId === tenantId && u.id === id) ?? null,
+    insert: async (
+      tenantId: string,
+      input: { name: string; email: string },
+    ): Promise<User> => {
+      const user: User = {
+        id: "usr_" + Math.random().toString(36).slice(2, 8),
+        tenantId,
+        name: input.name,
+        email: input.email,
+      };
+      userStore.push(user);
+      return user;
     },
   },
 };

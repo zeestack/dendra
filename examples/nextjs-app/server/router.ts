@@ -12,12 +12,15 @@ import {
 } from "nexus-rpc";
 import type { Ctx } from "./context.ts";
 import type { Note, NoteEvent } from "./db.ts";
+import { db } from "./db.ts";
 import { streamChat, streamAssistant, summarize } from "./llm.ts";
 import type { ChatPart } from "../lib/chat-types.ts";
+import { UsersController } from "./users.controller.ts";
 
 const { route } = initNexus<Ctx>();
 
-export const appRouter = {
+// Plain-object procedures (keep `satisfies RouterRecord` for authoring safety).
+const coreRouter = {
   notes: {
     // RPC + REST: GET /api/notes  — scoped to ctx.tenantId automatically
     // .ai() also exposes it to Claude via MCP.
@@ -86,6 +89,8 @@ export const appRouter = {
           "notes.list — list the notes in this workspace",
           "notes.create — create a note { title, body }",
           "notes.delete — delete a note by { id }",
+          "users.list — list users in this workspace",
+          "users.create — create a user { name, email }",
           "ai.summarize — summarize a piece of text into one sentence",
         ],
       })),
@@ -120,5 +125,13 @@ export const appRouter = {
       }),
   },
 } satisfies RouterRecord;
+
+// Merge a NestJS-style class controller in. A class instance has no index
+// signature, so the combined router can't use `satisfies RouterRecord` — the
+// consumer functions accept `object` and `Client<AppRouter>` validates the shape.
+export const appRouter = {
+  ...coreRouter,
+  users: new UsersController(db),
+};
 
 export type AppRouter = typeof appRouter;
