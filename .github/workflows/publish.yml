@@ -32,10 +32,15 @@ jobs:
       - name: Publish if this version is new
         run: |
           VER=$(node -p "require('./package.json').version")
-          if npm view "dendra@$VER" version >/dev/null 2>&1; then
-            echo "dendra@$VER is already on npm — skipping publish."
-          else
-            npm publish --provenance --access public
-          fi
+          # npm staging can lag a minute after a manual publish — poll before deciding.
+          for i in 1 2 3 4 5 6; do
+            if npm view "dendra@$VER" version >/dev/null 2>&1; then
+              echo "dendra@$VER is already on npm — skipping publish."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "dendra@$VER not found after polling — publishing."
+          npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
