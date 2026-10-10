@@ -106,6 +106,7 @@
       <a href="#why">Why</a>
       <a href="#quickstart">Quickstart</a>
       <a href="#ai">AI / MCP</a>
+      <a href="#middleware">Middleware</a>
       <a href="#controllers">Classes</a>
       <a class="btn" href="https://github.com/zeestack/nexus-rpc">GitHub ↗</a>
     </div>
@@ -223,6 +224,30 @@
   </div>
 </section>
 
+<section id="middleware">
+  <div class="wrap">
+    <h2>Middleware &amp; auth</h2>
+    <p class="lead">Run logic before a handler — auth, logging, rate-limiting — and
+      enrich the context. One <code>.use()</code> runs across <strong>every</strong>
+      transport (RPC, REST, the caller, WebSocket, and AI/MCP tools). Auth stays
+      your app's responsibility; the framework just provides the seam.</p>
+<pre><code><span class="k">const</span> authed = route.<span class="f">use</span>(({ ctx }) => {
+  <span class="k">if</span> (!ctx.token) <span class="k">throw new</span> <span class="f">NexusError</span>(<span class="s">"UNAUTHORIZED"</span>, <span class="s">"Sign in"</span>);
+  <span class="k">return</span> { userId: <span class="f">lookup</span>(ctx.token) };   <span class="c">// merged into ctx, typed downstream</span>
+});
+
+<span class="k">const</span> appRouter = {
+  me:     authed.<span class="f">handler</span>(({ ctx }) => ctx.userId),      <span class="c">// ctx.userId is typed</span>
+  delete: authed.<span class="f">input</span>(…).<span class="f">ai</span>({ … }).<span class="f">handler</span>(…),      <span class="c">// the tool is auth-guarded too</span>
+};</code></pre>
+    <p class="lead" style="margin-top:14px">Middlewares <strong>stack</strong> (each
+      sees the previous one's additions) and <strong>reject by throwing</strong>.
+      Because an AI/MCP tool runs the same path, a procedure behind
+      <code>.use(auth)</code> is guarded for the model too — it inherits the user's
+      permissions, it can't bypass them.</p>
+  </div>
+</section>
+
 <section id="controllers">
   <div class="wrap">
     <h2>Class controllers (NestJS-style, no decorators)</h2>
@@ -278,9 +303,11 @@
   <div class="wrap">
     <h2>Also in the box</h2>
     <div class="grid">
-      <div class="card"><div class="ic">🔌</div><h3>REST + OpenAPI</h3><p>Give a procedure a path; serve REST and emit a 3.1 spec from the same schemas.</p></div>
-      <div class="card"><div class="ic">📡</div><h3>Real-time</h3><p>Subscriptions are streaming procedures over a pluggable pub/sub (in-memory → Redis/NATS).</p></div>
+      <div class="card"><div class="ic">🛡️</div><h3>Middleware &amp; auth</h3><p><code>.use()</code> runs before handlers across every transport; rejects or enriches ctx (typed). Auth stays <em>your</em> app's job.</p></div>
+      <div class="card"><div class="ic">🔌</div><h3>REST + OpenAPI</h3><p>Give a procedure a path and <code>.output(schema)</code>; serve REST and emit a 3.1 spec from the same schemas.</p></div>
+      <div class="card"><div class="ic">📡</div><h3>Real-time</h3><p>Subscriptions are streaming procedures over a pluggable pub/sub — in-memory, or <code>createRedisPubSub</code> for multi-instance.</p></div>
       <div class="card"><div class="ic">🔁</div><h3>WebSocket</h3><p>Multiplex unary calls + subscriptions over one socket, same router, outside serverless.</p></div>
+      <div class="card"><div class="ic">📦</div><h3>Request batching</h3><p><code>{ batch: true }</code> collapses same-tick unary calls into one HTTP round-trip.</p></div>
       <div class="card"><div class="ic">✅</div><h3>Standard Schema</h3><p>Zod, Valibot, ArkType, or the built-in validators — your choice, one interface.</p></div>
       <div class="card"><div class="ic">⚡</div><h3>In-process caller</h3><p>Call procedures from Server Components with zero HTTP round-trip.</p></div>
       <div class="card"><div class="ic">🧪</div><h3>Tested</h3><p>Runtime + type-level tests, tsup build (ESM + CJS + d.ts), CI on every push.</p></div>
