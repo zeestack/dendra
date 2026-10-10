@@ -60,7 +60,7 @@ table stakes it also happens to get right.
 <div align="center">
 <img src="assets/arch-framework.png" alt="dendra framework architecture: one definition branches into typed client, REST + OpenAPI, in-process caller, streaming, LLM tools, and an MCP server" width="820">
 <br>
-<sub><a href="https://htmlpreview.github.io/?https://github.com/zeestack/dendra/blob/main/docs/architecture/framework.html">▶ open the interactive diagram</a></sub>
+<sub><a href="https://products.techfoundry.io/dendra/architecture/framework.html">▶ open the interactive diagram</a></sub>
 </div>
 
 The router is used **twice from one definition**: as a *type* that flows to the
@@ -299,7 +299,7 @@ the typed-procedure and tool-shaping primitives live in the framework.
 <div align="center">
 <img src="assets/arch-example.png" alt="dendra example app architecture: browser and Claude talk to Next.js routes and the appRouter, which uses SQLite, pub/sub, runAgent, and an MCP connection registry with OAuth" width="820">
 <br>
-<sub><a href="https://htmlpreview.github.io/?https://github.com/zeestack/dendra/blob/main/docs/architecture/example.html">▶ open the interactive diagram</a></sub>
+<sub><a href="https://products.techfoundry.io/dendra/architecture/example.html">▶ open the interactive diagram</a></sub>
 </div>
 
 - [`examples/demo.ts`](examples/demo.ts) — caller, unary, validation, streaming, AI tools, pub/sub.
