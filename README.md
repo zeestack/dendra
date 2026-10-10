@@ -285,6 +285,13 @@ npm run demo       # boots a server + typed client, exercises everything
 npm run demo:restws
 ```
 
+## Architecture
+
+[`ARCHITECTURE.md`](ARCHITECTURE.md) explains the split between the **framework**
+(`dendra`, in `src/`) and the **app** (the Next.js example) — and why auth,
+navigation, voice, and MCP connection/OAuth management are app concerns while only
+the typed-procedure and tool-shaping primitives live in the framework.
+
 ## Examples
 
 - [`examples/demo.ts`](examples/demo.ts) — caller, unary, validation, streaming, AI tools, pub/sub.
