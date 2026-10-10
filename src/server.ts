@@ -35,6 +35,48 @@ export function toFetchHandler<Ctx>(
       );
     }
     const dotted = url.pathname.slice(prefix.length);
+
+    let ctx: unknown = {};
+    try {
+      ctx = (await opts.createContext?.(req)) ?? {};
+    } catch (e) {
+      return errorToResponse(e);
+    }
+
+    // Batch: POST <prefix>__batch with [{ path, input }, ...] → [{ result }|{ error }, ...]
+    // in the same order. One context for the whole batch; unary procedures only.
+    if (dotted === "__batch") {
+      let calls: Array<{ path: string; input?: unknown }>;
+      try {
+        calls = JSON.parse(await req.text());
+        if (!Array.isArray(calls)) throw new Error("not an array");
+      } catch {
+        return jsonResponse(
+          { error: { code: "BAD_REQUEST", message: "Batch body must be an array" } },
+          400,
+        );
+      }
+      const results = await Promise.all(
+        calls.map(async (call) => {
+          const p = resolveProc(root, (call.path ?? "").split(".").filter(Boolean));
+          if (!p || p.kind !== "unary") {
+            return {
+              error: {
+                code: "NOT_FOUND",
+                message: `Procedure '${call.path}' not found (or not unary)`,
+              },
+            };
+          }
+          try {
+            return { result: await invokeUnary(p, call.input, ctx) };
+          } catch (e) {
+            return { error: errorBody(e) };
+          }
+        }),
+      );
+      return jsonResponse(results, 200);
+    }
+
     const proc = resolveProc(root, dotted.split(".").filter(Boolean));
     if (!proc) {
       return jsonResponse(
@@ -46,13 +88,6 @@ export function toFetchHandler<Ctx>(
         },
         404,
       );
-    }
-
-    let ctx: unknown = {};
-    try {
-      ctx = (await opts.createContext?.(req)) ?? {};
-    } catch (e) {
-      return errorToResponse(e);
     }
 
     let raw: unknown;
@@ -276,15 +311,23 @@ function jsonResponse(body: unknown, status: number): Response {
   });
 }
 
-function errorToResponse(e: unknown): Response {
+function errorBody(e: unknown): {
+  code: string;
+  message: string;
+  details?: unknown;
+} {
   if (e instanceof NexusError) {
-    return jsonResponse(
-      { error: { code: e.code, message: e.message, details: e.details } },
-      e.status,
-    );
+    return { code: e.code, message: e.message, details: e.details };
   }
-  const message = e instanceof Error ? e.message : "Internal error";
-  return jsonResponse({ error: { code: "INTERNAL", message } }, 500);
+  return {
+    code: "INTERNAL",
+    message: e instanceof Error ? e.message : "Internal error",
+  };
+}
+
+function errorToResponse(e: unknown): Response {
+  const status = e instanceof NexusError ? e.status : 500;
+  return jsonResponse({ error: errorBody(e) }, status);
 }
 
 function ndjsonResponse(iterable: AsyncIterable<unknown>): Response {

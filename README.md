@@ -232,6 +232,8 @@ Not trying to out-tRPC tRPC on HTTP — winning on the AI/MCP seam.
   interface (in-memory for dev; swap Redis/NATS/Postgres for multi-instance).
 - **WebSocket** — `attachWs` / `connectWs` multiplex unary calls + subscriptions
   over one socket, same router, outside Next's serverless model.
+- **Request batching** — `createClient(url, { batch: true })` collects unary calls
+  made in the same tick into one HTTP round-trip (streaming stays direct).
 - **Standard Schema** — Zod, Valibot, ArkType, or the built-in `s.*` validators.
 
 ## Develop

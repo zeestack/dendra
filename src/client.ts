@@ -13,6 +13,18 @@ export interface ClientOptions {
   fetch?: typeof fetch;
   /** Must match the server's prefix. Default `/rpc/`. */
   prefix?: string;
+  /**
+   * Automatically batch unary calls made in the same tick into one HTTP request
+   * (POST <prefix>__batch). Streaming calls always go direct. Off by default.
+   */
+  batch?: boolean;
+}
+
+interface BatchCall {
+  path: string;
+  input: unknown;
+  resolve: (v: unknown) => void;
+  reject: (e: unknown) => void;
 }
 
 export function createClient<R extends object>(
@@ -23,6 +35,42 @@ export function createClient<R extends object>(
   const doFetch = opts.fetch ?? fetch;
   const base = baseUrl.replace(/\/$/, "");
 
+  // --- optional unary batching -------------------------------------------
+  let queue: BatchCall[] = [];
+  let scheduled = false;
+  const flush = async () => {
+    const calls = queue;
+    queue = [];
+    scheduled = false;
+    try {
+      const res = await doFetch(base + prefix + "__batch", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...(opts.headers ?? {}) },
+        body: JSON.stringify(calls.map((c) => ({ path: c.path, input: c.input ?? null }))),
+      });
+      const data = (await res.json()) as Array<{
+        result?: unknown;
+        error?: { code?: string; message?: string; details?: unknown };
+      }>;
+      calls.forEach((c, i) => {
+        const r = data[i];
+        if (r && r.error) c.reject(new NexusClientError(r.error));
+        else c.resolve(r ? r.result : undefined);
+      });
+    } catch (e) {
+      for (const c of calls) c.reject(e);
+    }
+  };
+  const enqueue = (path: string, input: unknown) =>
+    new Promise<unknown>((resolve, reject) => {
+      queue.push({ path, input, resolve, reject });
+      if (!scheduled) {
+        scheduled = true;
+        queueMicrotask(flush);
+      }
+    });
+  // -----------------------------------------------------------------------
+
   const build = (path: string[]): unknown =>
     new Proxy(noop, {
       get(_t, key) {
@@ -32,8 +80,12 @@ export function createClient<R extends object>(
         return build([...path, key]);
       },
       apply(_t, _this, args: unknown[]) {
-        const url = base + prefix + path.join(".");
-        return lazyCall(doFetch, url, args[0], opts.headers);
+        const dotted = path.join(".");
+        const url = base + prefix + dotted;
+        const batchUnary = opts.batch
+          ? (input: unknown) => enqueue(dotted, input)
+          : undefined;
+        return lazyCall(doFetch, url, args[0], opts.headers, batchUnary);
       },
     });
 
@@ -47,6 +99,7 @@ function lazyCall(
   url: string,
   input: unknown,
   headers?: Record<string, string>,
+  batchUnary?: (input: unknown) => Promise<unknown>,
 ) {
   const start = () =>
     doFetch(url, {
@@ -56,23 +109,25 @@ function lazyCall(
     });
 
   return {
-    // Unary path: awaiting the call reads a single JSON envelope.
+    // Unary path: awaiting the call reads a single JSON envelope — or joins the
+    // batch when batching is enabled.
     then<TResult1 = unknown, TResult2 = never>(
       onFulfilled?:
         | ((value: unknown) => TResult1 | PromiseLike<TResult1>)
         | null,
       onRejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
     ): Promise<TResult1 | TResult2> {
-      return start()
-        .then(async (res) => {
-          const data = (await res.json()) as {
-            result?: unknown;
-            error?: { code?: string; message?: string; details?: unknown };
-          };
-          if (data.error) throw new NexusClientError(data.error);
-          return data.result;
-        })
-        .then(onFulfilled, onRejected);
+      const result = batchUnary
+        ? batchUnary(input)
+        : start().then(async (res) => {
+            const data = (await res.json()) as {
+              result?: unknown;
+              error?: { code?: string; message?: string; details?: unknown };
+            };
+            if (data.error) throw new NexusClientError(data.error);
+            return data.result;
+          });
+      return result.then(onFulfilled, onRejected);
     },
     // Streaming path: iterating the call reads NDJSON frames. Breaking out of
     // the `for await` runs the `finally`, which cancels the body — closing the
