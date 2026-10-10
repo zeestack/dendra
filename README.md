@@ -135,6 +135,10 @@ await execute("add", modelProvidedArgs);   // bad args rejected like any input
 const defs = mcpToolDefinitions(appRouter);
 ```
 
+Streaming procedures can be tools too — when an LLM/MCP calls a `.stream()` tool,
+its chunks are **collected** into the tool result (string chunks are joined; other
+chunks become an array), so you can expose streaming work without a special path.
+
 The [Next.js example](examples/nextjs-app/) ships a working MCP server both ways:
 a **stdio** server for Claude Desktop (`mcp-server.ts`) and a **remote HTTP**
 endpoint (`app/api/mcp/route.ts`) for claude.ai — so Claude can list, create, and

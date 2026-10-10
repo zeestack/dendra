@@ -7,7 +7,7 @@
 
 import type { AnyProc, RouterRecord } from "./core.ts";
 import type { JSONSchema } from "./schema.ts";
-import { invokeUnary, resolveProc } from "./core.ts";
+import { invokeStream, invokeUnary, resolveProc } from "./core.ts";
 
 export type ToolFormat = "anthropic" | "openai" | "plain";
 
@@ -65,7 +65,16 @@ export function createToolExecutor<Ctx>(
     const proc = resolveProc(router as RouterRecord, name.split("."));
     if (!proc) throw new Error(`Tool '${name}' not found`);
     if (!proc.ai?.expose) throw new Error(`Tool '${name}' is not exposed to AI`);
-    // invokeUnary validates args first — the guardrail on model output.
+    // Streaming tools: collect the chunks into a single result (join strings,
+    // else return the array) so a streaming procedure can be an LLM/MCP tool.
+    // Validation runs first in both paths — the guardrail on model output.
+    if (proc.kind === "stream") {
+      const chunks: unknown[] = [];
+      for await (const chunk of invokeStream(proc, args, ctx)) chunks.push(chunk);
+      return chunks.every((c) => typeof c === "string")
+        ? chunks.join("")
+        : chunks;
+    }
     return invokeUnary(proc, args, ctx);
   };
 }
