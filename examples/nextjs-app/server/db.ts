@@ -1,9 +1,14 @@
-// Stand-in data layer. Swap for Prisma/Drizzle/etc. — nexus-rpc doesn't care.
-//
-// Every query is scoped by tenantId (from ctx) so tenants never see each other's
-// data. With a real DB this is a WHERE clause (or a schema/row-level-security
-// policy); here it's an in-memory filter. Cached on `globalThis` so all of Next's
-// per-route module instances share one store in dev.
+// Real data layer: Drizzle ORM over SQLite (better-sqlite3). The exported `db`
+// keeps the EXACT SAME interface the in-memory stub had, so nothing else in the
+// app changed — this is the "swap the stub for a real DB" moment. Every query is
+// still scoped by tenantId. The connection is cached on globalThis so Next's
+// dev-mode module reloads reuse one connection; the DB file lives in .data/.
+
+import { mkdirSync } from "node:fs";
+import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
+import { and, eq } from "drizzle-orm";
+import { notes as notesTable, users as usersTable } from "./schema.ts";
 
 export interface Note {
   id: string;
@@ -25,60 +30,81 @@ export interface User {
   email: string;
 }
 
-const g = globalThis as unknown as {
-  __nexusNotes?: Note[];
-  __nexusUsers?: User[];
-};
-const store: Note[] = (g.__nexusNotes ??= []);
-const userStore: User[] = (g.__nexusUsers ??= []);
+type Drizzle = ReturnType<typeof drizzle>;
+const g = globalThis as unknown as { __nexusDrizzle?: Drizzle };
+
+function getDb(): Drizzle {
+  if (g.__nexusDrizzle) return g.__nexusDrizzle;
+  mkdirSync(".data", { recursive: true });
+  const sqlite = new Database(".data/app.db");
+  sqlite.pragma("journal_mode = WAL");
+  // Bootstrap tables (idempotent) — avoids a separate migration step for the demo.
+  sqlite.exec(`
+    CREATE TABLE IF NOT EXISTS notes (
+      id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, user_id TEXT NOT NULL,
+      title TEXT NOT NULL, body TEXT NOT NULL, created_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL,
+      name TEXT NOT NULL, email TEXT NOT NULL
+    );
+  `);
+  g.__nexusDrizzle = drizzle(sqlite);
+  return g.__nexusDrizzle;
+}
+
+const id = (p: string) => p + Math.random().toString(36).slice(2, 8);
 
 export const db = {
   notes: {
-    // Scoped per TENANT (a shared workspace) — not per user — so a note created
-    // by Claude (via MCP) and viewed in the browser line up as long as the
-    // tenant matches. userId is still stored for display/attribution.
     all: async (tenantId: string): Promise<Note[]> =>
-      store.filter((n) => n.tenantId === tenantId),
+      getDb().select().from(notesTable).where(eq(notesTable.tenantId, tenantId)).all(),
     insert: async (
       tenantId: string,
       userId: string,
       input: { title: string; body: string },
     ): Promise<Note> => {
       const note: Note = {
-        id: "note_" + Math.random().toString(36).slice(2, 8),
+        id: id("note_"),
         tenantId,
         userId,
         title: input.title,
         body: input.body,
         createdAt: Date.now(),
       };
-      store.push(note);
+      getDb().insert(notesTable).values(note).run();
       return note;
     },
-    // Tenant-scoped delete: only removes a note that belongs to this tenant.
-    remove: async (tenantId: string, id: string): Promise<boolean> => {
-      const i = store.findIndex((n) => n.tenantId === tenantId && n.id === id);
-      if (i === -1) return false;
-      store.splice(i, 1);
-      return true;
+    remove: async (tenantId: string, noteId: string): Promise<boolean> => {
+      const res = getDb()
+        .delete(notesTable)
+        .where(and(eq(notesTable.tenantId, tenantId), eq(notesTable.id, noteId)))
+        .run();
+      return res.changes > 0;
     },
   },
   users: {
     all: async (tenantId: string): Promise<User[]> =>
-      userStore.filter((u) => u.tenantId === tenantId),
-    find: async (tenantId: string, id: string): Promise<User | null> =>
-      userStore.find((u) => u.tenantId === tenantId && u.id === id) ?? null,
+      getDb().select().from(usersTable).where(eq(usersTable.tenantId, tenantId)).all(),
+    find: async (tenantId: string, userId: string): Promise<User | null> => {
+      const rows = getDb()
+        .select()
+        .from(usersTable)
+        .where(and(eq(usersTable.tenantId, tenantId), eq(usersTable.id, userId)))
+        .all();
+      return rows[0] ?? null;
+    },
     insert: async (
       tenantId: string,
       input: { name: string; email: string },
     ): Promise<User> => {
       const user: User = {
-        id: "usr_" + Math.random().toString(36).slice(2, 8),
+        id: id("usr_"),
         tenantId,
         name: input.name,
         email: input.email,
       };
-      userStore.push(user);
+      getDb().insert(usersTable).values(user).run();
       return user;
     },
   },
