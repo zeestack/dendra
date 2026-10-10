@@ -1,14 +1,14 @@
 import { describe, it, expect } from "vitest";
 import {
-  initNexus,
+  initDendra,
   toFetchHandler,
   createClient,
-  NexusClientError,
+  DendraClientError,
   s,
   type RouterRecord,
 } from "../src/index.ts";
 
-const { route } = initNexus();
+const { route } = initDendra();
 
 const appRouter = {
   add: route
@@ -37,10 +37,10 @@ describe("HTTP transport (client <-> server)", () => {
     expect(await client.add({ a: 40, b: 2 })).toBe(42);
   });
 
-  it("surfaces validation errors as NexusClientError", async () => {
+  it("surfaces validation errors as DendraClientError", async () => {
     await expect(
       client.add({ a: 1, b: "no" as unknown as number }),
-    ).rejects.toBeInstanceOf(NexusClientError);
+    ).rejects.toBeInstanceOf(DendraClientError);
   });
 
   it("streams NDJSON", async () => {

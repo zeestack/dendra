@@ -3,11 +3,11 @@
 // — where `.ai()` is set — an LLM tool. Define once, consume everywhere.
 
 import {
-  initNexus,
+  initDendra,
   s,
   toToolset,
   createToolExecutor,
-  NexusError,
+  DendraError,
   type RouterRecord,
 } from "dendra";
 import type { Ctx } from "./context.ts";
@@ -17,7 +17,7 @@ import { streamChat, streamAssistant, summarize } from "./llm.ts";
 import type { ChatPart } from "../lib/chat-types.ts";
 import { UsersController } from "./users.controller.ts";
 
-const { route } = initNexus<Ctx>();
+const { route } = initDendra<Ctx>();
 
 // Plain-object procedures (keep `satisfies RouterRecord` for authoring safety).
 const coreRouter = {
@@ -53,7 +53,7 @@ const coreRouter = {
       .handler(async ({ input, ctx }) => {
         const ok = await ctx.db.notes.remove(ctx.tenantId, input.id);
         if (!ok) {
-          throw new NexusError("NOT_FOUND", `Note '${input.id}' not found`);
+          throw new DendraError("NOT_FOUND", `Note '${input.id}' not found`);
         }
         ctx.pubsub.publish(`notes:${ctx.tenantId}`, {
           type: "deleted",

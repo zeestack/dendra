@@ -6,14 +6,14 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
-  initNexus,
+  initDendra,
   createCaller,
   createClient,
   toNodeHandler,
   toToolset,
   createToolExecutor,
   createInMemoryPubSub,
-  NexusClientError,
+  DendraClientError,
   s,
   type PubSub,
   type RouterRecord,
@@ -29,7 +29,7 @@ interface Ctx {
   signal?: AbortSignal;
 }
 
-const { route } = initNexus<Ctx>();
+const { route } = initDendra<Ctx>();
 
 // ---------------------------------------------------------------------------
 // 2. Define procedures ONCE. Each becomes: an RPC call, a typed client method,
@@ -145,7 +145,7 @@ try {
     // @ts-expect-error — `b` must be a number; TS catches this at compile time too.
     await client.math.add({ a: 1, b: "not-a-number" });
   } catch (e) {
-    if (e instanceof NexusClientError) {
+    if (e instanceof DendraClientError) {
       console.log("   rejected:", e.code, "-", e.message);
       console.log("   details:", JSON.stringify(e.details));
     } else throw e;

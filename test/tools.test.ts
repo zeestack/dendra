@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
-  initNexus,
+  initDendra,
   toToolset,
   createToolExecutor,
   s,
   type RouterRecord,
 } from "../src/index.ts";
 
-const { route } = initNexus();
+const { route } = initDendra();
 
 const router = {
   math: {

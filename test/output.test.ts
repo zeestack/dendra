@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
-  initNexus,
+  initDendra,
   createCaller,
   toOpenApiDocument,
   s,
   type RouterRecord,
 } from "../src/index.ts";
 
-const { route } = initNexus();
+const { route } = initDendra();
 const UserSchema = s.object({ id: s.string(), name: s.string() });
 
 const router = {

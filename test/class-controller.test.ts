@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { initNexus, createCaller, s } from "../src/index.ts";
+import { initDendra, createCaller, s } from "../src/index.ts";
 
-const { route } = initNexus<{ who: string }>();
+const { route } = initDendra<{ who: string }>();
 
 // A "controller" is just a class whose fields are procedures. No decorators.
 // The constructor can inject dependencies; handlers (arrow fields) close over

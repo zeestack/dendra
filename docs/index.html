@@ -171,9 +171,9 @@
     <div class="steps">
       <div class="step">
         <h3><span class="n">1</span> Define</h3>
-<pre><code><span class="k">import</span> { initNexus, s, <span class="k">type</span> RouterRecord } <span class="k">from</span> <span class="s">"dendra"</span>;
+<pre><code><span class="k">import</span> { initDendra, s, <span class="k">type</span> RouterRecord } <span class="k">from</span> <span class="s">"dendra"</span>;
 
-<span class="k">const</span> { route } = <span class="f">initNexus</span>&lt;{ userId: string | null }&gt;();
+<span class="k">const</span> { route } = <span class="f">initDendra</span>&lt;{ userId: string | null }&gt;();
 
 <span class="k">export const</span> appRouter = {
   add: route
@@ -232,7 +232,7 @@
       transport (RPC, REST, the caller, WebSocket, and AI/MCP tools). Auth stays
       your app's responsibility; the framework just provides the seam.</p>
 <pre><code><span class="k">const</span> authed = route.<span class="f">use</span>(({ ctx }) => {
-  <span class="k">if</span> (!ctx.token) <span class="k">throw new</span> <span class="f">NexusError</span>(<span class="s">"UNAUTHORIZED"</span>, <span class="s">"Sign in"</span>);
+  <span class="k">if</span> (!ctx.token) <span class="k">throw new</span> <span class="f">DendraError</span>(<span class="s">"UNAUTHORIZED"</span>, <span class="s">"Sign in"</span>);
   <span class="k">return</span> { userId: <span class="f">lookup</span>(ctx.token) };   <span class="c">// merged into ctx, typed downstream</span>
 });
 

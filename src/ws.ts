@@ -13,7 +13,7 @@
 import type { Client } from "./caller.ts";
 import type { RouterRecord } from "./core.ts";
 import { invokeStream, invokeUnary, resolveProc } from "./core.ts";
-import { NexusClientError, NexusError } from "./errors.ts";
+import { DendraClientError, DendraError } from "./errors.ts";
 
 type ClientMsg =
   | { id: number; type: "call"; path: string; input?: unknown }
@@ -31,7 +31,7 @@ type ServerMsg =
   | { id: number; type: "complete" };
 
 function toErr(e: unknown): { code: string; message: string; details?: unknown } {
-  if (e instanceof NexusError) {
+  if (e instanceof DendraError) {
     return { code: e.code, message: e.message, details: e.details };
   }
   return { code: "INTERNAL", message: e instanceof Error ? e.message : "error" };
@@ -240,7 +240,7 @@ export function createWsClient<R extends object>(
         pending.get(msg.id)?.resolve(msg.result);
         pending.delete(msg.id);
       } else if (msg.type === "error") {
-        const err = new NexusClientError(msg.error);
+        const err = new DendraClientError(msg.error);
         if (pending.has(msg.id)) {
           pending.get(msg.id)!.reject(err);
           pending.delete(msg.id);
@@ -259,7 +259,7 @@ export function createWsClient<R extends object>(
       for (const q of streams.values()) q.end();
       streams.clear();
       for (const p of pending.values()) {
-        p.reject(new NexusClientError({ code: "INTERNAL", message: "connection closed" }));
+        p.reject(new DendraClientError({ code: "INTERNAL", message: "connection closed" }));
       }
       pending.clear();
     },

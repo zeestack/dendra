@@ -1,14 +1,14 @@
 import { describe, it, expect } from "vitest";
 import {
-  initNexus,
+  initDendra,
   toFetchHandler,
   createClient,
-  NexusClientError,
+  DendraClientError,
   s,
   type RouterRecord,
 } from "../src/index.ts";
 
-const { route } = initNexus();
+const { route } = initDendra();
 const appRouter = {
   add: route
     .input(s.object({ a: s.number(), b: s.number() }))
@@ -56,6 +56,6 @@ describe("request batching", () => {
     const bad = api.add({ a: 1, b: "x" as unknown as number });
 
     expect(await ok).toBe(5);
-    await expect(bad).rejects.toBeInstanceOf(NexusClientError);
+    await expect(bad).rejects.toBeInstanceOf(DendraClientError);
   });
 });

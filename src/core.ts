@@ -9,12 +9,12 @@ import type {
   JSONSchema,
   StandardSchemaV1,
 } from "./schema.ts";
-import { NexusError } from "./errors.ts";
+import { DendraError } from "./errors.ts";
 
 export type ProcedureKind = "unary" | "stream";
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
-// A middleware runs before the handler. It can reject (throw a NexusError) or
+// A middleware runs before the handler. It can reject (throw a DendraError) or
 // return an object that is MERGED into ctx for everything downstream — so the
 // handler sees an enriched, typed context. Returning nothing leaves ctx as-is.
 export type Middleware<Ctx, In, CtxAdd> = (opts: {
@@ -103,7 +103,7 @@ class Builder<Ctx, In, DOut = never> {
   }
   /**
    * Add a middleware. It runs before the handler (across RPC, REST, the caller,
-   * WebSocket, and AI/MCP tool execution). Throw a NexusError to reject; return
+   * WebSocket, and AI/MCP tool execution). Throw a DendraError to reject; return
    * an object to merge it into ctx — the downstream handler sees the enriched,
    * typed context.
    */
@@ -183,7 +183,7 @@ class Builder<Ctx, In, DOut = never> {
 }
 
 /** Bind a context type, then define procedures off `route`. */
-export function initNexus<Ctx = Record<string, never>>() {
+export function initDendra<Ctx = Record<string, never>>() {
   const route = new Builder<Ctx, void>({ method: "POST" });
   return { route };
 }
@@ -204,7 +204,7 @@ async function validateInput(proc: AnyProc, raw: unknown): Promise<unknown> {
   if (!proc.inputSchema) return raw;
   const res = await proc.inputSchema["~standard"].validate(raw);
   if ((res as { issues?: unknown }).issues !== undefined) {
-    throw new NexusError(
+    throw new DendraError(
       "BAD_REQUEST",
       "Input validation failed",
       400,

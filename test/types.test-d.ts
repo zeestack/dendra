@@ -1,8 +1,8 @@
 import { expectTypeOf } from "vitest";
-import { initNexus, createCaller, s, type RouterRecord } from "../src/index.ts";
+import { initDendra, createCaller, s, type RouterRecord } from "../src/index.ts";
 
 // Type-level tests: prove end-to-end inference with no codegen.
-const { route } = initNexus<{ db: string }>();
+const { route } = initDendra<{ db: string }>();
 
 const router = {
   add: route

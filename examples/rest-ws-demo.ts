@@ -6,7 +6,7 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import {
-  initNexus,
+  initDendra,
   toRestHandler,
   toNodeHandler,
   toOpenApiDocument,
@@ -22,7 +22,7 @@ interface Ctx {
   pubsub: PubSub;
   signal?: AbortSignal;
 }
-const { route } = initNexus<Ctx>();
+const { route } = initDendra<Ctx>();
 
 const UserSchema = s.object({ id: s.string(), name: s.string() });
 

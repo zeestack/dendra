@@ -1,5 +1,5 @@
 // Typed errors that cross the wire as `{ code, message, details }` and map to
-// HTTP status codes. The client re-throws a NexusClientError, so error handling
+// HTTP status codes. The client re-throws a DendraClientError, so error handling
 // is symmetric on both sides.
 
 export type ErrorCode =
@@ -17,7 +17,7 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   INTERNAL: 500,
 };
 
-export class NexusError extends Error {
+export class DendraError extends Error {
   readonly code: ErrorCode;
   readonly status: number;
   readonly details?: unknown;
@@ -28,19 +28,19 @@ export class NexusError extends Error {
     details?: unknown,
   ) {
     super(message);
-    this.name = "NexusError";
+    this.name = "DendraError";
     this.code = code;
     this.status = status ?? STATUS_BY_CODE[code];
     this.details = details;
   }
 }
 
-export class NexusClientError extends Error {
+export class DendraClientError extends Error {
   readonly code: string;
   readonly details?: unknown;
   constructor(e: { code?: string; message?: string; details?: unknown }) {
     super(e.message ?? "Request failed");
-    this.name = "NexusClientError";
+    this.name = "DendraClientError";
     this.code = e.code ?? "INTERNAL";
     this.details = e.details;
   }

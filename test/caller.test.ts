@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
-  initNexus,
+  initDendra,
   createCaller,
-  NexusError,
+  DendraError,
   s,
   type RouterRecord,
 } from "../src/index.ts";
 
-const { route } = initNexus<{ who: string }>();
+const { route } = initDendra<{ who: string }>();
 
 const router = {
   add: route
@@ -28,11 +28,11 @@ describe("createCaller (in-process)", () => {
     expect(await c.greet()).toBe("hi ada");
   });
 
-  it("validates input and throws NexusError", async () => {
+  it("validates input and throws DendraError", async () => {
     const c = createCaller(router, { who: "x" });
     await expect(
       c.add({ a: 1, b: "no" as unknown as number }),
-    ).rejects.toBeInstanceOf(NexusError);
+    ).rejects.toBeInstanceOf(DendraError);
   });
 
   it("runs a streaming procedure", async () => {

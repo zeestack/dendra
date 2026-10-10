@@ -6,7 +6,7 @@
 // right usage; the runtime object happens to support both.
 
 import type { Client } from "./caller.ts";
-import { NexusClientError } from "./errors.ts";
+import { DendraClientError } from "./errors.ts";
 
 export interface ClientOptions {
   headers?: Record<string, string>;
@@ -54,7 +54,7 @@ export function createClient<R extends object>(
       }>;
       calls.forEach((c, i) => {
         const r = data[i];
-        if (r && r.error) c.reject(new NexusClientError(r.error));
+        if (r && r.error) c.reject(new DendraClientError(r.error));
         else c.resolve(r ? r.result : undefined);
       });
     } catch (e) {
@@ -124,7 +124,7 @@ function lazyCall(
               result?: unknown;
               error?: { code?: string; message?: string; details?: unknown };
             };
-            if (data.error) throw new NexusClientError(data.error);
+            if (data.error) throw new DendraClientError(data.error);
             return data.result;
           });
       return result.then(onFulfilled, onRejected);
@@ -143,7 +143,7 @@ function lazyCall(
             typeof obj === "object" &&
             "$error" in (obj as Record<string, unknown>)
           ) {
-            throw new NexusClientError(
+            throw new DendraClientError(
               (obj as { $error: { code?: string; message?: string } }).$error,
             );
           }

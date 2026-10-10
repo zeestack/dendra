@@ -9,7 +9,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AnyProc, HttpMethod, RouterRecord } from "./core.ts";
 import { invokeStream, invokeUnary, resolveProc } from "./core.ts";
 import type { JSONSchema } from "./schema.ts";
-import { NexusError } from "./errors.ts";
+import { DendraError } from "./errors.ts";
 
 export interface ServerOptions<Ctx> {
   /** URL prefix that procedure paths live under. Default `/rpc/`. */
@@ -316,7 +316,7 @@ function errorBody(e: unknown): {
   message: string;
   details?: unknown;
 } {
-  if (e instanceof NexusError) {
+  if (e instanceof DendraError) {
     return { code: e.code, message: e.message, details: e.details };
   }
   return {
@@ -326,7 +326,7 @@ function errorBody(e: unknown): {
 }
 
 function errorToResponse(e: unknown): Response {
-  const status = e instanceof NexusError ? e.status : 500;
+  const status = e instanceof DendraError ? e.status : 500;
   return jsonResponse({ error: errorBody(e) }, status);
 }
 
@@ -339,7 +339,7 @@ function ndjsonResponse(iterable: AsyncIterable<unknown>): Response {
         }
       } catch (e) {
         const err =
-          e instanceof NexusError
+          e instanceof DendraError
             ? { code: e.code, message: e.message }
             : {
                 code: "INTERNAL",

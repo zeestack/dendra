@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
-  initNexus,
+  initDendra,
   createCaller,
-  NexusError,
+  DendraError,
   s,
   type RouterRecord,
 } from "../src/index.ts";
@@ -10,12 +10,12 @@ import {
 interface BaseCtx {
   token: string | null;
 }
-const { route } = initNexus<BaseCtx>();
+const { route } = initDendra<BaseCtx>();
 
 // Auth middleware: rejects when there's no token, and ENRICHES ctx with userId —
 // which the handler then sees as typed.
 const authed = route.use(({ ctx }) => {
-  if (!ctx.token) throw new NexusError("UNAUTHORIZED", "Sign in required");
+  if (!ctx.token) throw new DendraError("UNAUTHORIZED", "Sign in required");
   return { userId: "u_" + ctx.token };
 });
 
@@ -24,7 +24,7 @@ const router = {
   // second middleware stacks on top of the first
   adminOnly: authed
     .use(({ ctx }) => {
-      if (ctx.userId !== "u_admin") throw new NexusError("FORBIDDEN", "No");
+      if (ctx.userId !== "u_admin") throw new DendraError("FORBIDDEN", "No");
       return { role: "admin" as const };
     })
     .handler(({ ctx }) => `${ctx.userId}:${ctx.role}`),
@@ -33,7 +33,7 @@ const router = {
 describe("middleware (.use)", () => {
   it("rejects when the guard throws", async () => {
     const c = createCaller(router, { token: null });
-    await expect(c.me()).rejects.toBeInstanceOf(NexusError);
+    await expect(c.me()).rejects.toBeInstanceOf(DendraError);
   });
 
   it("enriches ctx and passes it to the handler", async () => {
@@ -46,6 +46,6 @@ describe("middleware (.use)", () => {
     expect(await admin.adminOnly()).toBe("u_admin:admin");
 
     const nonAdmin = createCaller(router, { token: "bob" });
-    await expect(nonAdmin.adminOnly()).rejects.toBeInstanceOf(NexusError);
+    await expect(nonAdmin.adminOnly()).rejects.toBeInstanceOf(DendraError);
   });
 });

@@ -72,10 +72,10 @@ against.
 **Define** once:
 
 ```ts
-import { initNexus, s, type RouterRecord } from "dendra";
+import { initDendra, s, type RouterRecord } from "dendra";
 
 interface Ctx { userId: string | null }
-const { route } = initNexus<Ctx>();
+const { route } = initDendra<Ctx>();
 
 export const appRouter = {
   add: route
@@ -152,7 +152,7 @@ in-process caller, WebSocket, and AI/MCP tool execution).
 
 ```ts
 const authed = route.use(({ ctx }) => {
-  if (!ctx.token) throw new NexusError("UNAUTHORIZED", "Sign in required");
+  if (!ctx.token) throw new DendraError("UNAUTHORIZED", "Sign in required");
   return { userId: lookup(ctx.token) };   // merged into ctx, typed downstream
 });
 
@@ -165,7 +165,7 @@ export const appRouter = {
 ```
 
 Middlewares **stack** (each sees the previous one's ctx additions) and **throw a
-`NexusError` to reject**. Because an AI/MCP tool runs through the same dispatch
+`DendraError` to reject**. Because an AI/MCP tool runs through the same dispatch
 path, a procedure behind `.use(auth)` is authorization-guarded for the model too
 — the model inherits the user's permissions, it can't bypass them.
 

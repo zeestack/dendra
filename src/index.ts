@@ -1,5 +1,5 @@
 // Public surface.
-export { initNexus, resolveProc, invokeUnary, invokeStream } from "./core.ts";
+export { initDendra, resolveProc, invokeUnary, invokeStream } from "./core.ts";
 export type {
   Proc,
   AnyProc,
@@ -46,7 +46,7 @@ export type { PubSub } from "./pubsub.ts";
 export { createRedisPubSub } from "./redis-pubsub.ts";
 export type { RedisPubSubClient } from "./redis-pubsub.ts";
 
-export { NexusError, NexusClientError } from "./errors.ts";
+export { DendraError, DendraClientError } from "./errors.ts";
 export type { ErrorCode } from "./errors.ts";
 
 // Built-in Standard-Schema validators, namespaced as `s`.

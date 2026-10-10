@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest";
 import {
-  initNexus,
+  initDendra,
   createWsSession,
   createWsClient,
   s,
   type RouterRecord,
 } from "../src/index.ts";
 
-const { route } = initNexus();
+const { route } = initDendra();
 
 const router = {
   add: route

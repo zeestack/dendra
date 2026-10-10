@@ -3,12 +3,12 @@
 // Dependencies are injected via the constructor and kept in #private fields so
 // the controller's public shape stays pure procedures.
 
-import { initNexus, s } from "dendra";
+import { initDendra, s } from "dendra";
 import type { Ctx } from "./context.ts";
 import { db } from "./db.ts";
 import type { User } from "./db.ts";
 
-const { route } = initNexus<Ctx>();
+const { route } = initDendra<Ctx>();
 type Db = typeof db;
 
 export class UsersController {
