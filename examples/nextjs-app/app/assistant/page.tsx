@@ -6,6 +6,7 @@
 // Groceries with body milk, eggs" → renders a NoteCard.
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 import type { ChatPart } from "@/lib/chat-types";
 import type { Note } from "@/server/db";
@@ -28,9 +29,16 @@ const REGISTRY: Record<string, React.FC<{ part: ToolPart }>> = {
   "ai.summarize": ({ part }) => (
     <SummaryCard summary={(part.result as { summary: string }).summary} />
   ),
+  "ui.navigate": ({ part }) => (
+    <div style={S.card}>
+      <div style={S.cardLabel}>➡️ Navigating</div>
+      <code>{(part.result as { to: string }).to}</code>
+    </div>
+  ),
 };
 
 export default function AssistantPage() {
+  const router = useRouter();
   const [items, setItems] = useState<Item[]>([]);
   const [input, setInput] = useState("show my notes");
   const [busy, setBusy] = useState(false);
@@ -66,6 +74,12 @@ export default function AssistantPage() {
           copy[copy.length - 1] = { role: "assistant", parts };
           return copy;
         });
+        // ui.navigate is a client action: the server tool just returns the path;
+        // the client performs the actual route change.
+        if (part.type === "tool" && part.name === "ui.navigate") {
+          const to = (part.result as { to?: string })?.to;
+          if (to) router.push(to);
+        }
       }
     } finally {
       setBusy(false);

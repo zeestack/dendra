@@ -96,6 +96,19 @@ const coreRouter = {
       })),
   },
 
+  ui: {
+    // A CLIENT-side action exposed as a tool: the server handler just echoes the
+    // target path; the assistant page acts on it (router.push). Lets the model
+    // drive the UI ("navigate to the home page").
+    navigate: route
+      .input(s.object({ to: s.string() }))
+      .ai({
+        description:
+          "Navigate the app to a path. Valid paths: '/', '/demo', '/chat', '/assistant'.",
+      })
+      .handler(({ input }) => ({ to: input.to })),
+  },
+
   ai: {
     // Exposed to the model as a tool (opt-in). Runs with the user's context.
     summarize: route
@@ -119,7 +132,7 @@ const coreRouter = {
           tools: toToolset(appRouter, { format: "anthropic" }),
           execute: createToolExecutor(appRouter, ctx),
           system:
-            "You help the user manage notes. Use notes.list to show their notes and notes.create to add one. After a tool runs, give a one-line confirmation. Keep replies brief.",
+            "You help the user manage notes and navigate the app. Use notes.list/notes.create for notes, users.list/users.create for users, and ui.navigate to move around (paths: '/', '/demo', '/chat', '/assistant'). After a tool runs, give a one-line confirmation. Keep replies brief.",
           signal: ctx.signal,
         });
       }),
