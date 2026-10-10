@@ -233,7 +233,8 @@ Not trying to out-tRPC tRPC on HTTP — winning on the AI/MCP seam.
   `toRestHandler` serves it and `toOpenApiDocument` emits a 3.1 spec (feed Swagger
   UI or `openapi-typescript` for cross-language clients).
 - **Real-time** — a subscription is a streaming procedure fed by a `PubSub`
-  interface (in-memory for dev; swap Redis/NATS/Postgres for multi-instance).
+  interface: `createInMemoryPubSub()` for dev, `createRedisPubSub(client)` for
+  multi-instance fan-out (zero-dep — you pass your own redis client).
 - **WebSocket** — `attachWs` / `connectWs` multiplex unary calls + subscriptions
   over one socket, same router, outside Next's serverless model.
 - **Request batching** — `createClient(url, { batch: true })` collects unary calls

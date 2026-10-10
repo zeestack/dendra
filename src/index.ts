@@ -43,6 +43,8 @@ export type { McpToolDef, McpCallResult } from "./mcp.ts";
 
 export { createInMemoryPubSub } from "./pubsub.ts";
 export type { PubSub } from "./pubsub.ts";
+export { createRedisPubSub } from "./redis-pubsub.ts";
+export type { RedisPubSubClient } from "./redis-pubsub.ts";
 
 export { NexusError, NexusClientError } from "./errors.ts";
 export type { ErrorCode } from "./errors.ts";
