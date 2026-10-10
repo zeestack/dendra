@@ -144,6 +144,37 @@ a **stdio** server for Claude Desktop (`mcp-server.ts`) and a **remote HTTP**
 endpoint (`app/api/mcp/route.ts`) for claude.ai — so Claude can list, create, and
 delete your app's data through the exact procedures you already wrote.
 
+### Consuming external MCP servers (inbound tools)
+
+The reverse direction too: pull tools **from** another MCP server (GitHub's,
+Linear's, a filesystem server, your own) and merge them into the same toolset
+your model already uses. dendra stays zero-dependency — it needs only the
+two-method `McpClientLike` shape, which the official SDK's `Client` satisfies, so
+*your app* owns the transport (stdio / HTTP) and dendra owns the tool plumbing.
+
+```ts
+import { toToolSource, mergeToolsets, createMcpToolSource } from "dendra";
+
+// Your local procedures as a tool source…
+const local = toToolSource(appRouter, ctx, { format: "anthropic" });
+
+// …and an external MCP server (any connected @modelcontextprotocol/sdk Client):
+const external = await createMcpToolSource(mcpClient, {
+  format: "anthropic",
+  prefix: "gh.",            // optional: namespace to avoid name clashes
+});
+
+// One flat toolset; each call is routed back to the source that owns the name.
+const { tools, execute } = mergeToolsets(local, external);
+// → hand `tools` + `execute` to your agent loop. The model can't tell a local
+//   procedure from a remote MCP tool; `mergeToolsets` dispatches each correctly.
+```
+
+The example wires this into the chat: set `EXTERNAL_MCP_URL` (remote HTTP) or
+`EXTERNAL_MCP_CMD` (stdio) to connect a real server, or leave both unset for a
+zero-config in-process demo server (`ext.weather.get`, `ext.time.now`). See
+[`server/mcp-tools.ts`](examples/nextjs-app/server/mcp-tools.ts).
+
 ## Middleware & auth (`.use()`)
 
 Run logic before a handler — authentication, logging, rate-limiting — and enrich
@@ -235,6 +266,9 @@ Not trying to out-tRPC tRPC on HTTP — winning on the AI/MCP seam.
 - **Real-time** — a subscription is a streaming procedure fed by a `PubSub`
   interface: `createInMemoryPubSub()` for dev, `createRedisPubSub(client)` for
   multi-instance fan-out (zero-dep — you pass your own redis client).
+- **External MCP tools** — `createMcpToolSource(client)` turns any connected MCP
+  server into a dendra tool source; `mergeToolsets(local, external)` blends them
+  into one toolset for your agent loop (zero-dep — you pass your own MCP client).
 - **WebSocket** — `attachWs` / `connectWs` multiplex unary calls + subscriptions
   over one socket, same router, outside Next's serverless model.
 - **Request batching** — `createClient(url, { batch: true })` collects unary calls

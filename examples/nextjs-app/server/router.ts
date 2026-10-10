@@ -5,8 +5,8 @@
 import {
   initDendra,
   s,
-  toToolset,
-  createToolExecutor,
+  toToolSource,
+  mergeToolsets,
   DendraError,
   type RouterRecord,
 } from "dendra";
@@ -14,6 +14,8 @@ import type { Ctx } from "./context.ts";
 import type { Note, NoteEvent } from "./db.ts";
 import { db } from "./db.ts";
 import { streamChat, streamAssistant, summarize } from "./llm.ts";
+import { getExternalToolSource, getExternalMcpInfo } from "./mcp-tools.ts";
+import type { ExternalMcpInfo } from "./mcp-tools.ts";
 import type { ChatPart } from "../lib/chat-types.ts";
 import { UsersController } from "./users.controller.ts";
 
@@ -92,8 +94,16 @@ const coreRouter = {
           "users.list — list users in this workspace",
           "users.create — create a user { name, email }",
           "ai.summarize — summarize a piece of text into one sentence",
+          "ext.weather.get — (external MCP tool) current weather for a city",
+          "ext.time.now — (external MCP tool) the current server time",
         ],
       })),
+  },
+
+  mcp: {
+    // UI-only (no .ai()): lists the connected EXTERNAL MCP server + its tools so
+    // the assistant page can show what's wired in. Not exposed to the model.
+    external: route.handler((): Promise<ExternalMcpInfo> => getExternalMcpInfo()),
   },
 
   ui: {
@@ -128,11 +138,17 @@ const coreRouter = {
     assistant: route
       .input(s.object({ prompt: s.string() }))
       .stream(async function* ({ input, ctx }): AsyncGenerator<ChatPart> {
+        // Local tools (this app's procedures) + tools from an EXTERNAL MCP
+        // server, merged into one flat toolset. The model can't tell them apart;
+        // mergeToolsets routes each call to the source that owns the name.
+        const local = toToolSource(appRouter, ctx, { format: "anthropic" });
+        const external = await getExternalToolSource("anthropic");
+        const merged = mergeToolsets(local, external);
         yield* streamAssistant(input.prompt, {
-          tools: toToolset(appRouter, { format: "anthropic" }),
-          execute: createToolExecutor(appRouter, ctx),
+          tools: merged.tools,
+          execute: merged.execute,
           system:
-            "You help the user manage notes and navigate the app. Use notes.list/notes.create for notes, users.list/users.create for users, and ui.navigate to move around (paths: '/', '/demo', '/chat', '/assistant'). After a tool runs, give a one-line confirmation. Keep replies brief.",
+            "You help the user manage notes and navigate the app. Use notes.list/notes.create for notes, users.list/users.create for users, and ui.navigate to move around (paths: '/', '/demo', '/chat', '/assistant'). You also have EXTERNAL tools from a connected MCP server: ext.weather.get (current weather for a city) and ext.time.now (current time) — use them when asked. After a tool runs, give a one-line confirmation. Keep replies brief.",
           signal: ctx.signal,
         });
       }),

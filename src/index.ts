@@ -35,11 +35,22 @@ export type {
 export { createClient } from "./client.ts";
 export type { ClientOptions } from "./client.ts";
 
-export { toToolset, createToolExecutor } from "./tools.ts";
-export type { ToolFormat, PlainTool } from "./tools.ts";
+export {
+  toToolset,
+  createToolExecutor,
+  formatTool,
+  toToolSource,
+  mergeToolsets,
+} from "./tools.ts";
+export type { ToolFormat, PlainTool, ToolSource } from "./tools.ts";
 
-export { mcpToolDefinitions, createMcpBridge } from "./mcp.ts";
-export type { McpToolDef, McpCallResult } from "./mcp.ts";
+export { mcpToolDefinitions, createMcpBridge, createMcpToolSource } from "./mcp.ts";
+export type {
+  McpToolDef,
+  McpCallResult,
+  McpClientLike,
+  McpToolSourceOptions,
+} from "./mcp.ts";
 
 export { createInMemoryPubSub } from "./pubsub.ts";
 export type { PubSub } from "./pubsub.ts";

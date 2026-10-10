@@ -6,8 +6,12 @@ const nextConfig = {
   // resolution path used by the standalone scripts.
   experimental: {
     externalDir: true,
-    // better-sqlite3 is a native module — don't bundle it, load it at runtime.
-    serverComponentsExternalPackages: ["better-sqlite3"],
+    // Native/deep-ESM packages — don't bundle, load at runtime.
+    // (@modelcontextprotocol/sdk uses deep subpath imports.)
+    serverComponentsExternalPackages: [
+      "better-sqlite3",
+      "@modelcontextprotocol/sdk",
+    ],
   },
   transpilePackages: ["dendra"],
 };
