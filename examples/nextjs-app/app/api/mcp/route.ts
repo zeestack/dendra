@@ -13,6 +13,7 @@
 import { mcpToolDefinitions, createToolExecutor } from "nexus-rpc";
 import { appRouter } from "@/server/router";
 import { createContext } from "@/server/context";
+import { oauth, baseUrl } from "@/server/oauth-store";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,9 +29,30 @@ const toolDefs = mcpToolDefinitions(appRouter).map((t) => {
 type JsonRpc = { jsonrpc: "2.0"; id?: string | number; method?: string; params?: Record<string, unknown> };
 
 export async function POST(req: Request): Promise<Response> {
-  const token = process.env.MCP_TOKEN;
-  if (token && req.headers.get("authorization") !== `Bearer ${token}`) {
-    return json({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "Unauthorized" } }, 401);
+  const authHeader = req.headers.get("authorization") ?? "";
+  const bearer = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+
+  // OAuth mode (MCP_OAUTH=1): require a valid token from our authorization server.
+  // On failure, 401 with WWW-Authenticate pointing at the resource metadata so an
+  // MCP client (e.g. claude.ai) can discover the auth server and start the flow.
+  if (process.env.MCP_OAUTH === "1") {
+    if (!oauth.validateToken(bearer)) {
+      return new Response(
+        JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "Unauthorized" } }),
+        {
+          status: 401,
+          headers: {
+            "content-type": "application/json",
+            "WWW-Authenticate": `Bearer resource_metadata="${baseUrl(req)}/.well-known/oauth-protected-resource"`,
+          },
+        },
+      );
+    }
+  } else if (process.env.MCP_TOKEN) {
+    // Simple static-token mode (unchanged default behavior).
+    if (bearer !== process.env.MCP_TOKEN) {
+      return json({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "Unauthorized" } }, 401);
+    }
   }
 
   // Remote clients (claude.ai) don't send x-tenant/x-user headers, so pin the

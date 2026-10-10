@@ -71,6 +71,25 @@ tools, which hit the live app. Tools exposed: `notes.list`, `notes.create`,
 > For a server with no running app, the library's `createMcpBridge(router, ctx)`
 > runs the router in-process instead.
 
+### Remote MCP for claude.ai web (OAuth — the app's job)
+
+The remote endpoint ([`app/api/mcp/route.ts`](app/api/mcp/route.ts)) is reachable
+over a URL. **Auth is the app's responsibility — the framework stays
+auth-agnostic.** This example ships an app-level, demo OAuth 2.1 authorization
+server (PKCE + dynamic client registration) so claude.ai web can connect:
+
+- `/.well-known/oauth-protected-resource` + `/.well-known/oauth-authorization-server` — discovery
+- `/oauth/register`, `/oauth/authorize`, `/oauth/token` — the flow (see [`server/oauth-store.ts`](server/oauth-store.ts))
+
+Enable it with `MCP_OAUTH=1`; the endpoint then returns `401` with a
+`WWW-Authenticate` pointing at the discovery doc, which is how an MCP client
+starts the flow. Expose the app over public HTTPS (tunnel/deploy) and add
+`<url>/api/mcp` as a custom connector in claude.ai.
+
+> ⚠️ The `/oauth/authorize` here **auto-approves** as a fixed user — it's a
+> reference, not production auth. A real app plugs in its own login/consent/IdP.
+> Set `MCP_TOKEN=…` instead for a simpler static-bearer mode behind a private tunnel.
+
 ## Multi-tenancy by subdomain
 
 Tenancy is resolved once in [`server/context.ts`](server/context.ts) from the
