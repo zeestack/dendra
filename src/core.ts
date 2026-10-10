@@ -68,13 +68,13 @@ interface State<Ctx, In> {
   middlewares?: AnyMiddleware[];
 }
 
-class Builder<Ctx, In> {
+class Builder<Ctx, In, DOut = never> {
   readonly state: State<Ctx, In>;
   constructor(state: State<Ctx, In>) {
     this.state = state;
   }
-  private next<In2>(patch: Partial<State<Ctx, In2>>): Builder<Ctx, In2> {
-    return new Builder<Ctx, In2>({
+  private next<In2>(patch: Partial<State<Ctx, In2>>): Builder<Ctx, In2, DOut> {
+    return new Builder<Ctx, In2, DOut>({
       ...(this.state as unknown as State<Ctx, In2>),
       ...patch,
     });
@@ -109,8 +109,8 @@ class Builder<Ctx, In> {
    */
   use<CtxAdd extends Record<string, unknown> | void>(
     mw: Middleware<Ctx, In, CtxAdd>,
-  ): Builder<Ctx & (CtxAdd extends void ? unknown : CtxAdd), In> {
-    return new Builder<Ctx & (CtxAdd extends void ? unknown : CtxAdd), In>({
+  ): Builder<Ctx & (CtxAdd extends void ? unknown : CtxAdd), In, DOut> {
+    return new Builder<Ctx & (CtxAdd extends void ? unknown : CtxAdd), In, DOut>({
       ...(this.state as unknown as State<
         Ctx & (CtxAdd extends void ? unknown : CtxAdd),
         In
@@ -126,14 +126,26 @@ class Builder<Ctx, In> {
       inputJsonSchema: jsonSchema,
     });
   }
-  /** Document the response shape (used by OpenAPI). Does not change types. */
-  output(schema: { jsonSchema?: JSONSchema }) {
-    return this.next<In>({ outputJsonSchema: schema.jsonSchema });
+  /**
+   * Declare the response shape. Feeds OpenAPI AND constrains the handler's
+   * return type to the schema's inferred type — so the output is both documented
+   * and type-checked.
+   */
+  output<S extends StandardSchemaV1>(
+    schema: S,
+  ): Builder<Ctx, In, InferOutput<S>> {
+    const jsonSchema = (schema as { jsonSchema?: JSONSchema }).jsonSchema;
+    return new Builder<Ctx, In, InferOutput<S>>({
+      ...this.state,
+      outputJsonSchema: jsonSchema,
+    });
   }
   /** Unary procedure: returns a value. */
   handler<Out>(
-    fn: (o: { input: In; ctx: Ctx }) => Out | Promise<Out>,
-  ): Proc<Ctx, In, Awaited<Out>, "unary"> {
+    fn: (o: { input: In; ctx: Ctx }) => [DOut] extends [never]
+      ? Out | Promise<Out>
+      : DOut | Promise<DOut>,
+  ): Proc<Ctx, In, [DOut] extends [never] ? Awaited<Out> : DOut, "unary"> {
     const s = this.state;
     return {
       _nexus: true,
@@ -147,7 +159,7 @@ class Builder<Ctx, In> {
       outputJsonSchema: s.outputJsonSchema,
       middlewares: s.middlewares,
       handler: async (input: In, ctx: Ctx) => fn({ input, ctx }),
-    } as Proc<Ctx, In, Awaited<Out>, "unary">;
+    } as Proc<Ctx, In, [DOut] extends [never] ? Awaited<Out> : DOut, "unary">;
   }
   /** Streaming procedure: returns an async iterable of elements. */
   stream<Out>(

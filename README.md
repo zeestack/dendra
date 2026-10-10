@@ -224,7 +224,8 @@ Not trying to out-tRPC tRPC on HTTP — winning on the AI/MCP seam.
 
 ## Also in the box
 
-- **REST + OpenAPI** — give a procedure `.get("/users/:id")` and `.output(schema)`;
+- **REST + OpenAPI** — give a procedure `.get("/users/:id")` and `.output(schema)`
+  (which both **type-checks the handler's return** and documents the response);
   `toRestHandler` serves it and `toOpenApiDocument` emits a 3.1 spec (feed Swagger
   UI or `openapi-typescript` for cross-language clients).
 - **Real-time** — a subscription is a streaming procedure fed by a `PubSub`
