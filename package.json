@@ -2,18 +2,45 @@
   "name": "nexus-rpc",
   "version": "0.0.1",
   "private": true,
-  "description": "Lightweight, decorator-free, codegen-free typed RPC/REST framework for Next.js and any Web-standard runtime.",
+  "description": "Lightweight, decorator-free, codegen-free typed RPC/REST framework for Next.js and any Web-standard runtime — with first-class AI/MCP tool support.",
   "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
   },
+  "files": ["dist", "src", "README.md"],
+  "sideEffects": false,
   "scripts": {
+    "build": "tsup",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "demo": "node examples/demo.ts",
-    "demo:restws": "node examples/rest-ws-demo.ts"
+    "demo:restws": "node examples/rest-ws-demo.ts",
+    "prepublishOnly": "npm run build"
   },
+  "keywords": [
+    "rpc",
+    "rest",
+    "typescript",
+    "nextjs",
+    "openapi",
+    "mcp",
+    "ai",
+    "streaming",
+    "typed-client"
+  ],
+  "license": "MIT",
   "devDependencies": {
+    "@types/node": "^22.7.0",
+    "tsup": "^8.3.0",
     "typescript": "^5.6.3",
-    "@types/node": "^22.7.0"
+    "vitest": "^2.1.9"
   }
 }

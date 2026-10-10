@@ -13,6 +13,6 @@
     "verbatimModuleSyntax": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "examples"],
-  "exclude": ["node_modules", "examples/nextjs-app"]
+  "include": ["src", "examples", "test"],
+  "exclude": ["node_modules", "examples/nextjs-app", "dist"]
 }
