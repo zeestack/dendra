@@ -394,7 +394,7 @@ class controllers, AI tools, MCP (stdio + remote HTTP, consume external MCP
 servers), and optional `dendra/anthropic` + `dendra/react` helpers.
 
 Published on npm as [`dendra`](https://www.npmjs.com/package/dendra). APIs may
-change before 1.0.
+change before 1.0. What's planned next is in [`ROADMAP.md`](ROADMAP.md).
 
 ## License
 
