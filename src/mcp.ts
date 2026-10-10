@@ -4,7 +4,6 @@
 // thin, zero-dependency shaping layer; the example wires it to the official MCP
 // SDK transport (stdio / HTTP). Only `.ai()`-exposed procedures are surfaced.
 
-import type { RouterRecord } from "./core.ts";
 import { createToolExecutor, toToolset } from "./tools.ts";
 
 export interface McpToolDef {
@@ -19,7 +18,7 @@ export interface McpCallResult {
 }
 
 /** MCP `tools/list` payload derived from the router's `.ai()` procedures. */
-export function mcpToolDefinitions(router: RouterRecord): McpToolDef[] {
+export function mcpToolDefinitions(router: object): McpToolDef[] {
   return toToolset(router, { format: "plain" }) as McpToolDef[];
 }
 
@@ -27,7 +26,7 @@ export function mcpToolDefinitions(router: RouterRecord): McpToolDef[] {
  * In-process bridge: list + call tools against the router directly (own data).
  * For calling a *running* app instead, see the example's HTTP-proxy server.
  */
-export function createMcpBridge<Ctx>(router: RouterRecord, ctx: Ctx) {
+export function createMcpBridge<Ctx>(router: object, ctx: Ctx) {
   const execute = createToolExecutor(router, ctx);
   return {
     listTools(): McpToolDef[] {

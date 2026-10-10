@@ -149,21 +149,24 @@ or `experimentalDecorators`.
 
 ```ts
 export class UsersController {
-  private db: Db;
-  constructor(db: Db) { this.db = db; }          // constructor injection
-
-  list = route.get("/users").handler(() => this.db.users.all());
+  #db: Db;                                        // #private: not part of the
+  constructor(db: Db) { this.#db = db; }          // public type, so the
+                                                  // controller stays pure procedures
+  list = route.get("/users").handler(() => this.#db.users.all());
   create = route
     .post("/users")
     .input(s.object({ name: s.string() }))
     .ai({ description: "Create a user" })         // still an LLM/MCP tool
-    .handler(({ input }) => this.db.users.insert(input));
+    .handler(({ input }) => this.#db.users.insert(input));
 }
 
+// A class instance has no index signature, so a class-containing router skips
+// `satisfies RouterRecord`; the consumer functions accept it and `Client<R>`
+// validates the shape structurally.
 export const appRouter = {
   users: new UsersController(db),                 // an instance = a sub-router
   posts: new PostsController(db),
-} satisfies RouterRecord;
+};
 ```
 
 | NestJS | nexus-rpc |
@@ -175,7 +178,9 @@ export const appRouter = {
 | decorators / `reflect-metadata` | none |
 
 Handlers are arrow-function fields, so they close over `this` for injected
-dependencies. Inference, dispatch, REST, OpenAPI, and MCP all work unchanged.
+dependencies. Keep injected deps in `#private` fields — a public non-procedure
+field would break the `RouterRecord` shape. Inference, dispatch, REST, OpenAPI,
+and MCP all work unchanged.
 
 ## How it compares
 

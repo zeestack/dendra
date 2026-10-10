@@ -11,12 +11,11 @@
 //     createContext: (req) => ({ userId: getSession(req) }),
 //   });
 
-import type { RouterRecord } from "./core.ts";
 import type { ServerOptions } from "./server.ts";
 import { toFetchHandler } from "./server.ts";
 
 export function toNextHandler<Ctx>(
-  router: RouterRecord,
+  router: object,
   opts: ServerOptions<Ctx> = {},
 ): Record<
   "GET" | "POST" | "PUT" | "PATCH" | "DELETE",

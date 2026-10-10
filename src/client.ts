@@ -6,7 +6,6 @@
 // right usage; the runtime object happens to support both.
 
 import type { Client } from "./caller.ts";
-import type { RouterRecord } from "./core.ts";
 import { NexusClientError } from "./errors.ts";
 
 export interface ClientOptions {
@@ -16,7 +15,7 @@ export interface ClientOptions {
   prefix?: string;
 }
 
-export function createClient<R extends RouterRecord>(
+export function createClient<R extends object>(
   baseUrl: string,
   opts: ClientOptions = {},
 ): Client<R> {

@@ -46,10 +46,11 @@ export interface WsSession {
 }
 
 export function createWsSession(
-  router: RouterRecord,
+  router: object,
   send: (data: string) => void,
   ctx: Record<string, unknown> = {},
 ): WsSession {
+  const root = router as RouterRecord;
   const subs = new Map<number, AbortController>();
   const out = (m: ServerMsg) => send(JSON.stringify(m));
 
@@ -63,7 +64,7 @@ export function createWsSession(
       }
 
       if (msg.type === "call") {
-        const proc = resolveProc(router, msg.path.split("."));
+        const proc = resolveProc(root, msg.path.split("."));
         if (!proc || proc.kind !== "unary") {
           out({
             id: msg.id,
@@ -80,7 +81,7 @@ export function createWsSession(
       }
 
       if (msg.type === "subscribe") {
-        const proc = resolveProc(router, msg.path.split("."));
+        const proc = resolveProc(root, msg.path.split("."));
         if (!proc || proc.kind !== "stream") {
           out({
             id: msg.id,
@@ -178,7 +179,7 @@ function createQueue(): AsyncQueue {
 
 function noop(): void {}
 
-export function createWsClient<R extends RouterRecord>(
+export function createWsClient<R extends object>(
   send: (data: string) => void,
 ): WsClient<R> {
   let nextId = 1;
@@ -277,7 +278,7 @@ export interface WsLikeSocket {
 }
 export function attachWs(
   socket: WsLikeSocket,
-  router: RouterRecord,
+  router: object,
   ctx: Record<string, unknown> = {},
 ): void {
   const session = createWsSession(router, (d) => socket.send(d), ctx);
@@ -293,7 +294,7 @@ export interface WhatwgSocket {
   addEventListener(event: "message", cb: (e: { data: unknown }) => void): void;
   addEventListener(event: "close", cb: () => void): void;
 }
-export function connectWs<R extends RouterRecord>(
+export function connectWs<R extends object>(
   socket: WhatwgSocket,
 ): Client<R> {
   const client = createWsClient<R>((d) => socket.send(d));

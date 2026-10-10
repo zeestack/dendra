@@ -21,9 +21,10 @@ export interface ServerOptions<Ctx> {
 const enc = new TextEncoder();
 
 export function toFetchHandler<Ctx>(
-  router: RouterRecord,
+  router: object,
   opts: ServerOptions<Ctx> = {},
 ): (req: Request) => Promise<Response> {
+  const root = router as RouterRecord;
   const prefix = opts.prefix ?? "/rpc/";
   return async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
@@ -34,7 +35,7 @@ export function toFetchHandler<Ctx>(
       );
     }
     const dotted = url.pathname.slice(prefix.length);
-    const proc = resolveProc(router, dotted.split(".").filter(Boolean));
+    const proc = resolveProc(root, dotted.split(".").filter(Boolean));
     if (!proc) {
       return jsonResponse(
         {
@@ -82,7 +83,7 @@ export function toFetchHandler<Ctx>(
 }
 
 export function toNodeHandler<Ctx>(
-  router: RouterRecord,
+  router: object,
   opts: ServerOptions<Ctx> = {},
 ): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   const handler = toFetchHandler(router, opts);
@@ -183,10 +184,10 @@ function coerceInput(
 }
 
 export function toRestHandler<Ctx>(
-  router: RouterRecord,
+  router: object,
   opts: ServerOptions<Ctx> = {},
 ): (req: Request) => Promise<Response> {
-  const table = buildRestTable(router);
+  const table = buildRestTable(router as RouterRecord);
   const base = opts.prefix ?? "";
   return async (req: Request): Promise<Response> => {
     const url = new URL(req.url);

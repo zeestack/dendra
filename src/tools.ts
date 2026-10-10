@@ -18,7 +18,7 @@ export interface PlainTool {
 }
 
 export function toToolset(
-  router: RouterRecord,
+  router: object,
   opts: { format?: ToolFormat } = {},
 ): unknown[] {
   const format = opts.format ?? "anthropic";
@@ -52,17 +52,17 @@ export function toToolset(
     }
   };
 
-  walk(router, []);
+  walk(router as RouterRecord, []);
   return tools;
 }
 
 /** Execute a tool call the model requested, by name, with the same safety as HTTP. */
 export function createToolExecutor<Ctx>(
-  router: RouterRecord,
+  router: object,
   ctx: Ctx,
 ): (name: string, args: unknown) => Promise<unknown> {
   return async (name: string, args: unknown) => {
-    const proc = resolveProc(router, name.split("."));
+    const proc = resolveProc(router as RouterRecord, name.split("."));
     if (!proc) throw new Error(`Tool '${name}' not found`);
     if (!proc.ai?.expose) throw new Error(`Tool '${name}' is not exposed to AI`);
     // invokeUnary validates args first — the guardrail on model output.

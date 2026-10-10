@@ -1,10 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  initNexus,
-  createCaller,
-  s,
-  type RouterRecord,
-} from "../src/index.ts";
+import { initNexus, createCaller, s } from "../src/index.ts";
 
 const { route } = initNexus<{ who: string }>();
 
@@ -12,14 +7,17 @@ const { route } = initNexus<{ who: string }>();
 // The constructor can inject dependencies; handlers (arrow fields) close over
 // `this`, so they can use them.
 class MathController {
-  base: number;
+  // Injected deps use #private fields — they're not part of the instance's
+  // public type, so the controller's public shape is pure procedures and
+  // satisfies RouterRecord (a public `base: number` field would break it).
+  #base: number;
   constructor(base: number) {
-    this.base = base;
+    this.#base = base;
   }
 
   add = route
     .input(s.object({ a: s.number(), b: s.number() }))
-    .handler(({ input }) => this.base + input.a + input.b);
+    .handler(({ input }) => this.#base + input.a + input.b);
 
   double = route
     .input(s.object({ n: s.number() }))
@@ -28,10 +26,13 @@ class MathController {
 
 // An *instance* goes into the router — its type is { add, double }, which is a
 // RouterRecord, so inference and dispatch work exactly like a plain object.
+// Note: a class-containing router can't use `satisfies RouterRecord` — a class
+// instance has no index signature. The consumer functions accept `object` and
+// the `Client<R>` type validates the shape structurally instead.
 const router = {
   math: new MathController(100),
   ping: route.handler(() => "pong"),
-} satisfies RouterRecord;
+};
 
 describe("class-based controllers (no decorators)", () => {
   it("dispatches instance-field procedures", async () => {

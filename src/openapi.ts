@@ -20,7 +20,7 @@ export interface OpenApiOptions {
 }
 
 export function toOpenApiDocument(
-  router: RouterRecord,
+  router: object,
   opts: OpenApiOptions,
 ): Record<string, unknown> {
   const paths: Record<string, Record<string, unknown>> = {};
@@ -42,7 +42,7 @@ export function toOpenApiDocument(
       }
     }
   };
-  walk(router, []);
+  walk(router as RouterRecord, []);
 
   return {
     openapi: "3.1.0",
