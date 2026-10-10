@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>nexus-rpc — typed APIs that are also LLM tools & MCP servers</title>
+<meta name="description" content="A typed RPC/REST framework for Next.js where every procedure is also an LLM tool and an MCP server. No decorators, no codegen, zero deps." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0b0d12; --panel: #12151c; --panel2: #171b24; --border: #232834;
+    --fg: #e7e9ee; --muted: #9aa3b2; --accent: #7c9cff; --accent2: #5be3b3;
+    --code: #d6dbe6;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font-family: Inter, system-ui, sans-serif; line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  code, pre { font-family: "JetBrains Mono", ui-monospace, monospace; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 20px; }
+
+  /* nav */
+  nav { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(8px);
+    background: rgba(11,13,18,.72); border-bottom: 1px solid var(--border); }
+  nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 58px; }
+  .brand { font-weight: 800; letter-spacing: -.02em; font-size: 18px; }
+  .brand span { color: var(--accent); }
+  .nav-links { display: flex; gap: 20px; align-items: center; font-size: 14px; }
+  .nav-links a { color: var(--muted); }
+  .btn { display: inline-block; padding: 9px 16px; border-radius: 9px; font-weight: 600;
+    font-size: 14px; border: 1px solid var(--border); background: var(--panel2); color: var(--fg); }
+  .btn.primary { background: linear-gradient(180deg, #8aa5ff, #6f90ff); color: #0b0d12; border: none; }
+  .btn:hover { text-decoration: none; filter: brightness(1.08); }
+
+  /* hero */
+  header.hero { padding: 72px 0 40px; text-align: center; }
+  .badge-row { display: flex; gap: 8px; justify-content: center; margin-bottom: 22px; flex-wrap: wrap; }
+  .pill { font-size: 12px; color: var(--muted); border: 1px solid var(--border);
+    background: var(--panel); padding: 4px 10px; border-radius: 999px; }
+  h1 { font-size: clamp(32px, 6vw, 54px); line-height: 1.08; letter-spacing: -.03em;
+    margin: 0 0 18px; font-weight: 800; }
+  h1 .grad { background: linear-gradient(120deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .sub { font-size: clamp(16px, 2.4vw, 20px); color: var(--muted); max-width: 680px;
+    margin: 0 auto 28px; }
+  .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+
+  /* code */
+  pre { background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px 20px; overflow-x: auto; font-size: 13.5px; color: var(--code);
+    line-height: 1.7; text-align: left; margin: 0; }
+  pre .c { color: #6b7488; }      /* comment */
+  pre .k { color: #c99bff; }      /* keyword */
+  pre .s { color: #7fd6a9; }      /* string */
+  pre .f { color: #8aa5ff; }      /* fn/ident */
+  .code-hero { max-width: 760px; margin: 36px auto 0; }
+
+  section { padding: 56px 0; border-top: 1px solid var(--border); }
+  h2 { font-size: clamp(24px, 4vw, 32px); letter-spacing: -.02em; margin: 0 0 10px; }
+  .lead { color: var(--muted); max-width: 720px; margin: 0 0 28px; }
+
+  .surfaces { background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 26px; display: grid; gap: 10px; }
+  .surfaces .row { display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; }
+  .surfaces .lhs { color: var(--accent2); font-family: "JetBrains Mono", monospace; font-size: 13px;
+    min-width: 170px; }
+  .surfaces .arrow { color: var(--muted); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
+  .card h3 { margin: 0 0 6px; font-size: 16px; }
+  .card p { margin: 0; color: var(--muted); font-size: 14px; }
+  .card .ic { font-size: 20px; margin-bottom: 8px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; }
+  td.y { color: var(--accent2); font-weight: 600; }
+  td.n { color: #5c6373; }
+  tr td:first-child { color: var(--fg); }
+  .nx { color: var(--accent); font-weight: 700; }
+
+  .steps { display: grid; gap: 18px; }
+  .step .n { display: inline-flex; width: 26px; height: 26px; border-radius: 7px;
+    background: var(--panel2); border: 1px solid var(--border); align-items: center;
+    justify-content: center; font-size: 13px; font-weight: 700; color: var(--accent); margin-right: 8px; }
+  .step h3 { display: flex; align-items: center; font-size: 16px; margin: 0 0 10px; }
+
+  footer { padding: 40px 0 60px; color: var(--muted); font-size: 14px; text-align: center; border-top: 1px solid var(--border); }
+  .disclaimer { font-size: 12px; color: #6b7488; margin-top: 10px; }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <div class="brand">nexus<span>-rpc</span></div>
+    <div class="nav-links">
+      <a href="#why">Why</a>
+      <a href="#quickstart">Quickstart</a>
+      <a href="#ai">AI / MCP</a>
+      <a class="btn" href="https://github.com/zeestack/nexus-rpc">GitHub ↗</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="badge-row">
+      <span class="pill">zero dependencies</span>
+      <span class="pill">no decorators</span>
+      <span class="pill">no codegen</span>
+      <span class="pill">pre-1.0 · experimental</span>
+    </div>
+    <h1>Typed APIs that are also<br /><span class="grad">LLM tools &amp; MCP servers</span></h1>
+    <p class="sub">A typed RPC/REST framework for Next.js. Define a procedure once — get a
+      typed client, a REST endpoint, OpenAPI, streaming, real-time, <strong>and</strong> a
+      tool your AI agents and Claude can call over MCP.</p>
+    <div class="cta">
+      <a class="btn primary" href="#quickstart">Get started</a>
+      <a class="btn" href="https://github.com/zeestack/nexus-rpc">Star on GitHub</a>
+    </div>
+
+    <div class="code-hero">
+<pre><code><span class="k">export const</span> appRouter = {
+  notes: {
+    create: route
+      .<span class="f">post</span>(<span class="s">"/notes"</span>)
+      .<span class="f">input</span>(s.<span class="f">object</span>({ title: s.<span class="f">string</span>(), body: s.<span class="f">string</span>() }))
+      .<span class="f">ai</span>({ description: <span class="s">"Create a note"</span> })       <span class="c">// ← also an LLM/MCP tool</span>
+      .<span class="f">handler</span>(({ input, ctx }) => ctx.db.<span class="f">create</span>(input)),
+  },
+} <span class="k">satisfies</span> RouterRecord;</code></pre>
+    </div>
+  </div>
+</header>
+
+<section id="why">
+  <div class="wrap">
+    <h2>Why another API framework?</h2>
+    <p class="lead">The typed-RPC space is crowded — tRPC, ts-rest, Hono, oRPC are all good at HTTP.
+      nexus-rpc's wedge is the part they bolt on or skip: it's <strong>AI- and MCP-native by construction.</strong>
+      A procedure and an LLM tool are the same shape — a name, an input schema, a validated handler —
+      so nexus-rpc treats them as one thing. Mark a procedure <code>.ai()</code> and it's instantly a tool
+      for Claude over MCP and for the Anthropic/OpenAI APIs, executed with the same validation that guards
+      your HTTP endpoints.</p>
+
+    <div class="surfaces">
+      <div class="row"><span class="lhs">procedure</span><span class="arrow">→</span> typed client <span class="c" style="color:var(--muted)">(pure inference, no codegen)</span></div>
+      <div class="row"><span class="lhs">.input(schema)</span><span class="arrow">→</span> REST endpoint + OpenAPI</div>
+      <div class="row"><span class="lhs">.ai()</span><span class="arrow">→</span> streaming &amp; real-time <span class="c" style="color:var(--muted)">(async generators + pub/sub)</span></div>
+      <div class="row"><span class="lhs">.handler(fn)</span><span class="arrow">→</span> in-process caller <span class="c" style="color:var(--muted)">(RSC, zero round-trip)</span></div>
+      <div class="row"><span class="lhs">&nbsp;</span><span class="arrow">→</span> <span style="color:var(--accent2)">LLM tool</span> &amp; <span style="color:var(--accent2)">MCP server</span> <span class="c" style="color:var(--muted)">(stdio + remote HTTP)</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="quickstart">
+  <div class="wrap">
+    <h2>Quickstart</h2>
+    <p class="lead">Define once, serve anywhere, call with full inference. No generated files.</p>
+    <div class="steps">
+      <div class="step">
+        <h3><span class="n">1</span> Define</h3>
+<pre><code><span class="k">import</span> { initNexus, s, <span class="k">type</span> RouterRecord } <span class="k">from</span> <span class="s">"nexus-rpc"</span>;
+
+<span class="k">const</span> { route } = <span class="f">initNexus</span>&lt;{ userId: string | null }&gt;();
+
+<span class="k">export const</span> appRouter = {
+  add: route
+    .<span class="f">input</span>(s.<span class="f">object</span>({ a: s.<span class="f">number</span>(), b: s.<span class="f">number</span>() }))
+    .<span class="f">handler</span>(({ input }) => input.a + input.b),
+} <span class="k">satisfies</span> RouterRecord;
+
+<span class="k">export type</span> AppRouter = <span class="k">typeof</span> appRouter;</code></pre>
+      </div>
+      <div class="step">
+        <h3><span class="n">2</span> Serve — Next.js App Router</h3>
+<pre><code><span class="c">// app/rpc/[...nexus]/route.ts</span>
+<span class="k">import</span> { toNextHandler } <span class="k">from</span> <span class="s">"nexus-rpc"</span>;
+<span class="k">import</span> { appRouter } <span class="k">from</span> <span class="s">"@/server/router"</span>;
+
+<span class="k">export const</span> { GET, POST } = <span class="f">toNextHandler</span>(appRouter, {
+  createContext: (req) => ({ userId: <span class="f">getSession</span>(req) }),
+});</code></pre>
+      </div>
+      <div class="step">
+        <h3><span class="n">3</span> Call — typed, no codegen</h3>
+<pre><code><span class="k">import</span> { createClient } <span class="k">from</span> <span class="s">"nexus-rpc"</span>;
+<span class="k">import</span> <span class="k">type</span> { AppRouter } <span class="k">from</span> <span class="s">"@/server/router"</span>;
+
+<span class="k">const</span> api = <span class="f">createClient</span>&lt;AppRouter&gt;(<span class="s">""</span>);
+<span class="k">const</span> sum = <span class="k">await</span> api.<span class="f">add</span>({ a: 40, b: 2 });   <span class="c">// number, inferred</span></code></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="ai">
+  <div class="wrap">
+    <h2>The AI / MCP story</h2>
+    <p class="lead">Your <code>.ai()</code> procedures become tools for LLMs and an MCP server Claude can
+      connect to — the same handlers, the same validation, the same auth context.</p>
+<pre><code><span class="k">import</span> { toToolset, createToolExecutor, mcpToolDefinitions } <span class="k">from</span> <span class="s">"nexus-rpc"</span>;
+
+<span class="c">// Tool defs for Anthropic / OpenAI from your .ai() procedures:</span>
+<span class="k">const</span> tools = <span class="f">toToolset</span>(appRouter, { format: <span class="s">"anthropic"</span> });
+
+<span class="c">// Execute a tool the model chose — validated, scoped to the user's ctx:</span>
+<span class="k">const</span> execute = <span class="f">createToolExecutor</span>(appRouter, ctx);
+<span class="k">await</span> <span class="f">execute</span>(<span class="s">"notes.create"</span>, modelProvidedArgs);  <span class="c">// bad args rejected</span>
+
+<span class="c">// MCP: the same procedures become tools Claude can call (stdio + HTTP).</span>
+<span class="k">const</span> defs = <span class="f">mcpToolDefinitions</span>(appRouter);</code></pre>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>How it compares</h2>
+    <table>
+      <thead><tr><th>Feature</th><th>tRPC</th><th>ts-rest</th><th>Hono</th><th class="nx">nexus-rpc</th></tr></thead>
+      <tbody>
+        <tr><td>Typed client, no codegen</td><td class="y">✅</td><td class="n">—</td><td class="y">✅</td><td class="y">✅</td></tr>
+        <tr><td>REST URLs + OpenAPI</td><td class="n">plugin</td><td class="y">✅</td><td class="n">plugin</td><td class="y">✅</td></tr>
+        <tr><td>Streaming</td><td class="n">links</td><td class="n">—</td><td class="y">✅</td><td class="y">✅</td></tr>
+        <tr><td>Real-time / WebSocket</td><td class="n">subs</td><td class="n">—</td><td class="y">✅</td><td class="y">✅</td></tr>
+        <tr><td>LLM tools from procedures</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✅</td></tr>
+        <tr><td>MCP server (stdio + HTTP)</td><td class="n">—</td><td class="n">—</td><td class="n">—</td><td class="y">✅</td></tr>
+        <tr><td>Runtime dependencies</td><td class="n">few</td><td class="n">few</td><td class="y">0</td><td class="y">0</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Also in the box</h2>
+    <div class="grid">
+      <div class="card"><div class="ic">🔌</div><h3>REST + OpenAPI</h3><p>Give a procedure a path; serve REST and emit a 3.1 spec from the same schemas.</p></div>
+      <div class="card"><div class="ic">📡</div><h3>Real-time</h3><p>Subscriptions are streaming procedures over a pluggable pub/sub (in-memory → Redis/NATS).</p></div>
+      <div class="card"><div class="ic">🔁</div><h3>WebSocket</h3><p>Multiplex unary calls + subscriptions over one socket, same router, outside serverless.</p></div>
+      <div class="card"><div class="ic">✅</div><h3>Standard Schema</h3><p>Zod, Valibot, ArkType, or the built-in validators — your choice, one interface.</p></div>
+      <div class="card"><div class="ic">⚡</div><h3>In-process caller</h3><p>Call procedures from Server Components with zero HTTP round-trip.</p></div>
+      <div class="card"><div class="ic">🧪</div><h3>Tested</h3><p>Runtime + type-level tests, tsup build (ESM + CJS + d.ts), CI on every push.</p></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <a class="btn primary" href="https://github.com/zeestack/nexus-rpc">View on GitHub ↗</a>
+    <p style="margin-top:18px">MIT licensed · built with nexus-rpc</p>
+    <p class="disclaimer">Pre-1.0 and experimental — APIs may change before 1.0.</p>
+  </div>
+</footer>
+
+</body>
+</html>
