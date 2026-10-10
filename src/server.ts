@@ -174,7 +174,7 @@ function buildRestTable(router: RouterRecord): RestRoute[] {
   const walk = (node: RouterRecord): void => {
     for (const k of Object.keys(node)) {
       const child = node[k];
-      if ((child as AnyProc)._nexus) {
+      if ((child as AnyProc)._dendra) {
         const proc = child as AnyProc;
         if (proc.path) {
           const paramNames: string[] = [];

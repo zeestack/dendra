@@ -27,7 +27,7 @@ export function toToolset(
   const walk = (node: RouterRecord, path: string[]): void => {
     for (const k of Object.keys(node)) {
       const child = node[k];
-      if ((child as AnyProc)._nexus) {
+      if ((child as AnyProc)._dendra) {
         const proc = child as AnyProc;
         if (!proc.ai?.expose) continue;
         const name = [...path, k].join(".");

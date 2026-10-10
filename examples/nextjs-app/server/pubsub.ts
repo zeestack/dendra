@@ -7,6 +7,6 @@
 
 import { createInMemoryPubSub, type PubSub } from "dendra";
 
-const g = globalThis as unknown as { __nexusPubSub?: PubSub };
+const g = globalThis as unknown as { __dendraPubSub?: PubSub };
 
-export const pubsub: PubSub = (g.__nexusPubSub ??= createInMemoryPubSub());
+export const pubsub: PubSub = (g.__dendraPubSub ??= createInMemoryPubSub());

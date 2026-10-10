@@ -3,7 +3,7 @@
 // So "Next support" is a five-line shim, and Next stays a swappable adapter
 // rather than a dependency baked into the core.
 //
-// Usage in a Next app — app/rpc/[...nexus]/route.ts:
+// Usage in a Next app — app/rpc/[...path]/route.ts:
 //
 //   import { appRouter } from "@/server/router";
 //   import { toNextHandler } from "dendra";

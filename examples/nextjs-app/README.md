@@ -116,7 +116,7 @@ server/
   context.ts       Ctx + createContext (HTTP) + directContext (in-process)
   router.ts        ← the single source of truth: all procedures
 app/
-  rpc/[...nexus]/route.ts   RPC mount        → the typed client talks here
+  rpc/[...path]/route.ts   RPC mount        → the typed client talks here
   api/[...rest]/route.ts    REST mount       → resource URLs, webhooks, 3rd parties
   openapi.json/route.ts     OpenAPI 3.1 doc  → Swagger UI / client codegen
   api/agent/route.ts        AI agent loop    → toToolset + createToolExecutor

@@ -73,4 +73,4 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
 
 await server.connect(new StdioServerTransport());
 // stdout is reserved for the protocol — log to stderr only.
-console.error(`nexus MCP server ready (stdio) → ${APP_URL} [tenant=${TENANT}]`);
+console.error(`dendra MCP server ready (stdio) → ${APP_URL} [tenant=${TENANT}]`);

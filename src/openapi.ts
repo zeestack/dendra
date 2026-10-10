@@ -28,7 +28,7 @@ export function toOpenApiDocument(
   const walk = (node: RouterRecord, prefix: string[]): void => {
     for (const k of Object.keys(node)) {
       const child = node[k];
-      if ((child as AnyProc)._nexus) {
+      if ((child as AnyProc)._dendra) {
         const proc = child as AnyProc;
         if (!proc.path) continue;
         const oaPath = proc.path.replace(/:([A-Za-z0-9_]+)/g, "{$1}");
@@ -101,7 +101,7 @@ function buildOperation(proc: AnyProc, operationId: string): Record<string, unkn
       content: { "application/json": { schema: proc.inputJsonSchema } },
     };
   }
-  if (proc.kind === "stream") op["x-nexus-streaming"] = true;
+  if (proc.kind === "stream") op["x-dendra-streaming"] = true;
 
   return op;
 }

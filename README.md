@@ -92,7 +92,7 @@ export const appRouter = {
 export type AppRouter = typeof appRouter;
 ```
 
-**Serve** (Next.js App Router — `app/rpc/[...nexus]/route.ts`):
+**Serve** (Next.js App Router — `app/rpc/[...path]/route.ts`):
 
 ```ts
 import { toNextHandler } from "dendra";

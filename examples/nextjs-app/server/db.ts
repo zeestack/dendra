@@ -31,10 +31,10 @@ export interface User {
 }
 
 type Drizzle = ReturnType<typeof drizzle>;
-const g = globalThis as unknown as { __nexusDrizzle?: Drizzle };
+const g = globalThis as unknown as { __dendraDrizzle?: Drizzle };
 
 function getDb(): Drizzle {
-  if (g.__nexusDrizzle) return g.__nexusDrizzle;
+  if (g.__dendraDrizzle) return g.__dendraDrizzle;
   mkdirSync(".data", { recursive: true });
   const sqlite = new Database(".data/app.db");
   sqlite.pragma("journal_mode = WAL");
@@ -49,8 +49,8 @@ function getDb(): Drizzle {
       name TEXT NOT NULL, email TEXT NOT NULL
     );
   `);
-  g.__nexusDrizzle = drizzle(sqlite);
-  return g.__nexusDrizzle;
+  g.__dendraDrizzle = drizzle(sqlite);
+  return g.__dendraDrizzle;
 }
 
 const id = (p: string) => p + Math.random().toString(36).slice(2, 8);

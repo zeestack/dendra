@@ -31,7 +31,7 @@ export interface Proc<
   Out = unknown,
   K extends ProcedureKind = "unary",
 > {
-  readonly _nexus: true;
+  readonly _dendra: true;
   readonly kind: K;
   readonly method: HttpMethod;
   readonly path?: string;
@@ -148,7 +148,7 @@ class Builder<Ctx, In, DOut = never> {
   ): Proc<Ctx, In, [DOut] extends [never] ? Awaited<Out> : DOut, "unary"> {
     const s = this.state;
     return {
-      _nexus: true,
+      _dendra: true,
       kind: "unary",
       method: s.method,
       path: s.path,
@@ -167,7 +167,7 @@ class Builder<Ctx, In, DOut = never> {
   ): Proc<Ctx, In, Out, "stream"> {
     const s = this.state;
     return {
-      _nexus: true,
+      _dendra: true,
       kind: "stream",
       method: s.method,
       path: s.path,
@@ -194,10 +194,10 @@ export function resolveProc(
 ): AnyProc | undefined {
   let cur: AnyProc | RouterRecord | undefined = router;
   for (const seg of segments) {
-    if (!cur || (cur as AnyProc)._nexus) return undefined;
+    if (!cur || (cur as AnyProc)._dendra) return undefined;
     cur = (cur as RouterRecord)[seg];
   }
-  return cur && (cur as AnyProc)._nexus ? (cur as AnyProc) : undefined;
+  return cur && (cur as AnyProc)._dendra ? (cur as AnyProc) : undefined;
 }
 
 async function validateInput(proc: AnyProc, raw: unknown): Promise<unknown> {

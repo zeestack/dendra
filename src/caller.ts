@@ -47,5 +47,5 @@ export function createCaller<R extends object>(
 function isProc(
   n: unknown,
 ): n is Proc<unknown, unknown, unknown, "unary" | "stream"> {
-  return typeof n === "object" && n !== null && (n as { _nexus?: true })._nexus === true;
+  return typeof n === "object" && n !== null && (n as { _dendra?: true })._dendra === true;
 }
