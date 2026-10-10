@@ -78,8 +78,4 @@
     <text x="580" y="484" font-size="12" fill="#9aa3b2">createMcpToolSource</text>
   </g>
 
-  <g font-size="11" fill="#6b7488" font-family="'JetBrains Mono', monospace">
-    <text x="486" y="236">.ai()</text>
-    <text x="250" y="314" fill="#ff8fa3">validate</text>
-  </g>
 </svg>

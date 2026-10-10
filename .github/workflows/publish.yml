@@ -1,0 +1,34 @@
+name: Publish to npm
+
+# Publishes the package when you push a version tag, e.g.:
+#   npm version patch   # bumps package.json + creates the tag
+#   git push --follow-tags
+#
+# Requires a repo secret NPM_TOKEN (npmjs.com → Access Tokens → Granular or
+# Automation token with publish rights for `dendra`; granular tokens can be
+# scoped to this one package).
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # enables npm provenance
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

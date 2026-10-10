@@ -333,6 +333,15 @@ npm run demo       # boots a server + typed client, exercises everything
 npm run demo:restws
 ```
 
+**Releasing** is automated: bump the version and push the tag, and CI publishes to
+npm (with provenance) via [`.github/workflows/publish.yml`](.github/workflows/publish.yml)
+— requires an `NPM_TOKEN` repo secret.
+
+```bash
+npm version patch   # or minor / major — bumps package.json and tags
+git push --follow-tags
+```
+
 ## Status
 
 **Pre-1.0 (v0.1.0) — experimental, but broad.** Implemented and tested
