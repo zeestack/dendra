@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/dendra-banner.svg" alt="dendra — one definition, many surfaces" width="620">
+<img src="assets/dendra-banner.png" alt="dendra — one definition, many surfaces" width="620">
 
 <br>
 
