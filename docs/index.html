@@ -96,6 +96,15 @@
   .arch-grid img { width: 100%; border: 1px solid var(--border); border-radius: 12px; display: block; }
   .arch-grid figcaption { color: var(--muted); font-size: 13px; margin-top: 10px; text-align: center; }
 
+  .vs-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; align-items: start; }
+  .vs-col { min-width: 0; }
+  .vs-tag { display: inline-block; font-size: 12px; font-weight: 600; padding: 4px 10px;
+    border-radius: 999px 999px 0 0; border: 1px solid var(--border); border-bottom: none; }
+  .vs-tag.trpc { color: var(--muted); background: var(--panel2); }
+  .vs-tag.dendra { color: #0b0d12; background: linear-gradient(90deg, #8aa5ff, #5be3b3); border: none; }
+  .vs-col pre { border-top-left-radius: 0; }
+  .vs-when { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-top: 24px; }
+
   .hero-banner { display: block; width: min(440px, 82%); margin: 0 auto 26px; }
   .hero-figure { margin: 40px auto 0; max-width: 900px; }
   .hero-figure img { width: 100%; border: 1px solid var(--border); border-radius: 14px; display: block; }
@@ -173,6 +182,7 @@
       <a href="#controllers">Class controllers</a>
       <div class="side-group">Reference</div>
       <a href="#compare">Comparison</a>
+      <a href="#vs">vs tRPC + MCP</a>
       <a href="#more">Also in the box</a>
     </nav>
     <div class="side-foot">
@@ -420,6 +430,90 @@
             <tr><td>Runtime dependencies</td><td class="n">few</td><td class="n">few</td><td class="y">0</td><td class="y">0</td></tr>
           </tbody>
         </table>
+      </div>
+    </section>
+
+    <section id="vs">
+      <div class="wrap">
+        <h2>dendra vs tRPC + MCP</h2>
+        <p class="lead">tRPC is excellent — if you're building a plain typed HTTP API, use it. The
+          difference shows up the moment you want your API callable by an LLM or Claude over MCP.
+          With tRPC you bolt on a parallel tool layer and keep it in sync by hand; with dendra the
+          same definition <em>is</em> the tool.</p>
+
+        <div class="vs-cols">
+          <div class="vs-col">
+            <span class="vs-tag trpc">tRPC + MCP glue</span>
+<pre><code><span class="c">// 1 · define (tRPC)</span>
+<span class="k">const</span> appRouter = t.<span class="f">router</span>({
+  createNote: t.procedure
+    .<span class="f">input</span>(z.<span class="f">object</span>({ title: z.<span class="f">string</span>(), body: z.<span class="f">string</span>() }))
+    .<span class="f">mutation</span>(({ input, ctx }) => ctx.db.<span class="f">create</span>(input)),
+});
+
+<span class="c">// 2 · hand-build a separate MCP tool layer</span>
+<span class="k">const</span> caller = appRouter.<span class="f">createCaller</span>(ctx);
+server.<span class="f">setRequestHandler</span>(ListTools, <span class="k">async</span> () => ({
+  tools: [{ name: <span class="s">"createNote"</span>, description: <span class="s">"…"</span>,
+    inputSchema: <span class="f">zodToJsonSchema</span>(CreateNoteInput) }], <span class="c">// keep in sync</span>
+}));
+server.<span class="f">setRequestHandler</span>(CallTool, <span class="k">async</span> (r) => {
+  <span class="k">if</span> (r.params.name === <span class="s">"createNote"</span>)            <span class="c">// route by hand</span>
+    <span class="k">return</span> <span class="f">wrap</span>(<span class="k">await</span> caller.<span class="f">createNote</span>(r.params.arguments));
+});
+<span class="c">// repeat the schema→format work for Anthropic/OpenAI.</span>
+<span class="c">// consuming other MCP servers: all DIY.</span></code></pre>
+          </div>
+
+          <div class="vs-col">
+            <span class="vs-tag dendra">dendra</span>
+<pre><code><span class="c">// one definition — that's the whole diff</span>
+<span class="k">export const</span> appRouter = {
+  createNote: route
+    .<span class="f">input</span>(s.<span class="f">object</span>({ title: s.<span class="f">string</span>(), body: s.<span class="f">string</span>() }))
+    .<span class="f">ai</span>({ description: <span class="s">"Create a note"</span> })   <span class="c">// ← becomes a tool</span>
+    .<span class="f">handler</span>(({ input, ctx }) => ctx.db.<span class="f">create</span>(input)),
+};
+
+<span class="k">const</span> tools   = <span class="f">toToolset</span>(appRouter, { format: <span class="s">"anthropic"</span> });
+<span class="k">const</span> execute = <span class="f">createToolExecutor</span>(appRouter, ctx); <span class="c">// validated</span>
+<span class="k">const</span> mcp     = <span class="f">mcpToolDefinitions</span>(appRouter);      <span class="c">// tools/list</span>
+
+<span class="c">// consume an external MCP server, merge into one toolset:</span>
+<span class="k">const</span> merged = <span class="f">mergeToolsets</span>(
+  <span class="f">toToolSource</span>(appRouter, ctx),
+  <span class="k">await</span> <span class="f">createMcpToolSource</span>(ghClient, { prefix: <span class="s">"gh."</span> }),
+);</code></pre>
+          </div>
+        </div>
+
+        <table style="margin-top:22px">
+          <thead><tr><th>Making your API usable by an LLM / Claude</th><th>tRPC + MCP</th><th class="nx">dendra</th></tr></thead>
+          <tbody>
+            <tr><td>Tool JSON Schema</td><td class="n">hand-convert from Zod</td><td class="y">same schema, automatic</td></tr>
+            <tr><td>Which procedures are tools</td><td class="n">maintain a separate list</td><td class="y"><code>.ai()</code> on the procedure</td></tr>
+            <tr><td>Validation on tool calls</td><td class="n">re-wire yourself</td><td class="y">same validator as HTTP</td></tr>
+            <tr><td>Auth / ctx on tool calls</td><td class="n">re-wire the caller</td><td class="y">same <code>.use()</code> / ctx path</td></tr>
+            <tr><td>Anthropic + OpenAI formats</td><td class="n">convert per provider</td><td class="y">one <code>format</code> option</td></tr>
+            <tr><td>MCP server (stdio + HTTP)</td><td class="n">write with the SDK</td><td class="y">built-in bridge</td></tr>
+            <tr><td>Consume external MCP servers</td><td class="n">DIY client + merge</td><td class="y"><code>createMcpToolSource</code> + <code>mergeToolsets</code></td></tr>
+            <tr><td>Drift risk (schema / description / exposure)</td><td class="n">high — two sources of truth</td><td class="y">none — one definition</td></tr>
+          </tbody>
+        </table>
+
+        <div class="vs-when">
+          <div class="card">
+            <h3 style="color:var(--muted)">Choose tRPC when</h3>
+            <p>You're not doing AI/MCP, you want the largest ecosystem and community, you rely on its
+              mature React Query integration / links, or you already have a tRPC codebase.</p>
+          </div>
+          <div class="card">
+            <h3 style="color:var(--accent2)">Choose dendra when</h3>
+            <p>Your API should be callable by agents and Claude with no parallel tool layer, you want
+              one definition to stay the single source of truth, or you need to both <em>expose</em>
+              and <em>consume</em> MCP.</p>
+          </div>
+        </div>
       </div>
     </section>
 
