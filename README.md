@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/dendra-banner.png" alt="dendra — one definition, many surfaces" width="620">
+<img src="https://raw.githubusercontent.com/zeestack/dendra/main/assets/dendra-banner.png" alt="dendra — one definition, many surfaces" width="620">
 
 <br>
 
@@ -58,7 +58,7 @@ table stakes it also happens to get right.
 ## One definition → many surfaces
 
 <div align="center">
-<img src="assets/arch-framework.png" alt="dendra framework architecture: one definition branches into typed client, REST + OpenAPI, in-process caller, streaming, LLM tools, and an MCP server" width="820">
+<img src="https://raw.githubusercontent.com/zeestack/dendra/main/assets/arch-framework.png" alt="dendra framework architecture: one definition branches into typed client, REST + OpenAPI, in-process caller, streaming, LLM tools, and an MCP server" width="820">
 <br>
 <sub><a href="https://products.techfoundry.io/dendra/architecture/framework.html">▶ open the interactive diagram</a></sub>
 </div>
@@ -196,6 +196,19 @@ const { items, input, setInput, busy, send } = useAssistant({
 ```
 
 Neither is required — bring your own loop/UI and just use `mergeToolsets`.
+
+**Amazon Bedrock:** `runAgent`'s client type is structural, so Claude on Bedrock
+drops in with no cast — pass an `AnthropicBedrock` client from
+[`@anthropic-ai/bedrock-sdk`](https://www.npmjs.com/package/@anthropic-ai/bedrock-sdk):
+
+```ts
+import { AnthropicBedrock } from "@anthropic-ai/bedrock-sdk";
+yield* runAgent({ client: new AnthropicBedrock({ awsRegion: "us-east-1" }),
+  model: "anthropic.claude-3-5-sonnet-20241022-v2:0", tools, execute, prompt });
+```
+
+For non-Claude Bedrock models, use `toToolset(router, { format: "plain" })` and map
+it to the Converse API's `toolSpec` (a `dendra/bedrock` helper is on the roadmap).
 
 ## Middleware & auth (`.use()`)
 
@@ -351,7 +364,7 @@ MCP; point any MCP client at its `/api/mcp` or stdio server.)
 ## Examples
 
 <div align="center">
-<img src="assets/arch-example.png" alt="dendra example app architecture: browser and Claude talk to Next.js routes and the appRouter, which uses SQLite, pub/sub, runAgent, and an MCP connection registry with OAuth" width="820">
+<img src="https://raw.githubusercontent.com/zeestack/dendra/main/assets/arch-example.png" alt="dendra example app architecture: browser and Claude talk to Next.js routes and the appRouter, which uses SQLite, pub/sub, runAgent, and an MCP connection registry with OAuth" width="820">
 <br>
 <sub><a href="https://products.techfoundry.io/dendra/architecture/example.html">▶ open the interactive diagram</a></sub>
 </div>
@@ -385,7 +398,7 @@ git push --follow-tags
 
 ## Status
 
-**Pre-1.0 (v0.1.0) — experimental, but broad.** Implemented and tested
+**Pre-1.0 (v0.1.1) — experimental, but broad.** Implemented and tested
 (32 tests, runtime + type-level): builder/router/dispatch, Standard Schema
 validation, Next/Fetch/Node adapters, REST + OpenAPI, inferred client (unary +
 streaming), NDJSON streaming with cancellation, WebSocket transport, middleware

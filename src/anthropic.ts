@@ -10,9 +10,26 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { AgentPart } from "./agent.ts";
 
+/**
+ * The minimal client surface `runAgent` needs — just `messages.stream`. Typed
+ * structurally (not as the concrete `Anthropic` class) so any API-compatible
+ * client drops in with no cast: `new Anthropic()`, or **Amazon Bedrock** via
+ * `new AnthropicBedrock()` from `@anthropic-ai/bedrock-sdk`.
+ */
+export interface AnthropicClientLike {
+  messages: {
+    stream(
+      body: Anthropic.MessageStreamParams,
+      options?: { signal?: AbortSignal },
+    ): AsyncIterable<Anthropic.MessageStreamEvent> & {
+      finalMessage(): Promise<Anthropic.Message>;
+    };
+  };
+}
+
 export interface RunAgentOptions {
-  /** An Anthropic client instance (`new Anthropic()`). */
-  client: Anthropic;
+  /** An Anthropic-compatible client — `new Anthropic()` or `new AnthropicBedrock()`. */
+  client: AnthropicClientLike;
   model: string;
   /** Tool schemas in Anthropic format (e.g. from `mergeToolsets().tools`). */
   tools: unknown[];
