@@ -133,7 +133,15 @@ export async function* streamAssistant(
     }
 
     const final = await stream.finalMessage();
-    messages.push({ role: "assistant", content: final.content });
+    // Opus 5.5 always thinks; with display "omitted" (default) the thinking blocks
+    // come back empty, and echoing an empty thinking block into the next request
+    // is a 400 ("each thinking block must contain thinking"). Strip them before
+    // re-sending — we only need the text + tool_use blocks to continue the loop.
+    const replayContent = final.content.filter((b) => {
+      const t = (b as { type: string }).type;
+      return t !== "thinking" && t !== "redacted_thinking";
+    });
+    messages.push({ role: "assistant", content: replayContent });
 
     const toolUses = final.content.filter(
       (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
