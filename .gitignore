@@ -1,0 +1,16 @@
+# dependencies
+node_modules/
+
+# build output / caches
+.next/
+*.tsbuildinfo
+dist/
+build/
+
+# secrets & local env (never commit real keys)
+.env
+.env*.local
+
+# os / editor
+.DS_Store
+*.log

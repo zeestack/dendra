@@ -1,0 +1,19 @@
+{
+  "name": "nexus-rpc",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Lightweight, decorator-free, codegen-free typed RPC/REST framework for Next.js and any Web-standard runtime.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "demo": "node examples/demo.ts",
+    "demo:restws": "node examples/rest-ws-demo.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "@types/node": "^22.7.0"
+  }
+}
