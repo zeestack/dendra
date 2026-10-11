@@ -8,6 +8,13 @@ scope and order will shift with feedback. Open an issue or discussion to weigh i
 directions) and on **ease of adoption**. Keep the core zero-dependency; new
 integrations ship as optional subpath exports with their own peer deps.
 
+**Positioning:** dendra is an **API framework** ("tRPC for the AI era"), not a
+model SDK. It complements model SDKs like the Vercel AI SDK rather than competing
+with them — and it runs *on* platforms like Vercel/Next.js, not against them.
+dendra owns "what your API is and how it becomes tools/MCP"; a model SDK owns "how
+you call the model." The AI helpers (`dendra/anthropic`, `dendra/react`) are
+optional convenience, not the moat.
+
 ---
 
 ## Shipped — 0.1.0
@@ -52,6 +59,9 @@ The focused set (the four that move the needle) is marked ⭐.
   - [ ] (b) **`dendra/bedrock`** — a `runAgent` over the Bedrock **Converse** API that
     maps the plain toolset to `toolSpec`, so *any* Bedrock model (Claude, Llama,
     Titan, Mistral) works, not just Claude.
+- [ ] **Vercel AI SDK interop** — a thin adapter exposing `mergeToolsets()` output as
+  AI SDK `tools`, so dendra is the API/tool layer *under* whatever model stack you
+  already use. Complement, not compete (see Positioning).
 - [ ] **MCP tool annotations** — mark tools `readOnly` / `destructive` and emit the
   corresponding MCP hints, with a **confirmation / human-in-the-loop hook** for
   dangerous calls.
