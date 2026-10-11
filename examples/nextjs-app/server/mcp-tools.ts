@@ -29,6 +29,22 @@ const plainFetch = ((input: RequestInfo | URL, init?: RequestInit): Promise<Resp
   const lib = url.protocol === "http:" ? http : https;
   const reqHeaders: Record<string, string> = {};
   new Headers(init?.headers as HeadersInit).forEach((v, k) => (reqHeaders[k] = v));
+
+  // Normalize the body to a string/Buffer. OAuth token requests pass a
+  // URLSearchParams (form-encoded), which node's req.write() can't accept directly.
+  let body: string | Buffer | undefined;
+  const raw = init?.body as unknown;
+  if (raw == null) body = undefined;
+  else if (typeof raw === "string") body = raw;
+  else if (raw instanceof URLSearchParams) {
+    body = raw.toString();
+    if (!("content-type" in reqHeaders))
+      reqHeaders["content-type"] = "application/x-www-form-urlencoded;charset=UTF-8";
+  } else if (Buffer.isBuffer(raw)) body = raw;
+  else if (raw instanceof Uint8Array) body = Buffer.from(raw);
+  else body = String(raw);
+  if (body != null) reqHeaders["content-length"] = String(Buffer.byteLength(body));
+
   return new Promise<Response>((resolve, reject) => {
     const req = lib.request(
       url,
@@ -55,7 +71,7 @@ const plainFetch = ((input: RequestInfo | URL, init?: RequestInit): Promise<Resp
     req.on("error", reject);
     const signal = init?.signal as AbortSignal | undefined;
     if (signal) signal.addEventListener("abort", () => req.destroy(new Error("aborted")));
-    if (init?.body) req.write(init.body as string | Buffer);
+    if (body != null) req.write(body);
     req.end();
   });
 }) as typeof fetch;
