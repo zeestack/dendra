@@ -13,11 +13,52 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js";
+import { auth, discoverOAuthServerInfo } from "@modelcontextprotocol/sdk/client/auth.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { createMcpToolSource, type ToolFormat, type ToolSource } from "dendra";
 import { createExternalMcpServer } from "./external-mcp-server.ts";
+import http from "node:http";
+import https from "node:https";
 import { AppOAuthProvider, authStore, type PendingAuth } from "./mcp-oauth.ts";
+
+// Next.js patches global fetch, and its instrumentation hangs the cross-origin
+// MCP/OAuth calls made inside a route handler. Use a real fetch built on Node's
+// http(s) module so discovery, registration, and the handshake complete normally.
+const plainFetch = ((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+  const url = new URL(typeof input === "string" ? input : (input as Request).url ?? String(input));
+  const lib = url.protocol === "http:" ? http : https;
+  const reqHeaders: Record<string, string> = {};
+  new Headers(init?.headers as HeadersInit).forEach((v, k) => (reqHeaders[k] = v));
+  return new Promise<Response>((resolve, reject) => {
+    const req = lib.request(
+      url,
+      { method: init?.method ?? "GET", headers: reqHeaders },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (c) => chunks.push(c as Buffer));
+        res.on("end", () => {
+          const headers = new Headers();
+          for (const [k, v] of Object.entries(res.headers)) {
+            if (Array.isArray(v)) v.forEach((x) => headers.append(k, x));
+            else if (v != null) headers.set(k, v);
+          }
+          resolve(
+            new Response(chunks.length ? Buffer.concat(chunks) : null, {
+              status: res.statusCode ?? 200,
+              statusText: res.statusMessage ?? "",
+              headers,
+            }),
+          );
+        });
+      },
+    );
+    req.on("error", reject);
+    const signal = init?.signal as AbortSignal | undefined;
+    if (signal) signal.addEventListener("abort", () => req.destroy(new Error("aborted")));
+    if (init?.body) req.write(init.body as string | Buffer);
+    req.end();
+  });
+}) as typeof fetch;
 
 interface Connection {
   id: string;
@@ -178,19 +219,49 @@ export async function connectMcpServer(input: {
   };
   authStore().set(id, pending);
 
-  const transport = new StreamableHTTPClientTransport(url, {
-    authProvider: new AppOAuthProvider(pending),
-  });
-
+  // 1) Run the OAuth flow FIRST — these are quick HTTP metadata/registration calls
+  //    (RFC 9728 discovery + dynamic registration + PKCE), no hanging handshake.
+  //    For a protected server (e.g. Microsoft 365) this captures the authorize URL
+  //    and returns "REDIRECT"; for a public server it throws (no OAuth metadata),
+  //    and we fall through to a plain connect.
+  const provider = new AppOAuthProvider(pending);
+  let authed = false;
   try {
-    const client = await newClient(transport);
-    authStore().delete(id); // no auth needed
-    return { status: "connected", server: await register(id, prefix, url, client) };
-  } catch (e) {
-    if (e instanceof UnauthorizedError && pending.authorizeUrl) {
-      // The browser must send the user here to authorize.
+    // The authorize request needs a scope (Microsoft and others reject a scopeless
+    // request). The SDK only derives it from RFC 9728 resource metadata, which some
+    // servers (e.g. Microsoft 365) don't serve — so read the scopes the server
+    // advertises and pass them through explicitly.
+    let scope: string | undefined;
+    try {
+      const info = await discoverOAuthServerInfo(url, { fetchFn: plainFetch });
+      const supported =
+        info.resourceMetadata?.scopes_supported ??
+        (info.authorizationServerMetadata as { scopes_supported?: string[] })?.scopes_supported;
+      scope = supported?.join(" ");
+    } catch {
+      /* no metadata — let auth() decide */
+    }
+
+    const result = await auth(provider, { serverUrl: url.toString(), scope, fetchFn: plainFetch });
+    if (pending.authorizeUrl) {
+      // The browser opens this; /mcp/callback completes the handshake.
       return { status: "auth_required", id, authorizeUrl: pending.authorizeUrl };
     }
+    authed = result === "AUTHORIZED"; // tokens already present → connect with them
+  } catch {
+    /* not an OAuth-protected server — try a plain connect below */
+  }
+
+  try {
+    const client = await newClient(
+      new StreamableHTTPClientTransport(url, {
+        fetch: plainFetch,
+        ...(authed ? { authProvider: provider } : {}),
+      }),
+    );
+    authStore().delete(id);
+    return { status: "connected", server: await register(id, prefix, url, client) };
+  } catch (e) {
     authStore().delete(id);
     throw e;
   }
@@ -207,7 +278,10 @@ export async function finishMcpAuth(state: string, code: string): Promise<McpSer
 
   const url = new URL(pending.url);
   const provider = new AppOAuthProvider(pending);
-  const transport = new StreamableHTTPClientTransport(url, { authProvider: provider });
+  const transport = new StreamableHTTPClientTransport(url, {
+    authProvider: provider,
+    fetch: plainFetch,
+  });
 
   await transport.finishAuth(code); // code → tokens (saved on `pending`)
   const client = await newClient(transport); // retry handshake, now authorized

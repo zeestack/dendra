@@ -12,9 +12,9 @@
     "@anthropic-ai/sdk": "^0.30.1",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "better-sqlite3": "^13.0.3",
+    "dendra": "^0.1.1",
     "drizzle-orm": "^0.45.4",
     "next": "^14.2.35",
-    "dendra": "file:../..",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "ws": "^8.18.0"

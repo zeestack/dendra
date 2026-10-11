@@ -8,13 +8,13 @@ subscriptions, AI streaming, AI tools, and the standalone WebSocket server.
 
 ```bash
 cd examples/nextjs-app
-npm install          # installs Next + React and links dendra from source
+npm install          # installs Next + React + the published dendra package
 npm run dev          # http://localhost:3100
 npm run ws           # (optional, separate terminal) WebSocket server on :4000
 ```
 
-`dendra` is linked from the repo (`"dendra": "file:../.."`) and compiled by
-Next via `transpilePackages`, so there's no publish step.
+`dendra` is consumed from npm (`"dendra": "^0.1.1"`) exactly as your own app
+would — no path aliases or `transpilePackages`.
 
 ## Demo all features in one place
 
