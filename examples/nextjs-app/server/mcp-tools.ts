@@ -77,6 +77,16 @@ function store() {
   return g.__dendraMcp;
 }
 
+/** Collapse duplicate query params (keep the last value per key). */
+function dedupeQuery(u: string): string {
+  const url = new URL(u);
+  const last = new Map<string, string>();
+  for (const [k, v] of url.searchParams) last.set(k, v); // later values overwrite
+  for (const k of [...last.keys()]) url.searchParams.delete(k);
+  for (const [k, v] of last) url.searchParams.append(k, v);
+  return url.toString();
+}
+
 async function newClient(transport: Transport): Promise<Client> {
   const client = new Client(
     { name: "dendra-notes-app", version: "1.0.0" },
@@ -244,6 +254,11 @@ export async function connectMcpServer(input: {
 
     const result = await auth(provider, { serverUrl: url.toString(), scope, fetchFn: plainFetch });
     if (pending.authorizeUrl) {
+      // Some servers pre-set query params on their authorization_endpoint (e.g.
+      // Microsoft's `?prompt=select_account`), which the SDK then also sets —
+      // producing a duplicate `prompt` that Microsoft rejects (AADSTS9000411).
+      // Collapse duplicates, keeping the last value per key.
+      pending.authorizeUrl = dedupeQuery(pending.authorizeUrl);
       // The browser opens this; /mcp/callback completes the handshake.
       return { status: "auth_required", id, authorizeUrl: pending.authorizeUrl };
     }
