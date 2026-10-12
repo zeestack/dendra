@@ -1,0 +1,36 @@
+name: create-dendra-app
+
+# Scaffold each template and make sure a generated app typechecks and builds.
+# A broken scaffold is the one thing that kills trust in a create-* tool.
+
+on:
+  push:
+    paths:
+      - "packages/create-dendra-app/**"
+      - ".github/workflows/create-app.yml"
+  pull_request:
+    paths:
+      - "packages/create-dendra-app/**"
+
+jobs:
+  scaffold:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        template: [minimal, mcp]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Scaffold (${{ matrix.template }})
+        run: node packages/create-dendra-app/index.mjs "$RUNNER_TEMP/app" --yes --template ${{ matrix.template }} --no-install --no-git
+      - name: Install
+        run: npm install --no-audit --no-fund
+        working-directory: ${{ runner.temp }}/app
+      - name: Typecheck
+        run: npm run typecheck
+        working-directory: ${{ runner.temp }}/app
+      - name: Build
+        run: npm run build
+        working-directory: ${{ runner.temp }}/app
