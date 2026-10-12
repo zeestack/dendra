@@ -1,0 +1,19 @@
+{
+  "name": "create-dendra-app",
+  "version": "0.1.0",
+  "description": "Scaffold a Next.js app built on dendra — typed RPC/REST where every procedure is also an LLM tool and an MCP server.",
+  "type": "module",
+  "bin": {
+    "create-dendra-app": "index.mjs"
+  },
+  "files": ["index.mjs", "templates"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zeestack/dendra.git",
+    "directory": "packages/create-dendra-app"
+  },
+  "homepage": "https://github.com/zeestack/dendra/tree/main/packages/create-dendra-app#readme",
+  "keywords": ["dendra", "nextjs", "mcp", "ai", "scaffold", "create", "rpc", "typescript"],
+  "engines": { "node": ">=18" }
+}
