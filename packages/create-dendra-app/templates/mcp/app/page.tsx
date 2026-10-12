@@ -79,8 +79,9 @@ export default function Home() {
         {tools.length === 0 && <li style={{ color: "#777" }}>Loading…</li>}
       </ul>
       <p style={{ color: "#777", fontSize: 14 }}>
-        Connect it: Claude Desktop via <code>npm run mcp:stdio</code> (stdio), or claude.ai
-        via the remote endpoint <code>/api/mcp</code>. See the README.
+        Connect Claude: add this project to your Claude Desktop config (stdio), or point
+        claude.ai at the remote <code>/api/mcp</code> endpoint. Step-by-step guide (config
+        path, the exact JSON, verify) is in this project&apos;s <strong>README</strong>.
       </p>
     </main>
   );
