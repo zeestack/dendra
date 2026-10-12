@@ -24,15 +24,17 @@ exposes (the same ones Claude would see).
 
 ### Claude Desktop (stdio)
 
-Add this to your Claude Desktop MCP config (replace the path with this project's
-absolute path), then restart Claude Desktop:
+Run `npm install` first. Then add this to your Claude Desktop MCP config and fully
+quit + reopen Claude Desktop. Use `--prefix` with this project's **absolute path**
+— Claude Desktop launches servers from `/`, so without it npm can't find
+`package.json`; `--silent` keeps npm's banner out of the MCP stream:
 
 ```json
 {
   "mcpServers": {
     "{{projectName}}": {
-      "command": "npx",
-      "args": ["tsx", "/ABSOLUTE/PATH/TO/{{projectName}}/mcp-server.ts"]
+      "command": "npm",
+      "args": ["--prefix", "/ABSOLUTE/PATH/TO/{{projectName}}", "run", "--silent", "mcp:stdio"]
     }
   }
 }
