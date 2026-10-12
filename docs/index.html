@@ -209,6 +209,9 @@
           <a class="btn primary" href="#quickstart">Get started</a>
           <a class="btn" href="https://github.com/zeestack/dendra">Star on GitHub</a>
         </div>
+        <div style="margin-top:18px;display:flex;justify-content:center">
+          <code style="background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:9px 14px;font-size:14px;color:var(--code)">npm create dendra-app@latest my-app</code>
+        </div>
 
         <figure class="hero-figure">
           <a href="architecture/framework.html"><img src="img/arch-framework.svg" alt="dendra: one definition branches into typed client, REST, OpenAPI, streaming, LLM tools, and an MCP server" /></a>
@@ -298,8 +301,10 @@
     <section id="quickstart">
       <div class="wrap">
         <h2>Quickstart</h2>
-        <p class="lead">Install it, define once, serve anywhere, call with full inference. No generated files.</p>
-<pre style="margin-bottom:20px"><code>npm i dendra</code></pre>
+        <p class="lead">Scaffold a working Next.js app in one command — or add dendra to an existing project.</p>
+<pre style="margin-bottom:10px"><code>npm create dendra-app@latest my-app   <span class="c"># pick: minimal | mcp</span>
+cd my-app &amp;&amp; npm run dev</code></pre>
+<p class="lead" style="margin-bottom:20px">…or add it to an existing app: <code>npm i dendra</code>. Then define once, serve anywhere, call with full inference — no generated files.</p>
         <div class="steps">
           <div class="step">
             <h3><span class="n">1</span> Define</h3>

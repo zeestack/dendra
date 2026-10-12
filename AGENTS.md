@@ -11,7 +11,15 @@ Web-standard runtime. You define a procedure **once**; it becomes a typed client
 a REST endpoint, OpenAPI, streaming, an in-process caller, an **LLM tool**, and an
 **MCP server**. Core is zero-dependency.
 
-## Install
+## Install / scaffold
+
+A new app? Scaffold it (templates: `minimal`, `mcp`):
+
+```bash
+npm create dendra-app@latest my-app
+```
+
+Adding to an existing project:
 
 ```bash
 npm i dendra
