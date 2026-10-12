@@ -69,6 +69,15 @@ against.
 
 ## Quickstart
 
+Scaffold a working Next.js app in one command:
+
+```bash
+npm create dendra-app@latest my-app      # pick: minimal | mcp
+cd my-app && npm run dev
+```
+
+Or add it to an existing project:
+
 ```bash
 npm i dendra
 ```
