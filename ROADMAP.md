@@ -38,9 +38,9 @@ optional convenience, not the moat.
 The focused set (the four that move the needle) is marked ⭐.
 
 ### Lower the barrier to entry
-- [ ] ⭐ **`create-dendra-app`** — `npx create-dendra-app` scaffolds a working
-  Next.js + dendra app (router, adapters, typed client, MCP route, example
-  procedures). One command to a running app.
+- [x] ⭐ **`create-dendra-app`** — `npm create dendra-app@latest my-app` scaffolds a
+  working Next.js + dendra app. _Shipped: `minimal` + `mcp` templates, CI scaffold
+  smoke test, published to npm._
 - [ ] ⭐ **`dendra/react-query`** — typed TanStack Query hooks (`useQuery` /
   `useMutation`) over the router. Closes the biggest tRPC parity gap. Optional peer dep.
 - [ ] ⭐ **Benchmarks** vs tRPC / Hono (throughput, cold start, bundle size) — a
