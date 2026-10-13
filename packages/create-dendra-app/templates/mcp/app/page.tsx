@@ -13,12 +13,24 @@ export default function Home() {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
 
-  function refresh() {
-    api.notes.list().then(setNotes);
-  }
   useEffect(() => {
     api.add({ a: 40, b: 2 }).then(setSum);
-    refresh();
+
+    // Live notes over STREAMING RPC — the same typed client, `for await`-ed.
+    // The server pushes the full list whenever it changes, so a note Claude
+    // creates over MCP (a separate process) appears here instantly. No polling.
+    let active = true;
+    (async () => {
+      try {
+        for await (const list of api.notes.watch()) {
+          if (!active) break;
+          setNotes(list);
+        }
+      } catch {
+        /* stream closed on unmount */
+      }
+    })();
+
     // Ask our own MCP endpoint what tools it exposes (exactly what Claude sees).
     fetch("/api/mcp", {
       method: "POST",
@@ -28,6 +40,10 @@ export default function Home() {
       .then((r) => r.json())
       .then((j) => setTools(j?.result?.tools ?? []))
       .catch(() => {});
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   async function addNote() {
@@ -35,7 +51,7 @@ export default function Home() {
     await api.notes.create({ title, body });
     setTitle("");
     setBody("");
-    refresh();
+    // No refresh needed — the watch stream pushes the new note back to us.
   }
 
   return (

@@ -64,6 +64,19 @@ and reopen it.
 
 Claude calls your `notes.create` tool. Then ask: *"list my notes"*.
 
+### See Claude's writes appear live in the app
+
+Keep `npm run dev` open at http://localhost:3000 while Claude creates a note —
+it shows up in the list **instantly**, no refresh. That's dendra **streaming
+RPC**: the page runs `for await (const list of api.notes.watch())` and the
+`notes.watch` procedure (`server/router.ts`) pushes the list on every change.
+
+The web app and the stdio MCP server are **two separate processes**, so they
+share state through a small JSON file (`.data/notes.json`); `notes.watch` streams
+on file changes, so a write from either process pushes to every open tab. Swap
+that file store for a real database + pub/sub (Postgres `LISTEN/NOTIFY`, Redis)
+when you outgrow it — the streaming procedure and the client stay exactly the same.
+
 ### claude.ai (remote HTTP)
 
 **1.** `npm run dev` (serves the MCP endpoint at `/api/mcp`).

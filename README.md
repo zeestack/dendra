@@ -7,6 +7,7 @@
 **The typed API framework where every procedure is also an LLM tool and an MCP server — with zero extra work.**
 
 [![npm](https://img.shields.io/npm/v/dendra?color=7c9cff&label=npm)](https://www.npmjs.com/package/dendra)
+[![downloads](https://img.shields.io/npm/dm/dendra?color=5be3b3&label=downloads)](https://www.npmjs.com/package/dendra)
 [![CI](https://github.com/zeestack/dendra/actions/workflows/ci.yml/badge.svg)](https://github.com/zeestack/dendra/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-7c9cff.svg)](LICENSE)
 [![runtime deps](https://img.shields.io/badge/runtime%20deps-0-5be3b3.svg)](package.json)

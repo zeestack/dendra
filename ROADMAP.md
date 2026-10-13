@@ -65,6 +65,14 @@ The focused set (the four that move the needle) is marked ⭐.
 - [ ] **MCP tool annotations** — mark tools `readOnly` / `destructive` and emit the
   corresponding MCP hints, with a **confirmation / human-in-the-loop hook** for
   dangerous calls.
+- [ ] ⭐ **MCP tool-context management** — keep large toolsets from blowing up the
+  model's context window. When you `mergeToolsets()` your local tools with several
+  external MCP servers, exposing all of them wastes tokens and hurts tool-selection
+  accuracy. Give `toToolset` / `mergeToolsets` first-class controls: include/exclude
+  filters and tag/namespace grouping, a per-request token/count **budget**, and
+  **lazy exposure** — surface a compact set plus a `search_tools` meta-tool that
+  pages in the full definitions on demand (so a 200-tool connector costs ~1 slot
+  until needed). All opt-in; the default stays "expose everything."
 - [ ] **MCP resources & prompts** — expose read-only data as MCP *resources* and
   reusable *prompts*, not just tools — a complete MCP server, not tools-only.
 - [ ] **`dendra/mcp-client`** (optional) — generalize the example's connection

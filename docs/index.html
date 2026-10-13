@@ -58,7 +58,7 @@
 
   /* hero */
   header.hero { padding: 64px 0 40px; text-align: center; }
-  .badge-row { display: flex; gap: 8px; justify-content: center; margin-bottom: 22px; flex-wrap: wrap; }
+  .badge-row { display: flex; gap: 8px; justify-content: center; align-items: center; margin-bottom: 22px; flex-wrap: wrap; }
   .pill { font-size: 12px; color: var(--muted); border: 1px solid var(--border);
     background: var(--panel); padding: 4px 10px; border-radius: 999px; }
   h1 { font-size: clamp(30px, 5vw, 50px); line-height: 1.08; letter-spacing: -.03em;
@@ -200,6 +200,8 @@
           <span class="pill">no decorators</span>
           <span class="pill">no codegen</span>
           <span class="pill">pre-1.0 · experimental</span>
+          <a href="https://www.npmjs.com/package/dendra"><img src="https://img.shields.io/npm/v/dendra?color=7c9cff&label=npm" alt="npm version" /></a>
+          <a href="https://www.npmjs.com/package/dendra"><img src="https://img.shields.io/npm/dm/dendra?color=5be3b3&label=downloads" alt="npm downloads per month" /></a>
         </div>
         <h1>Typed APIs that are also<br /><span class="grad">LLM tools &amp; MCP servers</span></h1>
         <p class="sub">A typed RPC/REST framework for Next.js. Define a procedure once — get a

@@ -22,6 +22,14 @@ export const appRouter = {
       .input(s.object({ title: s.string(), body: s.string() }))
       .ai({ description: "Create a note with a title and body" })
       .handler(({ input, ctx }): Note => ctx.db.notes.create(input)),
+
+    // Streaming RPC: a live subscription. The client does
+    // `for await (const list of api.notes.watch())` and re-renders on each push.
+    // Pushes whenever a note is written — including by Claude over MCP (a separate
+    // process). Streaming = an async generator; nothing else to wire up.
+    watch: route.stream(async function* ({ ctx }): AsyncGenerator<Note[]> {
+      yield* ctx.db.notes.watch(ctx.signal);
+    }),
   },
 } satisfies RouterRecord;
 
