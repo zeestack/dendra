@@ -7,9 +7,10 @@
 // just read ctx.tenantId. Swap adapters (WS, tests) and tenancy still works
 // because each adapter builds ctx the same way.
 
-import type { PubSub } from "dendra";
+import type { PubSub, MemoryStore } from "dendra";
 import { db } from "./db.ts";
 import { pubsub } from "./pubsub.ts";
+import { createSqliteMemory } from "./memory.ts";
 
 export interface Ctx {
   tenantId: string;
@@ -18,6 +19,8 @@ export interface Ctx {
   origin: string;
   db: typeof db;
   pubsub: PubSub;
+  /** Durable, per-user memory (SQLite). Scoping is applied here, once. */
+  memory: MemoryStore;
   signal?: AbortSignal;
 }
 
@@ -25,21 +28,31 @@ export interface Ctx {
 export async function createContext(req: Request): Promise<Ctx> {
   const host = req.headers.get("host") ?? "";
   const cookie = req.headers.get("cookie") ?? "";
+  // Browsers hit a subdomain; programmatic clients (e.g. the MCP server) can
+  // instead pass explicit x-tenant / x-user headers.
+  const tenantId = req.headers.get("x-tenant") ?? tenantFromHost(host);
+  const userId = req.headers.get("x-user") ?? parseSession(cookie) ?? "anonymous";
   return {
-    // Browsers hit a subdomain; programmatic clients (e.g. the MCP server) can
-    // instead pass explicit x-tenant / x-user headers.
-    tenantId: req.headers.get("x-tenant") ?? tenantFromHost(host),
-    userId: req.headers.get("x-user") ?? parseSession(cookie) ?? "anonymous",
+    tenantId,
+    userId,
     origin: originOf(req, host),
     db,
     pubsub,
+    memory: createSqliteMemory(tenantId, userId),
     signal: req.signal,
   };
 }
 
 /** In-process context for Server Components / the AI executor (no Request). */
 export function directContext(userId: string, tenantId = "public"): Ctx {
-  return { tenantId, userId, origin: "", db, pubsub };
+  return {
+    tenantId,
+    userId,
+    origin: "",
+    db,
+    pubsub,
+    memory: createSqliteMemory(tenantId, userId),
+  };
 }
 
 function originOf(req: Request, host: string): string {

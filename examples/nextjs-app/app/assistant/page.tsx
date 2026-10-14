@@ -283,6 +283,11 @@ export default function AssistantPage() {
                   <span key={j} style={{ whiteSpace: "pre-wrap" }}>
                     {p.text}
                   </span>
+                ) : p.type === "memory" ? (
+                  <div key={j} style={S.dim}>
+                    🧠 {p.op === "recalled" ? "recalled" : "saved"}{" "}
+                    {p.records.length} {p.records.length === 1 ? "memory" : "memories"}
+                  </div>
                 ) : (
                   <div key={j} style={S.toolWrap}>
                     {(() => {

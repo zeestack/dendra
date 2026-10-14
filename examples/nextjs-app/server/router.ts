@@ -79,6 +79,31 @@ const coreRouter = {
     }),
   },
 
+  // Long-term memory — the same define-once procedure, now over ctx.memory
+  // (SQLite, scoped per user in context.ts). `.ai()` makes each one a tool Claude
+  // can call over MCP, so the model can remember and recall across sessions.
+  memory: {
+    remember: route
+      .input(s.object({ text: s.string() }))
+      .ai({ description: "Save a durable fact about the user for later recall" })
+      .handler(({ input, ctx }) => ctx.memory.save(input.text, { kind: "fact" })),
+
+    recall: route
+      .input(s.object({ query: s.string() }))
+      .ai({ description: "Recall facts relevant to a query from memory" })
+      .handler(({ input, ctx }) => ctx.memory.search(input.query, { k: 5 })),
+
+    list: route
+      .get("/memory")
+      .ai({ description: "List everything remembered about the current user" })
+      .handler(({ ctx }) => ctx.memory.all?.() ?? []),
+
+    forget: route
+      .input(s.object({ id: s.string() }))
+      .ai({ description: "Forget a specific memory by its id" })
+      .handler(({ input, ctx }) => ctx.memory.forget(input.id)),
+  },
+
   app: {
     // Grounding tool: lets Claude learn what this app is and what it can do here
     // before acting, instead of guessing.
