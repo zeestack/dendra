@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dendra-example",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "examples/nextjs-app", "run", "dev"],
+      "port": 3100
+    }
+  ]
+}

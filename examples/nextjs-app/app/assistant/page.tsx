@@ -11,6 +11,7 @@ import { useAssistant } from "dendra/react";
 import { api } from "@/lib/api";
 import type { ChatPart } from "@/lib/chat-types";
 import type { Note } from "@/server/db";
+import type { MemoryRecord } from "dendra";
 
 type ToolPart = Extract<ChatPart, { type: "tool" }>;
 type McpServer = {
@@ -33,6 +34,22 @@ const REGISTRY: Record<string, React.FC<{ part: ToolPart }>> = {
   ),
   "ai.summarize": ({ part }) => (
     <SummaryCard summary={(part.result as { summary: string }).summary} />
+  ),
+  "memory.remember": ({ part }) => (
+    <MemoryCard label="🧠 Remembered" records={[part.result as MemoryRecord]} />
+  ),
+  "memory.recall": ({ part }) => (
+    <MemoryCard label="🧠 Recalled" records={(part.result as MemoryRecord[]) ?? []} />
+  ),
+  "memory.list": ({ part }) => (
+    <MemoryCard label="🧠 Memory" records={(part.result as MemoryRecord[]) ?? []} />
+  ),
+  "memory.forget": ({ part }) => (
+    <div style={S.card}>
+      <div style={S.cardLabel}>
+        {(part.result as boolean) ? "🗑 Forgotten" : "🤷 Nothing to forget"}
+      </div>
+    </div>
   ),
   "ui.navigate": ({ part }) => (
     <div style={S.card}>
@@ -365,12 +382,44 @@ function SummaryCard({ summary }: { summary: string }) {
   );
 }
 
+function MemoryCard({
+  label,
+  records,
+}: {
+  label: string;
+  records: MemoryRecord[];
+}) {
+  return (
+    <div style={{ ...S.card, borderColor: "#6a4bc4" }}>
+      <div style={{ ...S.cardLabel, color: "#6a4bc4" }}>
+        {label}
+        {records.length > 1 ? ` (${records.length})` : ""}
+      </div>
+      {records.length === 0 && <div style={S.dim}>Nothing remembered yet.</div>}
+      {records.map((r) => (
+        <div key={r.id} style={{ marginTop: 4 }}>
+          {r.text}
+          {typeof r.score === "number" && (
+            <span style={S.dim}> · {Math.round(r.score * 100)}% match</span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Fallback for any tool without a registered component: collapsed by default so
+// the transcript stays clean — the tool name shows as a clickable summary, and
+// the raw result expands on demand.
 function GenericCard({ part }: { part: ToolPart }) {
   return (
-    <div style={{ ...S.card, borderColor: part.isError ? "#c62828" : "#ccc" }}>
-      <div style={S.cardLabel}>{part.name}</div>
+    <details style={{ ...S.card, borderColor: part.isError ? "#c62828" : "#ccc" }}>
+      <summary style={{ ...S.cardLabel, cursor: "pointer", listStyle: "revert" }}>
+        {part.isError ? "⚠ " : "🔧 "}
+        {part.name}
+      </summary>
       <pre style={S.pre}>{JSON.stringify(part.result, null, 2)}</pre>
-    </div>
+    </details>
   );
 }
 

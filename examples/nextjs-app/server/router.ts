@@ -123,6 +123,10 @@ const coreRouter = {
           "notes.delete — delete a note by { id }",
           "users.list — list users in this workspace",
           "users.create — create a user { name, email }",
+          "memory.remember — save a durable fact about the user { text }",
+          "memory.recall — recall facts relevant to a query { query }",
+          "memory.list — list everything remembered about this user",
+          "memory.forget — forget a memory by { id }",
           "ai.summarize — summarize a piece of text into one sentence",
           "ext.weather.get — (external MCP tool) current weather for a city",
           "ext.time.now — (external MCP tool) the current server time",
@@ -196,7 +200,7 @@ const coreRouter = {
           tools: merged.tools,
           execute: merged.execute,
           system:
-            "You help the user manage notes and navigate the app. Use notes.list/notes.create for notes, users.list/users.create for users, and ui.navigate to move around (paths: '/', '/demo', '/chat', '/assistant'). You also have EXTERNAL tools from a connected MCP server: ext.weather.get (current weather for a city) and ext.time.now (current time) — use them when asked. After a tool runs, give a one-line confirmation. Keep replies brief.",
+            "You help the user manage notes and navigate the app. Use notes.list/notes.create for notes, users.list/users.create for users, and ui.navigate to move around (paths: '/', '/demo', '/chat', '/assistant'). You have durable MEMORY of the user across sessions: call memory.recall whenever the user asks about themselves or refers to something they told you before (e.g. their name, preferences, where they live), and call memory.remember to save a new durable fact when they tell you one (\"remember that…\", \"my name is…\", \"I prefer…\"); memory.list shows everything saved, memory.forget removes one by id. You also have EXTERNAL tools from a connected MCP server: ext.weather.get (current weather for a city) and ext.time.now (current time) — use them when asked. After a tool runs, give a one-line confirmation. Keep replies brief.",
           signal: ctx.signal,
         });
       }),
