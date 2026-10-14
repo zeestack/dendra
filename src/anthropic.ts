@@ -32,10 +32,18 @@ export interface RunAgentOptions {
   /** An Anthropic-compatible client — `new Anthropic()` or `new AnthropicBedrock()`. */
   client: AnthropicClientLike;
   model: string;
-  /** Tool schemas in Anthropic format (e.g. from `mergeToolsets().tools`). */
+  /** Tool schemas in Anthropic format (e.g. from `mergeToolsets().tools`).
+   *  Ignored when `lazyToolset` is set (which owns the tool list). */
   tools: unknown[];
   /** Runs a tool the model chose (e.g. `mergeToolsets().execute`). */
   execute: (name: string, args: unknown) => Promise<unknown>;
+  /**
+   * Opt-in tool-context management (`dendra` `lazyToolset`). When set, the full
+   * schemas are NOT sent up front — the model gets a compact menu + a
+   * `search_tools` meta-tool and loads tools on demand, keeping a large toolset
+   * out of context. `execute` still runs the real tools.
+   */
+  lazyToolset?: import("./context.ts").LazyToolset;
   /** The conversation so far, or a single user prompt. */
   messages?: Anthropic.MessageParam[];
   prompt?: string;
@@ -112,13 +120,25 @@ export async function* runAgent(opts: RunAgentOptions): AsyncGenerator<AgentPart
   const maxSteps = opts.maxSteps ?? 6;
 
   // Anthropic tool names must match ^[a-zA-Z0-9_-]+$ — ours are dotted, so
-  // sanitize for the model and map back on execution.
+  // sanitize for the model and map back on execution. With a lazy toolset the
+  // live set GROWS during the loop (search_tools un-defers more), so sanitizing
+  // is a reusable step and `tools` is mutable.
   const safeToOriginal = new Map<string, string>();
-  const tools = (opts.tools as Anthropic.Tool[]).map((t) => {
-    const safe = t.name.replace(/[^a-zA-Z0-9_-]/g, "_");
-    safeToOriginal.set(safe, t.name);
-    return { ...t, name: safe };
-  });
+  const sanitize = (defs: unknown[]): Anthropic.Tool[] =>
+    (defs as Anthropic.Tool[]).map((t) => {
+      const safe = t.name.replace(/[^a-zA-Z0-9_-]/g, "_");
+      safeToOriginal.set(safe, t.name);
+      return { ...t, name: safe };
+    });
+  const lazy = opts.lazyToolset;
+  let tools: Anthropic.Tool[];
+  if (lazy) {
+    // lazyToolset already sanitized names and owns the full safe→original map.
+    tools = lazy.tools as Anthropic.Tool[];
+    for (const [safe, orig] of lazy.nameMap) safeToOriginal.set(safe, orig);
+  } else {
+    tools = sanitize(opts.tools);
+  }
 
   const messages: Anthropic.MessageParam[] =
     opts.messages?.slice() ??
@@ -143,6 +163,12 @@ export async function* runAgent(opts: RunAgentOptions): AsyncGenerator<AgentPart
       }
       yield { type: "memory", op: "recalled", records };
     }
+  }
+
+  // ── Lazy tools: put the compact menu of deferred tools in the system prompt;
+  // the model loads the ones it needs via the search_tools meta-tool.
+  if (lazy && lazy.menu) {
+    system = [system, lazy.menu].filter(Boolean).join("\n\n");
   }
 
   // Accumulate the final assistant text so `remember` can extract from it.
@@ -188,6 +214,23 @@ export async function* runAgent(opts: RunAgentOptions): AsyncGenerator<AgentPart
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
     for (const tu of toolUses) {
       const original = safeToOriginal.get(tu.name) ?? tu.name;
+
+      // Lazy tools: a search_tools call isn't executed — it loads matching tool
+      // schemas into the live set for the next step, and returns the matches.
+      // `handle` takes the sanitized name; loaded defs are already sanitized.
+      const handled = lazy?.handle(tu.name, tu.input);
+      if (handled) {
+        if (handled.loaded.length)
+          tools = [...tools, ...(handled.loaded as Anthropic.Tool[])];
+        yield { type: "tool", name: original, input: tu.input, result: handled.result };
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: tu.id,
+          content: JSON.stringify(handled.result),
+        });
+        continue;
+      }
+
       let result: unknown;
       let isError = false;
       try {

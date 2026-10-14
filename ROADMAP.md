@@ -75,11 +75,14 @@ the progressive-disclosure loop inside `runAgent`. See
   `loadContextFiles` (assemble `AGENTS.md`-style static context into the system
   prompt). Human-editable, git-diffable, PR-reviewable; same `MemoryStore`
   interface, node-only subpath so the edge/browser core stays `node:fs`-free.
-- [ ] ⭐ **Source #2 — tools** (tool-context management). Keep large merged
-  toolsets from blowing the window: include/exclude filters, tag/namespace
-  grouping, and **lazy exposure** — a compact set plus a `search_tools` meta-tool
-  that pages in full definitions on demand (a 200-tool connector costs ~1 slot
-  until used). Opt-in; default stays "expose everything."
+- [x] ⭐ **Source #2 — tools** (shipped 0.3.0). `lazyToolset(tools, { pin, k })`
+  defers a large toolset behind a `search_tools` meta-tool: the model gets a
+  compact menu plus the meta-tool, searches, and only the matching schemas enter
+  context (a 100-tool connector costs ~1 slot until used). `runAgent({ lazyToolset })`
+  grows its live tool set as `search_tools` loads more; names are sanitized once
+  and mapped back so the executor still gets the original. Opt-in; default stays
+  "expose everything." _Still to add: include/exclude filters, a shared token
+  budget (comes with the manager)._
 - [ ] **Source #3 — skills** (progressive disclosure). A `Skill` = `{ name,
   description, instructions, tools? }`; descriptions are always in context, a
   `load_skill` meta-tool reveals the instructions **and** un-defers that skill's

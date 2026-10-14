@@ -44,6 +44,10 @@ export {
 } from "./tools.ts";
 export type { ToolFormat, PlainTool, ToolSource } from "./tools.ts";
 
+// Tool-context management: defer a large toolset behind a search_tools meta-tool.
+export { lazyToolset } from "./context.ts";
+export type { LazyToolset, LazyToolsetOptions } from "./context.ts";
+
 export { mcpToolDefinitions, createMcpBridge, createMcpToolSource } from "./mcp.ts";
 export type {
   McpToolDef,
