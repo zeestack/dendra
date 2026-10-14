@@ -1,0 +1,101 @@
+/* Global theme tokens — one source of truth for the whole app (nav, pages, and
+   the Assistant). Default follows the OS; a manual toggle sets data-theme on
+   <html> to override. Dark tokens apply when the OS is dark (and the user hasn't
+   forced light) OR when data-theme="dark" is set explicitly. */
+
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f1f2f5;
+  --border: #e6e7ea;
+  --fg: #17171c;
+  --fg-muted: #6b6f76;
+  --accent: #5b6bf5;
+  --accent-hover: #4a5ae8;
+  --accent-fg: #ffffff;
+  --accent-soft: rgba(91, 107, 245, 0.1);
+  --danger: #d33b3b;
+  --danger-soft: rgba(211, 59, 59, 0.08);
+  --good: #15935b;
+  --memory: #7c4bd0;
+  --mcp: #7c3aed;
+  --code-bg: #0e0e12;
+  --code-fg: #d6d6d6;
+  --nav-bg: rgba(255, 255, 255, 0.72);
+  --nav-border: rgba(0, 0, 0, 0.07);
+  --radius: 16px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.04);
+}
+
+/* dark token block, shared by the two selectors below */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e0e11;
+    --surface: #17171c;
+    --surface-2: #202026;
+    --border: #2b2b33;
+    --fg: #e8e8ec;
+    --fg-muted: #9a9aa4;
+    --accent: #7c88ff;
+    --accent-hover: #8b96ff;
+    --accent-fg: #0e0e11;
+    --accent-soft: rgba(124, 136, 255, 0.16);
+    --danger: #ff6b6b;
+    --danger-soft: rgba(255, 107, 107, 0.12);
+    --good: #43c98a;
+    --memory: #b79bf0;
+    --mcp: #b79bf0;
+    --code-bg: #08080b;
+    --code-fg: #d6d6d6;
+    --nav-bg: rgba(18, 18, 22, 0.72);
+    --nav-border: rgba(255, 255, 255, 0.08);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.3);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e0e11;
+  --surface: #17171c;
+  --surface-2: #202026;
+  --border: #2b2b33;
+  --fg: #e8e8ec;
+  --fg-muted: #9a9aa4;
+  --accent: #7c88ff;
+  --accent-hover: #8b96ff;
+  --accent-fg: #0e0e11;
+  --accent-soft: rgba(124, 136, 255, 0.16);
+  --danger: #ff6b6b;
+  --danger-soft: rgba(255, 107, 107, 0.12);
+  --good: #43c98a;
+  --memory: #b79bf0;
+  --mcp: #b79bf0;
+  --code-bg: #08080b;
+  --code-fg: #d6d6d6;
+  --nav-bg: rgba(18, 18, 22, 0.72);
+  --nav-border: rgba(255, 255, 255, 0.08);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+html {
+  color-scheme: light dark;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}

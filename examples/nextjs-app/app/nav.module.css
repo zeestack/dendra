@@ -1,19 +1,19 @@
-/* Modern, frosted, theme-aware top bar. Translucent + blurred so it sits nicely
-   over both the light pages and the dark Assistant. */
+/* Modern, frosted top bar. Theme tokens come from globals.css, so it follows the
+   manual theme toggle. */
 .nav {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   height: 58px;
   padding: 0 18px;
   position: sticky;
   top: 0;
   z-index: 20;
-  background: rgba(255, 255, 255, 0.72);
+  background: var(--nav-bg);
   backdrop-filter: saturate(180%) blur(14px);
   -webkit-backdrop-filter: saturate(180%) blur(14px);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+  border-bottom: 1px solid var(--nav-border);
 }
 
 .brand {
@@ -40,74 +40,74 @@
 .link {
   font-size: 14px;
   font-weight: 500;
-  color: #5b5f66;
+  color: var(--fg-muted);
   text-decoration: none;
   padding: 7px 13px;
   border-radius: 9px;
   transition: background 0.14s ease, color 0.14s ease;
 }
 .link:hover {
-  background: rgba(0, 0, 0, 0.05);
-  color: #17171c;
+  background: var(--surface-2);
+  color: var(--fg);
 }
 .active {
-  color: #4f46e5;
-  background: rgba(91, 107, 245, 0.1);
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .spacer {
   flex: 1;
 }
+
+.iconBtn {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.iconBtn:hover {
+  background: var(--surface-2);
+  color: var(--fg);
+}
+
 .gh {
   display: inline-flex;
   align-items: center;
   gap: 7px;
   font-size: 13px;
   font-weight: 500;
-  color: #5b5f66;
+  color: var(--fg-muted);
   text-decoration: none;
   padding: 7px 13px;
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--border);
   border-radius: 9px;
   transition: background 0.14s ease, color 0.14s ease;
 }
 .gh:hover {
-  background: rgba(0, 0, 0, 0.05);
-  color: #17171c;
+  background: var(--surface-2);
+  color: var(--fg);
 }
 .ghIcon {
   width: 16px;
   height: 16px;
   fill: currentColor;
 }
-
-@media (prefers-color-scheme: dark) {
-  .nav {
-    background: rgba(18, 18, 22, 0.72);
-    border-bottom-color: rgba(255, 255, 255, 0.08);
-  }
-  .link {
-    color: #a7a7b0;
-  }
-  .link:hover {
-    background: rgba(255, 255, 255, 0.07);
-    color: #ffffff;
-  }
-  .active {
-    color: #aeb6ff;
-    background: rgba(124, 136, 255, 0.16);
-  }
-  .gh {
-    color: #a7a7b0;
-    border-color: rgba(255, 255, 255, 0.12);
-  }
-  .gh:hover {
-    background: rgba(255, 255, 255, 0.07);
-    color: #ffffff;
-  }
+.icon {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-/* Narrow screens: hide the wordmark + GitHub label, keep the mark + links. */
 @media (max-width: 560px) {
   .word,
   .ghLabel {

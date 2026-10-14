@@ -6,6 +6,7 @@
 
 import { useState } from "react";
 import { api } from "@/lib/api";
+import u from "../ui.module.css";
 
 export function ChatClient() {
   const [prompt, setPrompt] = useState("");
@@ -13,6 +14,7 @@ export function ChatClient() {
   const [busy, setBusy] = useState(false);
 
   async function send() {
+    if (!prompt.trim() || busy) return;
     setOutput("");
     setBusy(true);
     try {
@@ -25,20 +27,31 @@ export function ChatClient() {
   }
 
   return (
-    <div style={{ maxWidth: 560, margin: "40px auto", fontFamily: "system-ui" }}>
-      <h1>Chat</h1>
-      <div style={{ display: "flex", gap: 8 }}>
+    <main className={u.page}>
+      <div className={u.hero}>
+        <h1 className={u.h1}>Streaming chat</h1>
+        <p className={u.lead}>
+          <span className={u.mono}>for await</span> over a streaming procedure —
+          the same typed client, iterated instead of awaited.
+        </p>
+      </div>
+      <div className={u.row}>
         <input
+          className={u.input}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && send()}
           placeholder="Say something…"
-          style={{ flex: 1 }}
         />
-        <button onClick={send} disabled={busy}>
+        <button onClick={send} disabled={busy} className={`${u.btn} ${u.btnPrimary}`}>
           {busy ? "…" : "Send"}
         </button>
       </div>
-      <p style={{ whiteSpace: "pre-wrap", marginTop: 16 }}>{output}</p>
-    </div>
+      {(output || busy) && (
+        <div className={u.card} style={{ whiteSpace: "pre-wrap", minHeight: 48 }}>
+          {output || <span className={u.muted}>…</span>}
+        </div>
+      )}
+    </main>
   );
 }

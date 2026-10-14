@@ -8,15 +8,18 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { wsApi } from "@/lib/ws";
 import type { Note } from "@/server/db";
+import u from "../ui.module.css";
 
 export default function DemoPage() {
   return (
-    <main style={S.page}>
-      <h1>dendra — feature demo</h1>
-      <p style={S.sub}>
-        Every card calls the live router. Open your network tab to watch the
-        actual requests.
-      </p>
+    <main className={u.page}>
+      <div className={u.hero}>
+        <h1 className={u.h1}>Feature demo</h1>
+        <p className={u.lead}>
+          Every card calls the live router. Open your network tab to watch the
+          actual requests.
+        </p>
+      </div>
       <UnaryRpc />
       <RestCard />
       <ValidationCard />
@@ -37,7 +40,7 @@ function UnaryRpc() {
     <Card title="1 · Unary RPC (typed client → /rpc/…)">
       <Row>
         <button
-          style={S.btn}
+          className={u.btn}
           onClick={async () => {
             const note = await api.notes.create({
               title: "Note " + new Date().toLocaleTimeString(),
@@ -49,7 +52,7 @@ function UnaryRpc() {
           api.notes.create(…)
         </button>
         <button
-          style={S.btn}
+          className={u.btn}
           onClick={async () => setList(JSON.stringify(await api.notes.list(), null, 2))}
         >
           api.notes.list()
@@ -67,7 +70,7 @@ function RestCard() {
   return (
     <Card title="3 · REST front-end (same router → GET /api/notes)">
       <button
-        style={S.btn}
+        className={u.btn}
         onClick={async () => {
           const res = await fetch("/api/notes");
           setOut(`HTTP ${res.status}\n` + JSON.stringify(await res.json(), null, 2));
@@ -86,7 +89,7 @@ function ValidationCard() {
   return (
     <Card title="4 · Validation guardrail (bad input → 400 with details)">
       <button
-        style={S.btn}
+        className={u.btn}
         onClick={async () => {
           // Raw fetch so we can send an intentionally invalid body.
           const res = await fetch("/rpc/notes.create", {
@@ -112,9 +115,9 @@ function StreamingCard() {
   return (
     <Card title="5 · Streaming (for await over api.ai.chat())">
       <Row>
-        <input style={S.input} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
+        <input className={u.input} value={prompt} onChange={(e) => setPrompt(e.target.value)} />
         <button
-          style={S.btn}
+          className={u.btn}
           disabled={busy}
           onClick={async () => {
             setOut("");
@@ -161,7 +164,7 @@ function RealtimeCard() {
   }, []);
   return (
     <Card title="6 · Real-time subscription (api.notes.watch() over HTTP stream)">
-      <p style={S.note}>{status}</p>
+      <p className={u.note}>{status}</p>
       <Pre>
         {feed.length
           ? feed.map((n) => `• ${n.title} — ${n.body}`).join("\n")
@@ -179,7 +182,7 @@ function AiToolsCard() {
     <Card title="7 · AI tools (derived from .ai() procedures)">
       <Row>
         <button
-          style={S.btn}
+          className={u.btn}
           onClick={async () => {
             const res = await fetch("/tools");
             setTools(JSON.stringify(await res.json(), null, 2));
@@ -188,7 +191,7 @@ function AiToolsCard() {
           GET /tools (toolset)
         </button>
         <button
-          style={S.btn}
+          className={u.btn}
           onClick={async () => {
             // ai.summarize is the exposed tool — calling it via the client is the
             // same code path the tool executor uses server-side.
@@ -214,7 +217,7 @@ function OpenApiCard() {
     <Card title="8 · OpenAPI 3.1 (auto-derived)">
       <Row>
         <button
-          style={S.btn}
+          className={u.btn}
           onClick={async () => {
             const res = await fetch("/openapi.json");
             setOut(JSON.stringify(await res.json(), null, 2));
@@ -222,7 +225,7 @@ function OpenApiCard() {
         >
           GET /openapi.json
         </button>
-        <a style={S.link} href="/openapi.json" target="_blank" rel="noreferrer">
+        <a className={u.link} href="/openapi.json" target="_blank" rel="noreferrer">
           open raw ↗
         </a>
       </Row>
@@ -237,7 +240,7 @@ function WebSocketCard() {
   return (
     <Card title="9 · WebSocket transport (needs `npm run ws` in another terminal)">
       <button
-        style={S.btn}
+        className={u.btn}
         onClick={async () => {
           try {
             const r = await wsApi().notes.list();
@@ -260,8 +263,8 @@ function WebSocketCard() {
 // ── tiny UI helpers ---------------------------------------------------------
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section style={S.card}>
-      <h3 style={S.h3}>{title}</h3>
+    <section className={u.card}>
+      <h3 className={u.cardTitle}>{title}</h3>
       {children}
     </section>
   );
@@ -270,17 +273,5 @@ function Row({ children }: { children: React.ReactNode }) {
   return <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{children}</div>;
 }
 function Pre({ children }: { children: React.ReactNode }) {
-  return <pre style={S.pre}>{children}</pre>;
+  return <pre className={u.pre}>{children}</pre>;
 }
-
-const S: Record<string, React.CSSProperties> = {
-  page: { maxWidth: 760, margin: "40px auto", padding: "0 16px", fontFamily: "system-ui, sans-serif" },
-  sub: { color: "#666" },
-  card: { border: "1px solid #e2e2e2", borderRadius: 10, padding: 16, margin: "16px 0" },
-  h3: { margin: "0 0 12px", fontSize: 15 },
-  btn: { padding: "7px 12px", borderRadius: 7, border: "1px solid #ccc", background: "#fafafa", cursor: "pointer", fontSize: 13 },
-  input: { flex: 1, minWidth: 180, padding: "7px 10px", borderRadius: 7, border: "1px solid #ccc" },
-  pre: { background: "#0b0b0b", color: "#d6d6d6", padding: 12, borderRadius: 8, overflowX: "auto", fontSize: 12, marginTop: 10, whiteSpace: "pre-wrap" },
-  note: { color: "#777", fontSize: 13, margin: "0 0 6px" },
-  link: { alignSelf: "center", fontSize: 13 },
-};

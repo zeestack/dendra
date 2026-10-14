@@ -1,3 +1,4 @@
+import "./globals.css";
 import { NavBar } from "./NavBar";
 
 export const metadata = {
@@ -5,31 +6,23 @@ export const metadata = {
   description: "Typed RPC/REST, streaming, real-time, and AI tools on Next.js",
 };
 
+// Apply the saved theme before first paint so there's no flash of the wrong one.
+const noFlashTheme = `try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}`;
+
 export default function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  // The demo is designed light (dark text on white cards). Pin a light theme so
-  // it stays readable when the OS is in dark mode — otherwise the browser's dark
-  // canvas shows through as a black background behind the light-mode styles.
-  //
-  // Flex column: the nav sits on top, and the content area fills the rest — so
-  // the full-height Assistant page gets (viewport − nav) instead of overflowing.
+  // Flex column (via globals.css body): the nav sits on top, and the content
+  // area fills the rest — so the full-height Assistant gets (viewport − nav).
+  // suppressHydrationWarning: the no-flash script sets data-theme before React.
   return (
-    <html lang="en" style={{ colorScheme: "light" }}>
-      <body
-        style={{
-          background: "#fff",
-          color: "#111",
-          margin: 0,
-          minHeight: "100dvh",
-          display: "flex",
-          flexDirection: "column",
-          fontFamily:
-            "system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-        }}
-      >
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: noFlashTheme }} />
+      </head>
+      <body>
         <NavBar />
         <div
           style={{

@@ -11,6 +11,7 @@ import { createCaller } from "dendra";
 import { appRouter } from "@/server/router";
 import { directContext, tenantFromHost } from "@/server/context";
 import { NotesClient } from "./notes-client";
+import u from "./ui.module.css";
 
 export default async function Page() {
   const host = headers().get("host") ?? "";
@@ -20,17 +21,19 @@ export default async function Page() {
   const notes = await caller.notes.list(); // typed as Note[], scoped to tenant
 
   return (
-    <main style={{ maxWidth: 560, margin: "40px auto", fontFamily: "system-ui" }}>
-      <h1>Notes</h1>
-      <p style={{ color: "#666" }}>
-        Tenant: <strong>{tenantId}</strong> · server-rendered via{" "}
-        <code>createCaller</code>; live updates via a subscription.
-      </p>
-      <p>
-        → <a href="/demo">Interactive feature demo</a> ·{" "}
-        <a href="/chat">AI streaming chat</a> ·{" "}
-        <a href="/assistant">Generative-UI assistant</a>
-      </p>
+    <main className={u.page}>
+      <div className={u.hero}>
+        <span className={u.badge}>tenant: {tenantId}</span>
+        <h1 className={u.h1} style={{ marginTop: 12 }}>
+          Notes
+        </h1>
+        <p className={u.lead}>
+          Server-rendered in-process with <span className={u.mono}>createCaller</span>{" "}
+          (no HTTP round-trip), then kept live by a <span className={u.mono}>notes.watch</span>{" "}
+          subscription — the same typed client, awaited for unary and{" "}
+          <span className={u.mono}>for await</span>-ed for streaming.
+        </p>
+      </div>
       <NotesClient initial={notes} />
     </main>
   );

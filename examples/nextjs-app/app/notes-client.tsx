@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import type { Note } from "@/server/db";
+import u from "./ui.module.css";
 
 export function NotesClient({ initial }: { initial: Note[] }) {
   const [notes, setNotes] = useState<Note[]>(initial);
@@ -84,27 +85,34 @@ export function NotesClient({ initial }: { initial: Note[] }) {
 
   return (
     <>
-      <form onSubmit={onAdd} style={{ display: "flex", gap: 8, margin: "16px 0" }}>
-        <input ref={titleRef} placeholder="Title" />
-        <input ref={bodyRef} placeholder="Body" />
-        <button type="submit">Add</button>
+      <form onSubmit={onAdd} className={u.formRow}>
+        <input ref={titleRef} className={u.input} placeholder="Title" />
+        <input ref={bodyRef} className={u.input} placeholder="Body" />
+        <button type="submit" className={`${u.btn} ${u.btnPrimary}`}>
+          Add
+        </button>
       </form>
-      <ul>
-        {notes.map((n) => (
-          <li key={n.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ flex: 1 }}>
-              <strong>{n.title}</strong> — {n.body}
-            </span>
-            <button
-              onClick={() => onDelete(n.id)}
-              title="Delete note"
-              style={{ cursor: "pointer", border: "none", background: "none", color: "#c62828" }}
-            >
-              ✕
-            </button>
-          </li>
-        ))}
-      </ul>
+      {notes.length === 0 ? (
+        <div className={u.empty}>No notes yet — add one above.</div>
+      ) : (
+        <ul className={u.list}>
+          {notes.map((n) => (
+            <li key={n.id} className={u.listRow}>
+              <span style={{ flex: 1 }}>
+                <strong>{n.title}</strong>
+                <span className={u.muted}> — {n.body}</span>
+              </span>
+              <button
+                onClick={() => onDelete(n.id)}
+                title="Delete note"
+                className={u.delBtn}
+              >
+                ✕
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </>
   );
 }

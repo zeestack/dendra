@@ -6,6 +6,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Logo } from "./Logo";
+import { ThemeToggle } from "./ThemeToggle";
 import s from "./nav.module.css";
 
 const PAGES = [
@@ -38,6 +39,7 @@ export function NavBar() {
         })}
       </div>
       <div className={s.spacer} />
+      <ThemeToggle />
       <a
         className={s.gh}
         href="https://github.com/zeestack/dendra"
