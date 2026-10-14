@@ -135,7 +135,9 @@ export function AssistantChat() {
               </div>
             </div>
           ) : (
-            items.map((it, i) => <Message key={i} item={it} />)
+            items.map((it, i) => (
+              <Message key={i} item={it} live={i === items.length - 1} />
+            ))
           )}
           <div ref={bottom} />
         </div>

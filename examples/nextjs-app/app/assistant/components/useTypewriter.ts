@@ -5,9 +5,13 @@
 
 import { useEffect, useState } from "react";
 
-export function useTypewriter(target: string): { text: string; typing: boolean } {
-  // Start fully shown so already-complete messages (history) don't re-animate.
-  const [shown, setShown] = useState(target.length);
+export function useTypewriter(
+  target: string,
+  animate = true,
+): { text: string; typing: boolean } {
+  // Live turns start at 0 and reveal; already-complete messages (history) mount
+  // fully shown so they don't re-animate.
+  const [shown, setShown] = useState(animate ? 0 : target.length);
   const visible = Math.min(shown, target.length);
 
   useEffect(() => {

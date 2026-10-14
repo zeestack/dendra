@@ -7,9 +7,10 @@ import { ToolCard, type ToolPart } from "./cards";
 import { useTypewriter } from "./useTypewriter";
 import s from "../chat.module.css";
 
-// Assistant text, revealed character-by-character as it streams.
-function TextBubble({ text }: { text: string }) {
-  const { text: shown, typing } = useTypewriter(text);
+// Assistant text, revealed character-by-character as it streams. `live` is true
+// only for the current turn, so historical messages render instantly.
+function TextBubble({ text, live }: { text: string; live: boolean }) {
+  const { text: shown, typing } = useTypewriter(text, live);
   return (
     <div className={`${s.bubble} ${s.bubbleAssistant}`}>
       {shown}
@@ -29,7 +30,13 @@ function Avatar({ role }: { role: "user" | "assistant" }) {
   );
 }
 
-export function Message({ item }: { item: AssistantItem }) {
+export function Message({
+  item,
+  live = false,
+}: {
+  item: AssistantItem;
+  live?: boolean;
+}) {
   if (item.role === "user") {
     return (
       <div className={`${s.row} ${s.user}`}>
@@ -56,7 +63,9 @@ export function Message({ item }: { item: AssistantItem }) {
         )}
         {item.parts.map((p, j) => {
           if (p.type === "text") {
-            return p.text.trim() ? <TextBubble key={j} text={p.text} /> : null;
+            return p.text.trim() ? (
+              <TextBubble key={j} text={p.text} live={live} />
+            ) : null;
           }
           if (p.type === "memory") {
             return (
