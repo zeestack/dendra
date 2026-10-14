@@ -50,6 +50,13 @@ The focused set (the four that move the needle) is marked ⭐.
   break off-repo). Ships with the next published version.
 
 ### Deepen the AI / MCP differentiator
+- [x] ⭐ **`dendra/memory`** — pluggable long-term memory. Ships the `MemoryStore`
+  interface + a zero-dep reference store (real apps implement it over
+  pgvector/SQLite/Redis with no call-site changes), model-agnostic
+  `recallMemory` / `rememberFacts` helpers, and opt-in `recall` / `remember`
+  hooks on `runAgent` that surface as an `AgentMemoryPart`. Writes are always
+  explicit (caller-supplied), mirroring Anthropic's model-driven memory tool.
+  _Shipped in 0.2.0._
 - [ ] ⭐ **`dendra/openai`** — a `runAgent` for the OpenAI SDK, mirroring
   `dendra/anthropic`, so the agentic loop isn't Anthropic-only.
 - **Amazon Bedrock support** — two parts:
@@ -73,6 +80,11 @@ The focused set (the four that move the needle) is marked ⭐.
   **lazy exposure** — surface a compact set plus a `search_tools` meta-tool that
   pages in the full definitions on demand (so a 200-tool connector costs ~1 slot
   until needed). All opt-in; the default stays "expose everything."
+- [ ] **Working-context management** — the companion to `dendra/memory` (Layer 2).
+  A `compactHistory` utility with an explicit **`strategy`**, mirroring Anthropic's
+  own split: `"clear-tool-results"` (delete stale tool outputs) vs `"summarize"`
+  (model-generated summary of old turns) vs `"drop-oldest"`, all drawing from one
+  pluggable token **budget** shared with recall + the tool-context manager.
 - [ ] **MCP resources & prompts** — expose read-only data as MCP *resources* and
   reusable *prompts*, not just tools — a complete MCP server, not tools-only.
 - [ ] **`dendra/mcp-client`** (optional) — generalize the example's connection

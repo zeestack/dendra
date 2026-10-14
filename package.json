@@ -1,6 +1,6 @@
 {
   "name": "dendra",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": false,
   "license": "MIT",
   "repository": { "type": "git", "url": "git+https://github.com/zeestack/dendra.git" },
