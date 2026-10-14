@@ -11,24 +11,46 @@ export const metadata = {
     'Define a procedure once. Get a typed client, REST + OpenAPI, streaming, an LLM tool, and an MCP server — zero-dependency core, no codegen, no decorators.'
 }
 
-function Mark() {
+/* The real dendra mark: a branching dendrite — one node → two → four.
+   "one definition, many surfaces." */
+function Mark({ size = 26, id = 'm' }) {
   return (
-    <svg width="26" height="26" viewBox="0 0 32 32" fill="none" aria-hidden>
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 100 100"
+      fill="none"
+      aria-hidden
+    >
       <defs>
-        <linearGradient id="lg" x1="0" y1="0" x2="32" y2="32">
+        <linearGradient id={`lg-${id}`} x1="0" y1="0" x2="100" y2="100">
           <stop stopColor="#7c9cff" />
           <stop offset="1" stopColor="#5be3b3" />
         </linearGradient>
       </defs>
-      <circle cx="16" cy="6" r="3.2" fill="url(#lg)" />
-      <circle cx="6" cy="24" r="3.2" fill="url(#lg)" />
-      <circle cx="26" cy="24" r="3.2" fill="url(#lg)" />
-      <path
-        d="M16 9v7m0 0l-9 6m9-6l9 6"
-        stroke="url(#lg)"
-        strokeWidth="2.1"
-        strokelinecap="round"
-      />
+      <g
+        transform="translate(6,50)"
+        stroke={`url(#lg-${id})`}
+        strokeWidth="4"
+        fill="none"
+        strokeLinecap="round"
+      >
+        <path d="M0,0 C22,0 22,-30 44,-30" />
+        <path d="M0,0 C22,0 22,30 44,30" />
+        <path d="M44,-30 C66,-30 66,-50 88,-50" />
+        <path d="M44,-30 C66,-30 66,-10 88,-10" />
+        <path d="M44,30 C66,30 66,10 88,10" />
+        <path d="M44,30 C66,30 66,50 88,50" />
+      </g>
+      <g transform="translate(6,50)">
+        <circle cx="0" cy="0" r="9" fill="#5be3b3" />
+        <circle cx="44" cy="-30" r="5" fill="#7fd6c4" />
+        <circle cx="44" cy="30" r="5" fill="#7fd6c4" />
+        <circle cx="88" cy="-50" r="6" fill="#7c9cff" />
+        <circle cx="88" cy="-10" r="6" fill="#7c9cff" />
+        <circle cx="88" cy="10" r="6" fill="#7c9cff" />
+        <circle cx="88" cy="50" r="6" fill="#7c9cff" />
+      </g>
     </svg>
   )
 }
@@ -86,7 +108,7 @@ export default function Home() {
     <main className={styles.page}>
       <header className={styles.header}>
         <Link href="/" className={styles.brand}>
-          <Mark />
+          <Mark id="hdr" />
           <span className={styles.word}>dendra</span>
         </Link>
         <div className={styles.spacer} />
@@ -112,6 +134,9 @@ export default function Home() {
       </header>
 
       <section className={styles.hero}>
+        <div className={styles.heroMark}>
+          <Mark size={76} id="hero" />
+        </div>
         <div className={styles.pills}>
           <span className={styles.pill}>Next.js & Web-standard runtimes</span>
           <span className={styles.pill}>Zero-dependency core</span>
@@ -175,7 +200,7 @@ export default function Home() {
       </section>
 
       <footer className={styles.footer}>
-        <Mark />
+        <Mark id="ftr" size={22} />
         <span>dendra — MIT licensed.</span>
         <div className={styles.spacer} />
         <Link href="/quickstart">Docs</Link>
