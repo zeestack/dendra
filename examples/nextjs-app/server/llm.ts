@@ -91,7 +91,7 @@ export async function summarize(text: string): Promise<string> {
  * come from the router (via mergeToolsets).
  */
 export async function* streamAssistant(
-  prompt: string,
+  messages: Anthropic.MessageParam[],
   opts: {
     tools: unknown[];
     execute: (name: string, args: unknown) => Promise<unknown>;
@@ -104,13 +104,15 @@ export async function* streamAssistant(
     yield { type: "text", text: "(no valid ANTHROPIC_API_KEY — set one in .env.local)" };
     return;
   }
-  // AgentPart and ChatPart are the same shape — one line, the whole loop.
+  // AgentPart and ChatPart are the same shape — one line, the whole loop. We pass
+  // the FULL conversation (messages), not just the latest prompt, so the model has
+  // continuity across turns.
   yield* runAgent({
     client: c,
     model: MODEL,
     tools: opts.tools,
     execute: opts.execute,
-    prompt,
+    messages,
     system: opts.system,
     signal: opts.signal,
   });

@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAssistant } from "dendra/react";
+import { useAssistant, type AssistantItem } from "dendra/react";
 import { api } from "@/lib/api";
 import type { ChatPart } from "@/lib/chat-types";
 import type { Note } from "@/server/db";
@@ -93,7 +93,13 @@ export default function AssistantPage() {
   // The chat thread + streaming is the framework's useAssistant hook. The page
   // only supplies the stream source and the app-specific side effects.
   const { items, input, setInput, busy, send } = useAssistant({
-    stream: (prompt) => api.ai.assistant({ prompt }),
+    // Send the WHOLE conversation each turn (the server is stateless), so the
+    // model has continuity. We replay text turns; prior tool results aren't
+    // replayed — the model can re-call a tool if it needs fresh data.
+    stream: (prompt, history) =>
+      api.ai.assistant({
+        messages: [...historyToMessages(history), { role: "user", content: prompt }],
+      }),
     initialInput: "show my notes",
     // ui.navigate is a client action: the server tool returns a path; we route.
     onPart: (part) => {
@@ -380,6 +386,28 @@ function SummaryCard({ summary }: { summary: string }) {
       {summary}
     </div>
   );
+}
+
+// Flatten the assistant thread into plain chat messages for the server. User
+// turns map 1:1; assistant turns contribute their TEXT (tool/memory parts are
+// UI-only and aren't replayed). Assistant turns with no text are skipped so we
+// never send an empty message.
+function historyToMessages(
+  history: AssistantItem[],
+): Array<{ role: "user" | "assistant"; content: string }> {
+  const out: Array<{ role: "user" | "assistant"; content: string }> = [];
+  for (const it of history) {
+    if (it.role === "user") {
+      out.push({ role: "user", content: it.text });
+    } else {
+      const text = it.parts
+        .filter((p): p is { type: "text"; text: string } => p.type === "text")
+        .map((p) => p.text)
+        .join("");
+      if (text.trim()) out.push({ role: "assistant", content: text });
+    }
+  }
+  return out;
 }
 
 function MemoryCard({

@@ -188,7 +188,16 @@ const coreRouter = {
     // Generative-UI assistant: the model calls the notes tools; the stream yields
     // typed PARTS, and the client renders a React component per tool part.
     assistant: route
-      .input(s.object({ prompt: s.string() }))
+      .input(
+        s.object({
+          // The full conversation so far — the server is stateless, so the client
+          // sends history each turn (like the Messages API). This is what gives
+          // the assistant continuity ("validate your earlier claim" works).
+          messages: s.array(
+            s.object({ role: s.string(), content: s.string() }),
+          ),
+        }),
+      )
       .stream(async function* ({ input, ctx }): AsyncGenerator<ChatPart> {
         // Local tools (this app's procedures) + tools from every connected
         // EXTERNAL MCP server, merged into one flat toolset. The model can't
@@ -196,7 +205,7 @@ const coreRouter = {
         const local = toToolSource(appRouter, ctx, { format: "anthropic" });
         const external = await getExternalToolSources("anthropic");
         const merged = mergeToolsets(local, ...external);
-        yield* streamAssistant(input.prompt, {
+        yield* streamAssistant(input.messages as never, {
           tools: merged.tools,
           execute: merged.execute,
           system:
