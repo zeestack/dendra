@@ -1,5 +1,9 @@
 import Link from 'next/link'
+import hljs from 'highlight.js/lib/core'
+import ts from 'highlight.js/lib/languages/typescript'
 import styles from './home.module.css'
+
+hljs.registerLanguage('typescript', ts)
 
 export const metadata = {
   title: 'dendra — typed RPC & MCP for Next.js',
@@ -152,7 +156,22 @@ export default function Home() {
 
       <section className={styles.showcase}>
         <h2 className={styles.showcaseTitle}>define → serve → call</h2>
-        <pre className={styles.code}>{CODE}</pre>
+        <div className={styles.window}>
+          <div className={styles.windowBar}>
+            <span className={styles.dot} data-c="r" />
+            <span className={styles.dot} data-c="y" />
+            <span className={styles.dot} data-c="g" />
+            <span className={styles.windowTitle}>router.ts</span>
+          </div>
+          <pre className={styles.code}>
+            <code
+              className="hljs"
+              dangerouslySetInnerHTML={{
+                __html: hljs.highlight(CODE, { language: 'typescript' }).value
+              }}
+            />
+          </pre>
+        </div>
       </section>
 
       <footer className={styles.footer}>
