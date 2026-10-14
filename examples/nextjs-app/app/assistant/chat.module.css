@@ -139,6 +139,117 @@
   box-shadow: var(--shadow);
 }
 
+/* ── Markdown in assistant bubbles ────────────────────────────────────── */
+.md > :first-child {
+  margin-top: 0;
+}
+.md > :last-child {
+  margin-bottom: 0;
+}
+.md p {
+  margin: 0 0 10px;
+}
+.md ul,
+.md ol {
+  margin: 0 0 10px;
+  padding-left: 22px;
+}
+.md li {
+  margin: 2px 0;
+}
+.md h1,
+.md h2,
+.md h3 {
+  margin: 14px 0 8px;
+  line-height: 1.3;
+  font-weight: 650;
+}
+.md h1 {
+  font-size: 20px;
+}
+.md h2 {
+  font-size: 17px;
+}
+.md h3 {
+  font-size: 15px;
+}
+.md a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.md a:hover {
+  text-decoration: underline;
+}
+.md blockquote {
+  margin: 0 0 10px;
+  padding-left: 12px;
+  border-left: 3px solid var(--border);
+  color: var(--fg-muted);
+}
+.md table {
+  border-collapse: collapse;
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+.md th,
+.md td {
+  border: 1px solid var(--border);
+  padding: 5px 9px;
+}
+.inlineCode {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88em;
+  background: var(--surface-2);
+  padding: 1px 5px;
+  border-radius: 5px;
+}
+
+/* Fenced code blocks — Claude-style: dark surface, language label, copy button. */
+.codeBlock {
+  margin: 10px 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--code-bg);
+}
+.codeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.codeLang {
+  font-size: 11.5px;
+  color: #9aa0ab;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.codeCopy {
+  font-size: 11.5px;
+  color: #9aa0ab;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 6px;
+  padding: 2px 9px;
+  cursor: pointer;
+}
+.codeCopy:hover {
+  color: #e6e6ea;
+  background: rgba(255, 255, 255, 0.06);
+}
+.codePre {
+  margin: 0;
+  padding: 12px 14px;
+  overflow-x: auto;
+}
+.codePre code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--code-fg);
+  background: transparent;
+}
+
 /* streaming caret (typewriter) */
 .caret {
   display: inline-block;

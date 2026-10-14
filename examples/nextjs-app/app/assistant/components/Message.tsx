@@ -5,15 +5,17 @@
 import type { AssistantItem } from "dendra/react";
 import { ToolCard, type ToolPart } from "./cards";
 import { useTypewriter } from "./useTypewriter";
+import { Markdown } from "./Markdown";
 import s from "../chat.module.css";
 
-// Assistant text, revealed character-by-character as it streams. `live` is true
-// only for the current turn, so historical messages render instantly.
+// Assistant text, revealed character-by-character as it streams, rendered as
+// markdown (code blocks, bold, lists). `live` is true only for the current turn,
+// so historical messages render instantly.
 function TextBubble({ text, live }: { text: string; live: boolean }) {
   const { text: shown, typing } = useTypewriter(text, live);
   return (
     <div className={`${s.bubble} ${s.bubbleAssistant}`}>
-      {shown}
+      <Markdown text={shown} />
       {typing && <span className={s.caret} aria-hidden />}
     </div>
   );

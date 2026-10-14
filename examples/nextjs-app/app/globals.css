@@ -85,6 +85,59 @@ html {
   color-scheme: dark;
 }
 
+/* highlight.js tokens (rehype-highlight). Code blocks are always dark, so one
+   palette suffices for both themes. Must be global — rehype adds plain classes. */
+.hljs {
+  color: #e6e6ea;
+}
+.hljs-comment,
+.hljs-quote {
+  color: #6b7280;
+  font-style: italic;
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-name,
+.hljs-tag {
+  color: #c792ea;
+}
+.hljs-string,
+.hljs-title,
+.hljs-section,
+.hljs-attribute,
+.hljs-literal,
+.hljs-template-tag,
+.hljs-template-variable,
+.hljs-type,
+.hljs-addition {
+  color: #c3e88d;
+}
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-link,
+.hljs-meta,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: #f78c6c;
+}
+.hljs-title.function_,
+.hljs-function .hljs-title {
+  color: #82aaff;
+}
+.hljs-attr,
+.hljs-variable,
+.hljs-params {
+  color: #ffcb6b;
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 700;
+}
+
 * {
   box-sizing: border-box;
 }
