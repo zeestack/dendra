@@ -1,0 +1,474 @@
+/* Professional chat UI — self-contained design system (light + dark).
+   The .app root carries the theme tokens and fills the viewport, so the chat
+   looks intentional in either OS color scheme without touching other pages. */
+
+.app {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f1f2f5;
+  --border: #e4e6eb;
+  --fg: #1a1a1e;
+  --fg-muted: #6b6f76;
+  --accent: #5b6bf5;
+  --accent-fg: #ffffff;
+  --memory: #7c4bd0;
+  --mcp: #7c3aed;
+  --good: #15935b;
+  --danger: #d33b3b;
+  --radius: 16px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.04);
+
+  color-scheme: light;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--fg);
+  display: flex;
+  justify-content: center;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  .app {
+    color-scheme: dark;
+    --bg: #0e0e11;
+    --surface: #17171c;
+    --surface-2: #202026;
+    --border: #2b2b33;
+    --fg: #e8e8ec;
+    --fg-muted: #9a9aa4;
+    --accent: #7c88ff;
+    --accent-fg: #0e0e11;
+    --memory: #b79bf0;
+    --mcp: #b79bf0;
+    --good: #43c98a;
+    --danger: #ff6b6b;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.3);
+  }
+}
+
+.shell {
+  width: 100%;
+  max-width: 760px;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0 16px;
+  box-sizing: border-box;
+}
+
+/* ── Header ───────────────────────────────────────────────────────────── */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 4px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.headerText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.title {
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.subtitle {
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+.spacer {
+  flex: 1;
+}
+.ghostBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.ghostBtn:hover {
+  background: var(--surface-2);
+}
+.statusDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* ── Messages ─────────────────────────────────────────────────────────── */
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 22px 4px;
+}
+.row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.row.user {
+  flex-direction: row-reverse;
+}
+.avatar {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  user-select: none;
+}
+.avatarAssistant {
+  background: var(--surface-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+}
+.avatarUser {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+.bubbleWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 78%;
+  min-width: 0;
+}
+.row.user .bubbleWrap {
+  align-items: flex-end;
+}
+.bubble {
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 14.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+.bubbleUser {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-bottom-right-radius: 4px;
+}
+.bubbleAssistant {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 4px;
+  box-shadow: var(--shadow);
+}
+
+/* typing indicator */
+.typing {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px 2px;
+}
+.typing span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--fg-muted);
+  animation: blink 1.2s infinite ease-in-out;
+}
+.typing span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.typing span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes blink {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+/* ── Tool / memory cards ──────────────────────────────────────────────── */
+.card {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: var(--surface);
+  font-size: 14px;
+  box-shadow: var(--shadow);
+}
+.cardLabel {
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  margin-bottom: 7px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cardGood {
+  border-left-color: var(--good);
+}
+.cardGood .cardLabel {
+  color: var(--good);
+}
+.cardMemory {
+  border-left-color: var(--memory);
+}
+.cardMemory .cardLabel {
+  color: var(--memory);
+}
+.cardMcp {
+  border-left-color: var(--mcp);
+}
+.cardMcp .cardLabel {
+  color: var(--mcp);
+}
+.cardDanger {
+  border-left-color: var(--danger);
+}
+.cardDanger .cardLabel {
+  color: var(--danger);
+}
+.rowItem {
+  padding: 3px 0;
+}
+.muted {
+  color: var(--fg-muted);
+}
+.idTag {
+  font-size: 11px;
+  color: var(--fg-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  display: block;
+  margin-top: 5px;
+}
+.memScore {
+  color: var(--fg-muted);
+  font-size: 12.5px;
+}
+.pre {
+  margin: 8px 0 0;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--fg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.genericSummary {
+  cursor: pointer;
+  list-style: revert;
+}
+
+/* ── Empty state ──────────────────────────────────────────────────────── */
+.empty {
+  margin: auto;
+  text-align: center;
+  color: var(--fg-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 24px;
+}
+.emptyTitle {
+  font-size: 15px;
+  color: var(--fg);
+  font-weight: 600;
+}
+.chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.chip {
+  font-size: 13px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 7px 14px;
+  cursor: pointer;
+  color: var(--fg);
+  transition: background 0.12s ease;
+}
+.chip:hover {
+  background: var(--surface-2);
+}
+
+/* ── Composer ─────────────────────────────────────────────────────────── */
+.composer {
+  position: sticky;
+  bottom: 0;
+  background: linear-gradient(to top, var(--bg) 70%, transparent);
+  padding: 12px 0 18px;
+}
+.composerInner {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 8px 8px 14px;
+  box-shadow: var(--shadow);
+}
+.textarea {
+  flex: 1;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  color: var(--fg);
+  font-size: 14.5px;
+  line-height: 1.5;
+  font-family: inherit;
+  max-height: 160px;
+  padding: 6px 0;
+}
+.textarea::placeholder {
+  color: var(--fg-muted);
+}
+.iconBtn {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--fg);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+}
+.iconBtn:hover:not(:disabled) {
+  background: var(--border);
+}
+.sendBtn {
+  flex: 0 0 auto;
+  height: 38px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.sendBtn:disabled,
+.iconBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.listening {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+/* ── Connectors drawer ────────────────────────────────────────────────── */
+.connectors {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 10px 0 2px;
+  box-shadow: var(--shadow);
+}
+.connForm {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.connInput {
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--fg);
+  font-size: 13px;
+  outline: none;
+}
+.connInput:focus {
+  border-color: var(--accent);
+}
+.connBtn {
+  padding: 9px 16px;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+}
+.srvRow {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.srvHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.srvMeta {
+  font-size: 12px;
+  color: var(--mcp);
+}
+.xBtn {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--fg-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+.toolTags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  max-height: 96px;
+  overflow: auto;
+}
+.toolTag {
+  font-size: 12px;
+  color: var(--mcp);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+.note {
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--mcp);
+}
+.err {
+  margin-top: 8px;
+  font-size: 12.5px;
+  color: var(--danger);
+}
