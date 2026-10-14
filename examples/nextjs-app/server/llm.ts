@@ -8,6 +8,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { runAgent } from "dendra/anthropic";
+import type { LazyToolset } from "dendra";
 import type { ChatPart } from "../lib/chat-types.ts";
 
 const MODEL = process.env.ANTHROPIC_MODEL ?? "claude-opus-5-5";
@@ -102,6 +103,7 @@ export async function* streamAssistant(
     system?: string;
     signal?: AbortSignal;
     apiKey?: string;
+    lazyToolset?: LazyToolset;
   },
 ): AsyncGenerator<ChatPart> {
   const c = getClient(opts.apiKey);
@@ -120,6 +122,7 @@ export async function* streamAssistant(
     model: MODEL,
     tools: opts.tools,
     execute: opts.execute,
+    lazyToolset: opts.lazyToolset,
     messages,
     system: opts.system,
     signal: opts.signal,

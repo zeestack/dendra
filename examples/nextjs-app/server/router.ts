@@ -7,6 +7,7 @@ import {
   s,
   toToolSource,
   mergeToolsets,
+  lazyToolset,
   DendraError,
   type RouterRecord,
 } from "dendra";
@@ -207,11 +208,19 @@ const coreRouter = {
         const local = toToolSource(appRouter, ctx, { format: "anthropic" });
         const external = await getExternalToolSources("anthropic");
         const merged = mergeToolsets(local, ...external);
+        // Tool-context management: when a big MCP connector pushes the toolset
+        // past ~20 tools, defer them behind search_tools (keeping this app's own
+        // tools pinned so common actions stay instant). Otherwise send them all.
+        const lazy =
+          merged.tools.length > 20
+            ? lazyToolset(merged.tools, { pin: local.names, k: 6 })
+            : undefined;
         yield* streamAssistant(input.messages as never, {
           tools: merged.tools,
           execute: merged.execute,
+          lazyToolset: lazy,
           system:
-            "You help the user manage notes and navigate the app. Use notes.list/notes.create for notes, users.list/users.create for users, and ui.navigate to move around (paths: '/', '/demo', '/chat', '/assistant'). You have durable MEMORY of the user across sessions: call memory.recall whenever the user asks about themselves or refers to something they told you before (e.g. their name, preferences, where they live), and call memory.remember to save a new durable fact when they tell you one (\"remember that…\", \"my name is…\", \"I prefer…\"); memory.list shows everything saved, memory.forget removes one by id. You also have EXTERNAL tools from a connected MCP server: ext.weather.get (current weather for a city) and ext.time.now (current time) — use them when asked. IMPORTANT: every tool result is ALREADY shown to the user as a rich UI component (a notes list, a weather card, etc.), so DO NOT repeat, re-list, or summarize the tool's data in your text. After a tool runs, either say nothing or add at most one short sentence of context — never restate what the component already displays.",
+            "You help the user manage notes and navigate the app. Use notes.list/notes.create for notes, users.list/users.create for users, and ui.navigate to move around (paths: '/', '/demo', '/chat', '/assistant'). You have durable MEMORY of the user across sessions: call memory.recall whenever the user asks about themselves or refers to something they told you before (e.g. their name, preferences, where they live), and call memory.remember to save a new durable fact when they tell you one (\"remember that…\", \"my name is…\", \"I prefer…\"); memory.list shows everything saved, memory.forget removes one by id. You may also have MORE tools from connected external servers that are NOT loaded yet. If you need a capability you don't already see in your available tools (e.g. weather, time, or anything from a connected service), call search_tools with a short query to find and load the right tool, THEN call it — never claim you searched unless you actually call search_tools. IMPORTANT: every tool result is ALREADY shown to the user as a rich UI component (a notes list, a weather card, etc.), so DO NOT repeat, re-list, or summarize the tool's data in your text. After a tool runs, either say nothing or add at most one short sentence of context — never restate what the component already displays.",
           signal: ctx.signal,
           apiKey: ctx.anthropicKey,
         });
