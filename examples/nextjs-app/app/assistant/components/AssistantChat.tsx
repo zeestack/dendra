@@ -83,6 +83,17 @@ export function AssistantChat() {
     bottom.current?.scrollIntoView({ behavior: "smooth" });
   }, [items]);
 
+  // Keep the view pinned to the bottom while a reply types out — the typewriter
+  // animates between stream deltas, so an items-change effect alone would lag.
+  useEffect(() => {
+    if (!busy) return;
+    const id = setInterval(
+      () => bottom.current?.scrollIntoView({ behavior: "auto" }),
+      120,
+    );
+    return () => clearInterval(id);
+  }, [busy]);
+
   return (
     <div className={s.app}>
       <div className={s.shell}>

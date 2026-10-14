@@ -4,7 +4,19 @@
 
 import type { AssistantItem } from "dendra/react";
 import { ToolCard, type ToolPart } from "./cards";
+import { useTypewriter } from "./useTypewriter";
 import s from "../chat.module.css";
+
+// Assistant text, revealed character-by-character as it streams.
+function TextBubble({ text }: { text: string }) {
+  const { text: shown, typing } = useTypewriter(text);
+  return (
+    <div className={`${s.bubble} ${s.bubbleAssistant}`}>
+      {shown}
+      {typing && <span className={s.caret} aria-hidden />}
+    </div>
+  );
+}
 
 function Avatar({ role }: { role: "user" | "assistant" }) {
   return (
@@ -44,11 +56,7 @@ export function Message({ item }: { item: AssistantItem }) {
         )}
         {item.parts.map((p, j) => {
           if (p.type === "text") {
-            return p.text.trim() ? (
-              <div key={j} className={`${s.bubble} ${s.bubbleAssistant}`}>
-                {p.text}
-              </div>
-            ) : null;
+            return p.text.trim() ? <TextBubble key={j} text={p.text} /> : null;
           }
           if (p.type === "memory") {
             return (

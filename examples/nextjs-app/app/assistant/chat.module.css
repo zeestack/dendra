@@ -173,6 +173,27 @@
   box-shadow: var(--shadow);
 }
 
+/* streaming caret (typewriter) */
+.caret {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: currentColor;
+  opacity: 0.7;
+  animation: caretBlink 1s step-end infinite;
+}
+@keyframes caretBlink {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
 /* typing indicator */
 .typing {
   display: inline-flex;
