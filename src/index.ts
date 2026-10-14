@@ -63,7 +63,23 @@ export type { ErrorCode } from "./errors.ts";
 // Shared agent types. The agentic loop (`dendra/anthropic`) and the React hook
 // (`dendra/react`) are optional subpath exports (they pull in peer deps), but the
 // part type they exchange is dependency-free and lives in core.
-export type { AgentPart, AgentTextPart, AgentToolPart } from "./agent.ts";
+export type {
+  AgentPart,
+  AgentTextPart,
+  AgentToolPart,
+  AgentMemoryPart,
+} from "./agent.ts";
+
+// Memory: the store interface + a zero-dep reference implementation. The
+// interface lets you type `ctx.memory`; `createMemoryStore` is also re-exported
+// from the `dendra/memory` subpath.
+export {
+  createMemoryStore,
+  recallMemory,
+  rememberFacts,
+  formatMemoryBlock,
+} from "./memory.ts";
+export type { MemoryStore, MemoryRecord, RecallOptions } from "./memory.ts";
 
 // Built-in Standard-Schema validators, namespaced as `s`.
 export * as s from "./schema.ts";

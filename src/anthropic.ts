@@ -9,6 +9,7 @@
 
 import type Anthropic from "@anthropic-ai/sdk";
 import type { AgentPart } from "./agent.ts";
+import { recallMemory, rememberFacts, type MemoryStore } from "./memory.ts";
 
 /**
  * The minimal client surface `runAgent` needs — just `messages.stream`. Typed
@@ -43,6 +44,61 @@ export interface RunAgentOptions {
   /** Max model↔tool round-trips before stopping (default 6). */
   maxSteps?: number;
   signal?: AbortSignal;
+
+  /**
+   * A memory store (e.g. `dendra/memory`'s `createMemoryStore`, or your own).
+   * Enables the `recall` / `remember` hooks below. Omit for no memory.
+   */
+  memory?: MemoryStore;
+  /**
+   * Before the loop runs, search memory and inject the hits so the model has
+   * relevant context. Defaults to `{ k: 6, into: "system" }` when `memory` is
+   * set; pass `false` to retrieve nothing. `query` derives the search string
+   * from the conversation (default: the last user message).
+   */
+  recall?:
+    | false
+    | {
+        k?: number;
+        into?: "system" | "user";
+        minScore?: number;
+        query?: (messages: Anthropic.MessageParam[]) => string;
+      };
+  /**
+   * After the loop ends, persist new memories. You supply the function — the
+   * framework never decides what to remember. It receives the final assistant
+   * text and the full messages, and returns the strings to save (call the model
+   * inside for extraction, or write a heuristic). Writes are surfaced as
+   * `{ type: "memory", op: "saved" }` parts. Default: off.
+   */
+  remember?: (turn: {
+    text: string;
+    messages: Anthropic.MessageParam[];
+  }) => string[] | Promise<string[]>;
+}
+
+/** Pull plain text out of a message's string-or-blocks content. */
+function messageText(m: Anthropic.MessageParam): string {
+  if (typeof m.content === "string") return m.content;
+  return m.content
+    .map((b) =>
+      (b as { type: string }).type === "text"
+        ? ((b as { text?: string }).text ?? "")
+        : "",
+    )
+    .join(" ")
+    .trim();
+}
+
+/** The most recent user message as plain text (the default recall query). */
+function lastUserText(messages: Anthropic.MessageParam[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "user") {
+      const t = messageText(messages[i]);
+      if (t) return t;
+    }
+  }
+  return "";
 }
 
 /**
@@ -68,12 +124,36 @@ export async function* runAgent(opts: RunAgentOptions): AsyncGenerator<AgentPart
     opts.messages?.slice() ??
     (opts.prompt !== undefined ? [{ role: "user", content: opts.prompt }] : []);
 
+  // ── Recall: retrieve relevant memories and inject them before the model runs.
+  // The search + formatting is shared (recallMemory); only the query derivation
+  // and injection are Anthropic-specific glue.
+  let system = opts.system;
+  if (opts.memory && opts.recall !== false) {
+    const r = opts.recall ?? {};
+    const query = (r.query ?? lastUserText)(messages);
+    const { records, block } = await recallMemory(opts.memory, query, {
+      k: r.k,
+      minScore: r.minScore,
+    });
+    if (records.length) {
+      if ((r.into ?? "system") === "system") {
+        system = [system, block].filter(Boolean).join("\n\n");
+      } else {
+        messages.unshift({ role: "user", content: block });
+      }
+      yield { type: "memory", op: "recalled", records };
+    }
+  }
+
+  // Accumulate the final assistant text so `remember` can extract from it.
+  let assistantText = "";
+
   for (let step = 0; step < maxSteps; step++) {
     const stream = client.messages.stream(
       {
         model,
         max_tokens: opts.maxTokens ?? 1024,
-        system: opts.system,
+        system,
         tools,
         messages,
       },
@@ -85,6 +165,7 @@ export async function* runAgent(opts: RunAgentOptions): AsyncGenerator<AgentPart
         event.type === "content_block_delta" &&
         event.delta.type === "text_delta"
       ) {
+        assistantText += event.delta.text;
         yield { type: "text", text: event.delta.text };
       }
     }
@@ -102,7 +183,7 @@ export async function* runAgent(opts: RunAgentOptions): AsyncGenerator<AgentPart
     const toolUses = final.content.filter(
       (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
     );
-    if (final.stop_reason !== "tool_use" || toolUses.length === 0) return;
+    if (final.stop_reason !== "tool_use" || toolUses.length === 0) break;
 
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
     for (const tu of toolUses) {
@@ -126,5 +207,13 @@ export async function* runAgent(opts: RunAgentOptions): AsyncGenerator<AgentPart
       });
     }
     messages.push({ role: "user", content: toolResults });
+  }
+
+  // ── Remember: persist whatever the caller's function returns (explicit).
+  if (opts.memory && opts.remember) {
+    const facts = await opts.remember({ text: assistantText, messages });
+    for (const rec of await rememberFacts(opts.memory, facts)) {
+      yield { type: "memory", op: "saved", records: [rec] };
+    }
   }
 }

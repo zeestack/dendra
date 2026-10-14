@@ -4,6 +4,8 @@
 // same `AgentPart` shape, which is what lets them snap together: the loop emits
 // parts, the hook renders them, and the contract is typed end to end.
 
+import type { MemoryRecord } from "./memory.ts";
+
 /** A streamed chunk of assistant text. */
 export interface AgentTextPart {
   type: "text";
@@ -19,5 +21,16 @@ export interface AgentToolPart {
   isError?: boolean;
 }
 
+/**
+ * A memory read or write that happened during the turn — renderable like a tool
+ * call (e.g. a "🧠 recalled 3 facts" chip). `op: "recalled"` carries the hits
+ * injected before the model ran; `op: "saved"` carries newly persisted facts.
+ */
+export interface AgentMemoryPart {
+  type: "memory";
+  op: "recalled" | "saved";
+  records: MemoryRecord[];
+}
+
 /** One streamed part of an assistant turn. */
-export type AgentPart = AgentTextPart | AgentToolPart;
+export type AgentPart = AgentTextPart | AgentToolPart | AgentMemoryPart;
