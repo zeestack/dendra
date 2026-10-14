@@ -8,7 +8,7 @@
 // rendering (the generative-UI registry is yours) and of per-part side effects
 // (navigation, text-to-speech) via `onPart`.
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { AgentPart } from "./agent.ts";
 
 export type AssistantItem =
@@ -16,8 +16,16 @@ export type AssistantItem =
   | { role: "assistant"; parts: AgentPart[] };
 
 export interface UseAssistantOptions {
-  /** Starts a turn: given a prompt, returns the streamed parts. */
-  stream: (prompt: string) => AsyncIterable<AgentPart>;
+  /**
+   * Starts a turn. Receives the new prompt and the thread so far (`history`,
+   * the items before this turn), so you can send conversation history to the
+   * server for multi-turn continuity. `history` is optional to stay
+   * backward-compatible — ignore it for a stateless, single-turn assistant.
+   */
+  stream: (
+    prompt: string,
+    history: AssistantItem[],
+  ) => AsyncIterable<AgentPart>;
   /** Called for every streamed part (e.g. to act on a tool as it arrives). */
   onPart?: (part: AgentPart, meta: { spoken: boolean }) => void;
   /** Called once a turn finishes, with all of that turn's parts (e.g. for TTS). */
@@ -44,11 +52,16 @@ export function useAssistant(opts: UseAssistantOptions): UseAssistant {
   const [items, setItems] = useState<AssistantItem[]>(opts.initialItems ?? []);
   const [input, setInput] = useState(opts.initialInput ?? "");
   const [busy, setBusy] = useState(false);
+  // Mirror the thread in a ref so `send` can read the latest items (the history
+  // before this turn) without being re-created on every message.
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
 
   const send = useCallback(
     async (override?: string) => {
       const prompt = (override ?? input).trim();
       if (!prompt || busy) return;
+      const history = itemsRef.current; // the thread so far, before this turn
       setInput("");
       setBusy(true);
       setItems((c) => [
@@ -59,7 +72,7 @@ export function useAssistant(opts: UseAssistantOptions): UseAssistant {
       const spoken = override !== undefined; // override ⇒ came from voice, etc.
       const turn: AgentPart[] = [];
       try {
-        for await (const part of stream(prompt)) {
+        for await (const part of stream(prompt, history)) {
           turn.push(part);
           onPart?.(part, { spoken });
           setItems((c) => {
