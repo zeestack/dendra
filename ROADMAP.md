@@ -49,14 +49,52 @@ The focused set (the four that move the needle) is marked ⭐.
   GitHub Packages pages render the hero and diagrams (currently relative paths
   break off-repo). Ships with the next published version.
 
-### Deepen the AI / MCP differentiator
-- [x] ⭐ **`dendra/memory`** — pluggable long-term memory. Ships the `MemoryStore`
-  interface + a zero-dep reference store (real apps implement it over
-  pgvector/SQLite/Redis with no call-site changes), model-agnostic
-  `recallMemory` / `rememberFacts` helpers, and opt-in `recall` / `remember`
-  hooks on `runAgent` that surface as an `AgentMemoryPart`. Writes are always
+### `dendra/context` — unified context management ⭐ (the spine)
+
+The differentiator. Memory, tools, skills, and chat history are the **same
+two-tier shape**: a compact descriptor always in context, full content loaded on
+demand, everything drawn from **one token budget**, stale content evicted when it
+tightens. Rather than ship these as four unrelated features, dendra unifies them
+behind a single `ContextSource` primitive and a `createContextManager` that drives
+the progressive-disclosure loop inside `runAgent`. See
+[`design/context-management.md`](design/context-management.md) for the interface.
+
+> tRPC gives you typed APIs. MCP gives you tools. **dendra gives you typed APIs
+> that are also tools — and manages the model's context as one budgeted,
+> progressively-disclosed layer.** Neither tRPC nor raw MCP can say that.
+
+- [x] **Source #1 — `dendra/memory`** (shipped 0.2.0). `MemoryStore` interface +
+  zero-dep reference store (swap in pgvector/SQLite/Redis with no call-site
+  changes), model-agnostic `recallMemory` / `rememberFacts`, opt-in `recall` /
+  `remember` hooks on `runAgent` surfacing as `AgentMemoryPart`. Writes are always
   explicit (caller-supplied), mirroring Anthropic's model-driven memory tool.
-  _Shipped in 0.2.0._
+  Becomes the first `ContextSource` via a thin `memorySource()` adapter — the
+  interface stays unchanged.
+- [ ] **Markdown/file memory store** — `dendra/memory/node`: `createMarkdownMemory`
+  (one `.md` per fact + frontmatter + an `INDEX.md` descriptor tier) and
+  `loadContextFiles` (assemble `AGENTS.md`-style static context into the system
+  prompt). Human-editable, git-diffable, PR-reviewable; same `MemoryStore`
+  interface, node-only subpath so the edge/browser core stays `node:fs`-free.
+- [ ] ⭐ **Source #2 — tools** (tool-context management). Keep large merged
+  toolsets from blowing the window: include/exclude filters, tag/namespace
+  grouping, and **lazy exposure** — a compact set plus a `search_tools` meta-tool
+  that pages in full definitions on demand (a 200-tool connector costs ~1 slot
+  until used). Opt-in; default stays "expose everything."
+- [ ] **Source #3 — skills** (progressive disclosure). A `Skill` = `{ name,
+  description, instructions, tools? }`; descriptions are always in context, a
+  `load_skill` meta-tool reveals the instructions **and** un-defers that skill's
+  tools. `defineSkill({ …, router: appRouter.invoices })` makes "a skill =
+  instructions + the router namespace it governs" — tools and skills stop being
+  separate silos.
+- [ ] **Eviction — working-window history**. `compactHistory` with an explicit
+  **`strategy`** mirroring Anthropic's split: `"clear-tool-results"` (delete stale
+  tool outputs) vs `"summarize"` (model summary of old turns) vs `"drop-oldest"`.
+- [ ] **The manager — `createContextManager`**. Assembles descriptors from every
+  source into the system prompt, owns the meta-tools, enforces one shared token
+  budget across memory + tools + skills + history, and runs eviction. Extract it
+  once sources #1 and #2 both exist (don't design the abstraction in a vacuum).
+
+### Deepen the AI / MCP differentiator (model & protocol reach)
 - [ ] ⭐ **`dendra/openai`** — a `runAgent` for the OpenAI SDK, mirroring
   `dendra/anthropic`, so the agentic loop isn't Anthropic-only.
 - **Amazon Bedrock support** — two parts:
@@ -72,21 +110,9 @@ The focused set (the four that move the needle) is marked ⭐.
 - [ ] **MCP tool annotations** — mark tools `readOnly` / `destructive` and emit the
   corresponding MCP hints, with a **confirmation / human-in-the-loop hook** for
   dangerous calls.
-- [ ] ⭐ **MCP tool-context management** — keep large toolsets from blowing up the
-  model's context window. When you `mergeToolsets()` your local tools with several
-  external MCP servers, exposing all of them wastes tokens and hurts tool-selection
-  accuracy. Give `toToolset` / `mergeToolsets` first-class controls: include/exclude
-  filters and tag/namespace grouping, a per-request token/count **budget**, and
-  **lazy exposure** — surface a compact set plus a `search_tools` meta-tool that
-  pages in the full definitions on demand (so a 200-tool connector costs ~1 slot
-  until needed). All opt-in; the default stays "expose everything."
-- [ ] **Working-context management** — the companion to `dendra/memory` (Layer 2).
-  A `compactHistory` utility with an explicit **`strategy`**, mirroring Anthropic's
-  own split: `"clear-tool-results"` (delete stale tool outputs) vs `"summarize"`
-  (model-generated summary of old turns) vs `"drop-oldest"`, all drawing from one
-  pluggable token **budget** shared with recall + the tool-context manager.
 - [ ] **MCP resources & prompts** — expose read-only data as MCP *resources* and
   reusable *prompts*, not just tools — a complete MCP server, not tools-only.
+  (Skills can surface as MCP prompts — see the context layer above.)
 - [ ] **`dendra/mcp-client`** (optional) — generalize the example's connection
   registry (transports, lifecycle) into a thin opt-in helper; core stays
   auth-agnostic and takes an already-connected client.
