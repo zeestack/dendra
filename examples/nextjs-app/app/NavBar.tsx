@@ -15,6 +15,7 @@ const PAGES = [
   { href: "/demo", label: "RPC Demo" },
   { href: "/chat", label: "Chat" },
   { href: "/assistant", label: "Assistant" },
+  { href: "/connect", label: "Connect Claude" },
 ];
 
 export function NavBar() {
