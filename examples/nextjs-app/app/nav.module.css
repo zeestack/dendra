@@ -1,0 +1,119 @@
+/* Modern, frosted, theme-aware top bar. Translucent + blurred so it sits nicely
+   over both the light pages and the dark Assistant. */
+.nav {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 58px;
+  padding: 0 18px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: saturate(180%) blur(14px);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  text-decoration: none;
+  margin-right: 12px;
+}
+.word {
+  font-weight: 750;
+  font-size: 17px;
+  letter-spacing: -0.02em;
+  background: linear-gradient(120deg, #7c9cff, #5be3b3);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.links {
+  display: flex;
+  gap: 2px;
+}
+.link {
+  font-size: 14px;
+  font-weight: 500;
+  color: #5b5f66;
+  text-decoration: none;
+  padding: 7px 13px;
+  border-radius: 9px;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.link:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #17171c;
+}
+.active {
+  color: #4f46e5;
+  background: rgba(91, 107, 245, 0.1);
+}
+
+.spacer {
+  flex: 1;
+}
+.gh {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #5b5f66;
+  text-decoration: none;
+  padding: 7px 13px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 9px;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.gh:hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: #17171c;
+}
+.ghIcon {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
+}
+
+@media (prefers-color-scheme: dark) {
+  .nav {
+    background: rgba(18, 18, 22, 0.72);
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+  }
+  .link {
+    color: #a7a7b0;
+  }
+  .link:hover {
+    background: rgba(255, 255, 255, 0.07);
+    color: #ffffff;
+  }
+  .active {
+    color: #aeb6ff;
+    background: rgba(124, 136, 255, 0.16);
+  }
+  .gh {
+    color: #a7a7b0;
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+  .gh:hover {
+    background: rgba(255, 255, 255, 0.07);
+    color: #ffffff;
+  }
+}
+
+/* Narrow screens: hide the wordmark + GitHub label, keep the mark + links. */
+@media (max-width: 560px) {
+  .word,
+  .ghLabel {
+    display: none;
+  }
+  .link {
+    padding: 7px 10px;
+  }
+}
