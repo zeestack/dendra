@@ -31,8 +31,12 @@ export function ChatClient() {
       <div className={u.hero}>
         <h1 className={u.h1}>Streaming chat</h1>
         <p className={u.lead}>
-          <span className={u.mono}>for await</span> over a streaming procedure —
-          the same typed client, iterated instead of awaited.
+          The minimal streaming demo: <span className={u.mono}>ai.chat</span>{" "}
+          streams plain text — no tools, no history. The same typed client you{" "}
+          <span className={u.mono}>await</span> for unary calls, you{" "}
+          <span className={u.mono}>for await</span> here. For an agent that calls
+          your tools and renders each result as a live component, see{" "}
+          <strong>Assistant</strong>.
         </p>
       </div>
       <div className={u.row}>

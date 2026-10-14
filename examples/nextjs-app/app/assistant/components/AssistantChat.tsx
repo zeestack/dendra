@@ -104,7 +104,8 @@ export function AssistantChat() {
           <div className={s.headerText}>
             <span className={s.title}>Assistant</span>
             <span className={s.subtitle}>
-              Typed tools, streamed as live components — built on dendra
+              An agent that calls your typed tools and renders each result as a
+              live component
             </span>
           </div>
           <div className={s.spacer} />
