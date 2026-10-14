@@ -60,6 +60,7 @@
 }
 
 .iconBtn {
+  position: relative;
   display: inline-grid;
   place-items: center;
   width: 34px;
@@ -70,6 +71,15 @@
   border-radius: 9px;
   cursor: pointer;
   transition: background 0.14s ease, color 0.14s ease;
+}
+.keyDot {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--good);
 }
 .iconBtn:hover {
   background: var(--surface-2);
@@ -116,4 +126,91 @@
   .link {
     padding: 7px 10px;
   }
+}
+
+/* ── BYOK modal ───────────────────────────────────────────────────────── */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+  display: grid;
+  place-items: center;
+  z-index: 50;
+  padding: 16px;
+}
+.modal {
+  width: 100%;
+  max-width: 440px;
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 22px;
+  box-shadow: var(--shadow);
+}
+.modalTitle {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 650;
+}
+.modalText {
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--fg-muted);
+}
+.modalInput {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--fg);
+  font-size: 14px;
+  outline: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.modalInput:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.modalRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+.modalGhost {
+  padding: 8px 14px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--fg);
+  font-size: 13px;
+  cursor: pointer;
+}
+.modalGhost:hover {
+  background: var(--surface-2);
+}
+.modalPrimary {
+  padding: 8px 16px;
+  border-radius: 9px;
+  border: none;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.modalLink {
+  display: inline-block;
+  margin-top: 14px;
+  font-size: 12.5px;
+  color: var(--accent);
+  text-decoration: none;
+}
+.modalLink:hover {
+  text-decoration: underline;
 }

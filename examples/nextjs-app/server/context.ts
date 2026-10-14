@@ -21,6 +21,9 @@ export interface Ctx {
   pubsub: PubSub;
   /** Durable, per-user memory (SQLite). Scoping is applied here, once. */
   memory: MemoryStore;
+  /** Optional per-request Anthropic key (BYOK), sent by the browser. Falls back
+   * to the server's ANTHROPIC_API_KEY when absent. Never stored server-side. */
+  anthropicKey?: string;
   signal?: AbortSignal;
 }
 
@@ -39,6 +42,7 @@ export async function createContext(req: Request): Promise<Ctx> {
     db,
     pubsub,
     memory: createSqliteMemory(tenantId, userId),
+    anthropicKey: req.headers.get("x-anthropic-key")?.trim() || undefined,
     signal: req.signal,
   };
 }

@@ -13,7 +13,10 @@ import type { ChatPart } from "../lib/chat-types.ts";
 const MODEL = process.env.ANTHROPIC_MODEL ?? "claude-opus-5-5";
 
 let client: Anthropic | null = null;
-function getClient(): Anthropic | null {
+// A per-request key (BYOK) wins; otherwise fall back to the server env key. The
+// BYOK client isn't cached — it lives only for this request and is never stored.
+function getClient(apiKey?: string): Anthropic | null {
+  if (apiKey) return new Anthropic({ apiKey });
   if (!process.env.ANTHROPIC_API_KEY) return null;
   if (!client) client = new Anthropic(); // reads ANTHROPIC_API_KEY from env
   return client;
@@ -27,8 +30,9 @@ export function llmAvailable(): boolean {
 export async function* streamChat(
   prompt: string,
   signal?: AbortSignal,
+  apiKey?: string,
 ): AsyncGenerator<string> {
-  const c = getClient();
+  const c = getClient(apiKey);
   if (c) {
     try {
       const stream = c.messages.stream(
@@ -61,8 +65,8 @@ export async function* streamChat(
 }
 
 /** One-shot summary. Returns a single sentence. */
-export async function summarize(text: string): Promise<string> {
-  const c = getClient();
+export async function summarize(text: string, apiKey?: string): Promise<string> {
+  const c = getClient(apiKey);
   if (c) {
     try {
       const res = await c.messages.create({
@@ -97,11 +101,15 @@ export async function* streamAssistant(
     execute: (name: string, args: unknown) => Promise<unknown>;
     system?: string;
     signal?: AbortSignal;
+    apiKey?: string;
   },
 ): AsyncGenerator<ChatPart> {
-  const c = getClient();
+  const c = getClient(opts.apiKey);
   if (!c) {
-    yield { type: "text", text: "(no valid ANTHROPIC_API_KEY — set one in .env.local)" };
+    yield {
+      type: "text",
+      text: "(No Anthropic API key — add your own with the key button in the top bar, or set ANTHROPIC_API_KEY in .env.local.)",
+    };
     return;
   }
   // AgentPart and ChatPart are the same shape — one line, the whole loop. We pass

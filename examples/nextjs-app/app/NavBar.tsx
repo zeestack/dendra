@@ -7,6 +7,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Logo } from "./Logo";
 import { ThemeToggle } from "./ThemeToggle";
+import { ApiKeyDialog } from "./ApiKeyDialog";
 import s from "./nav.module.css";
 
 const PAGES = [
@@ -39,6 +40,7 @@ export function NavBar() {
         })}
       </div>
       <div className={s.spacer} />
+      <ApiKeyDialog />
       <ThemeToggle />
       <a
         className={s.gh}

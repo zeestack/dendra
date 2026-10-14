@@ -176,13 +176,15 @@ const coreRouter = {
     summarize: route
       .input(s.object({ text: s.string() }))
       .ai({ description: "Summarize the given text into one sentence" })
-      .handler(async ({ input }) => ({ summary: await summarize(input.text) })),
+      .handler(async ({ input, ctx }) => ({
+        summary: await summarize(input.text, ctx.anthropicKey),
+      })),
 
     // Streaming chat — real LLM tokens (falls back to an echo without a key).
     chat: route
       .input(s.object({ prompt: s.string() }))
       .stream(async function* ({ input, ctx }): AsyncGenerator<string> {
-        yield* streamChat(input.prompt, ctx.signal);
+        yield* streamChat(input.prompt, ctx.signal, ctx.anthropicKey);
       }),
 
     // Generative-UI assistant: the model calls the notes tools; the stream yields
@@ -211,6 +213,7 @@ const coreRouter = {
           system:
             "You help the user manage notes and navigate the app. Use notes.list/notes.create for notes, users.list/users.create for users, and ui.navigate to move around (paths: '/', '/demo', '/chat', '/assistant'). You have durable MEMORY of the user across sessions: call memory.recall whenever the user asks about themselves or refers to something they told you before (e.g. their name, preferences, where they live), and call memory.remember to save a new durable fact when they tell you one (\"remember that…\", \"my name is…\", \"I prefer…\"); memory.list shows everything saved, memory.forget removes one by id. You also have EXTERNAL tools from a connected MCP server: ext.weather.get (current weather for a city) and ext.time.now (current time) — use them when asked. IMPORTANT: every tool result is ALREADY shown to the user as a rich UI component (a notes list, a weather card, etc.), so DO NOT repeat, re-list, or summarize the tool's data in your text. After a tool runs, either say nothing or add at most one short sentence of context — never restate what the component already displays.",
           signal: ctx.signal,
+          apiKey: ctx.anthropicKey,
         });
       }),
   },
