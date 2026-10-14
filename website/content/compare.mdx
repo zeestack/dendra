@@ -37,7 +37,16 @@ to whatever model stack you use. dendra's optional `runAgent` / `useAssistant`
 helpers are a convenience, not the point — the point is that your typed procedures
 *are* the tools, and they're also an MCP server.
 
-## When dendra is the right call
+## Choose tRPC when
+
+You're not doing AI/MCP, you want the largest ecosystem and community, you rely on
+its mature React Query integration / links, or you already have a tRPC codebase.
+
+## Choose dendra when
+
+Your API should be callable by agents and Claude with **no parallel tool layer**,
+you want **one definition** to stay the single source of truth, or you need to
+both **expose and consume** MCP.
 
 - You're on Next.js (or any Web-standard runtime) and want typed RPC **and** REST.
 - Your procedures should also be tools an LLM or Claude (over MCP) can call.

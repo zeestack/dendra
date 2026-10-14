@@ -8,7 +8,12 @@ title: Architecture
 
 A dendra procedure is a small, immutable spec: an optional input schema, an
 optional output schema, middleware, an HTTP method/path (optional), and a
-handler. From that one spec, dendra *projects* every surface:
+handler. From that one spec, dendra *projects* every surface — they can't drift,
+because they all derive from the same definition.
+
+![dendra framework architecture: one definition branches into a typed client, REST + OpenAPI, an in-process caller, streaming, LLM tools, and an MCP server](/img/arch-framework.png)
+
+<p><a href="/dendra/architecture/framework.html" target="_blank" rel="noreferrer">▶ Open the interactive framework diagram</a></p>
 
 | Surface | Produced by |
 |---|---|
@@ -20,9 +25,18 @@ handler. From that one spec, dendra *projects* every surface:
 | LLM tool | `.ai()` + `toToolset` / `createToolExecutor` |
 | MCP server | `mcpToolDefinitions` / `createMcpBridge` |
 
-Because every surface derives from the same spec, they can't drift: change the
-input schema and the client type, the REST validation, the OpenAPI entry, and the
-tool schema all change together.
+Change the input schema and the client type, the REST validation, the OpenAPI
+entry, and the tool schema all change together.
+
+## A real app
+
+The example app wires dendra into a multi-tenant Next.js notes app: the browser
+and Claude both talk to the same `appRouter`, which uses SQLite, pub/sub,
+`runAgent`, and an MCP connection registry with OAuth.
+
+![dendra example app architecture: browser and Claude talk to Next.js routes and the appRouter, which uses SQLite, pub/sub, runAgent, and an MCP connection registry with OAuth](/img/arch-example.png)
+
+<p><a href="/dendra/architecture/example.html" target="_blank" rel="noreferrer">▶ Open the interactive example diagram</a></p>
 
 ## The framework ↔ app boundary
 

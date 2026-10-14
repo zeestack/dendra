@@ -1,0 +1,75 @@
+---
+title: Features
+---
+
+# Also in the box
+
+Beyond typed RPC and the AI/MCP story, every procedure definition gives you:
+
+## REST + OpenAPI 3.1
+
+A procedure with a method and path (`route.get('/notes')`) is a REST endpoint;
+`toOpenApiDocument(appRouter)` emits an OpenAPI 3.1 spec. Same validation, same
+handler.
+
+## Streaming & real-time
+
+`route.stream(async function* () { … })` — streaming is just an async generator,
+delivered as NDJSON over HTTP. Pair it with a pub/sub (`createInMemoryPubSub` or
+`createRedisPubSub`) for live subscriptions. On the client, `for await (…)` over
+the same typed method.
+
+## WebSocket transport
+
+`toNodeHandler` and a WS server expose the same procedures over WebSocket — the
+client is unchanged.
+
+## In-process caller
+
+In a Server Component, skip HTTP entirely: `createCaller(appRouter, ctx)` runs
+the procedure in-process with no round-trip and no serialization.
+
+## Middleware & auth
+
+dendra never authenticates — you guard procedures with `.use()`:
+
+```ts
+const authed = route.use(({ ctx }) => {
+  if (!ctx.user) throw new DendraError('UNAUTHORIZED', 'Sign in')
+  return { user: ctx.user } // refines ctx for downstream handlers
+})
+```
+
+A tool behind `.use(auth)` is auth-guarded for the model too.
+
+## Class controllers (NestJS-style, no decorators)
+
+A class whose fields are procedures; put an *instance* in the router. Keep
+injected deps in `#private` fields:
+
+```ts
+class UsersController {
+  constructor(#db) {}
+  list = route.handler(({ ctx }) => this.#db.users.all())
+  create = route.input(s.object({ name: s.string() })).handler(/* … */)
+}
+
+const appRouter = { users: new UsersController(db) /* … */ }
+```
+
+## Request batching
+
+The typed client can batch concurrent unary calls into one HTTP request —
+transparent to your code.
+
+## Agent helpers
+
+Opt-in peer-dep subpaths: `dendra/anthropic` (`runAgent` — the model↔tool loop),
+`dendra/react` (`useAssistant` — the chat thread + streaming), and
+`dendra/memory` (persistent recall). Use them, or bring your own loop/UI — the
+core tool-shaping primitives are enough on their own.
+
+## Standard Schema
+
+Validate with the built-in `s.*`, or any Standard Schema library — Zod, Valibot,
+or ArkType — interchangeably.
