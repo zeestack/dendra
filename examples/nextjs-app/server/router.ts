@@ -208,11 +208,13 @@ const coreRouter = {
         const local = toToolSource(appRouter, ctx, { format: "anthropic" });
         const external = await getExternalToolSources("anthropic");
         const merged = mergeToolsets(local, ...external);
-        // Tool-context management: when a big MCP connector pushes the toolset
-        // past ~20 tools, defer them behind search_tools (keeping this app's own
-        // tools pinned so common actions stay instant). Otherwise send them all.
+        // Tool-context management: whenever an EXTERNAL MCP server is connected,
+        // defer its tools behind search_tools — the app's own tools stay pinned
+        // (instant), and the model loads external ones on demand. This keeps a
+        // big connector (e.g. ~100 Contra tools) from flooding context, and makes
+        // the feature demoable with the built-in demo server (weather/time) too.
         const lazy =
-          merged.tools.length > 20
+          external.length > 0
             ? lazyToolset(merged.tools, { pin: local.names, k: 6 })
             : undefined;
         yield* streamAssistant(input.messages as never, {

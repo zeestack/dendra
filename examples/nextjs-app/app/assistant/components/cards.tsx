@@ -107,6 +107,25 @@ export const REGISTRY: Record<string, React.FC<{ part: ToolPart }>> = {
       <code className={s.idTag}>{(part.result as { to: string }).to}</code>
     </div>
   ),
+  // The lazy-tool meta-tool: the model searched for a tool and loaded it.
+  search_tools: ({ part }) => {
+    const q = (part.input as { query?: string })?.query;
+    const found = (part.result as { found?: { name: string }[] })?.found ?? [];
+    return (
+      <div className={`${s.card} ${s.cardMcp}`}>
+        <div className={s.cardLabel}>🔎 Searched tools{q ? ` · “${q}”` : ""}</div>
+        {found.length === 0 ? (
+          <div className={s.muted}>No matching tools.</div>
+        ) : (
+          found.map((f) => (
+            <div key={f.name} className={s.rowItem}>
+              <code>{f.name}</code> <span className={s.muted}>loaded</span>
+            </div>
+          ))
+        )}
+      </div>
+    );
+  },
   "ext.weather.get": ({ part }) => {
     const r = part.result as { city: string; condition: string; tempC: number };
     return (
