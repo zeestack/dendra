@@ -1,0 +1,69 @@
+---
+title: Context management
+---
+
+# Context management
+
+As agents grow, the hard part isn't calling tools — it's keeping the model's
+**context** healthy: recalling the right memories, not flooding the window with
+100 tool schemas, and compacting old turns. dendra treats these as one layer,
+because memory, tools, skills, and history are the **same shape**: a compact
+descriptor always in context, full content loaded on demand, drawn from one token
+budget.
+
+Two sources ship today; the unifying manager is on the roadmap.
+
+## Memory — `dendra/memory`
+
+Persistent recall across sessions. Core ships the `MemoryStore` interface + a
+zero-dep reference store; real apps implement it over pgvector/SQLite/Redis with
+**no call-site changes** (same pattern as pub/sub).
+
+```ts
+import { createMemoryStore } from 'dendra/memory'
+import { runAgent } from 'dendra/anthropic'
+
+for await (const part of runAgent({
+  client, model, tools, execute, prompt,
+  memory: ctx.memory,                 // a MemoryStore
+  recall: { k: 6 },                   // before the turn: search + inject
+  remember: ({ messages }) => [ /* facts to save */ ] // after: persist (explicit)
+})) {
+  // also yields { type: 'memory', op: 'recalled' | 'saved', records }
+}
+```
+
+Writes are **always explicit** — a function you supply — mirroring Anthropic's
+model-driven memory tool. Nothing lands in long-term memory behind the user's
+back.
+
+## Tool-context — `lazyToolset`
+
+A big toolset (e.g. ~100 tools from a merged MCP connector) is expensive to send
+every turn and hurts tool selection. `lazyToolset` keeps the schemas **out of
+context** and exposes a compact menu plus a `search_tools` meta-tool:
+
+```ts
+import { lazyToolset } from 'dendra'
+
+const lazy = lazyToolset(merged.tools, { pin: local.names, k: 6 })
+
+for await (const part of runAgent({ client, model, prompt, lazyToolset: lazy })) {
+  // the model calls search_tools("create invoice") → the matching tool loads →
+  // it calls that tool. A 100-tool connector costs ~1 slot until used.
+}
+```
+
+The live tool set **grows** as `search_tools` loads more; names are sanitized once
+and mapped back so your executor still receives the original.
+
+## The bigger picture
+
+The design is one `ContextSource` primitive and a `createContextManager` that
+assembles memory + tools + skills + history under a single token budget — so
+recall, `search_tools`, and `load_skill` are three faces of one engine. Memory and
+tools are the first two sources; the manager is extracted once both exist.
+
+> tRPC gives you typed APIs. MCP gives you tools. dendra gives you typed APIs that
+> are also tools — and manages the model's context as one budgeted,
+> progressively-disclosed layer.

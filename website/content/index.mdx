@@ -1,0 +1,70 @@
+---
+title: Introduction
+---
+
+# dendra
+
+**Typed RPC/REST for Next.js and any Web-standard runtime, where every procedure
+is also an LLM tool and an MCP server — with no decorators and no codegen.**
+
+You define a procedure **once**. From that single definition you get a typed
+client, a REST endpoint, an OpenAPI schema, streaming, real-time, an in-process
+caller, an **LLM tool**, and an **MCP server** (both directions: expose your
+procedures *and* consume external MCP servers). The core is zero-dependency.
+
+```bash
+npm create dendra-app@latest my-app   # scaffold a working app
+# or add to an existing project:
+npm i dendra
+```
+
+## The one pattern: define → serve → call
+
+```ts
+// server/router.ts
+import { initDendra, s, type RouterRecord } from 'dendra'
+import type { Ctx } from './context'
+
+const { route } = initDendra<Ctx>()
+
+export const appRouter = {
+  add: route
+    .input(s.object({ a: s.number(), b: s.number() }))
+    .handler(({ input }) => input.a + input.b),
+
+  notes: {
+    list: route.get('/notes').handler(({ ctx }) => ctx.db.notes.all()),
+    create: route
+      .post('/notes')
+      .input(s.object({ title: s.string(), body: s.string() }))
+      .ai({ description: 'Create a note' }) // ← also an LLM/MCP tool
+      .handler(({ input, ctx }) => ctx.db.notes.insert(input))
+  }
+} satisfies RouterRecord
+
+export type AppRouter = typeof appRouter
+```
+
+```ts
+// lib/api.ts — browser client, type inferred from `typeof appRouter`, NO codegen
+import { createClient } from 'dendra'
+import type { AppRouter } from '@/server/router'
+
+export const api = createClient<AppRouter>('', { prefix: '/rpc/' })
+// api.add({ a, b }) → Promise<number>
+```
+
+## Why dendra
+
+- **One definition, many surfaces** — RPC, REST, OpenAPI, streaming, typed client,
+  LLM tool, MCP server.
+- **No codegen, no decorators** — the client type comes from `typeof appRouter`.
+- **AI is a byproduct** — mark a procedure `.ai()` and it's a tool the model can
+  call, with the same validation and context as your HTTP calls.
+- **MCP both directions** — expose your procedures as an MCP server, and consume
+  external MCP servers, merged into one toolset.
+- **Zero-dependency core** — optional helpers (`dendra/anthropic`, `dendra/react`,
+  `dendra/memory`) are opt-in subpaths.
+
+Next: the [Quickstart](/quickstart), the [AI & MCP](/ai-mcp) story, and
+[Context management](/context).

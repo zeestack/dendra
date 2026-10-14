@@ -1,0 +1,48 @@
+---
+title: Architecture
+---
+
+# Architecture
+
+## One definition, many surfaces
+
+A dendra procedure is a small, immutable spec: an optional input schema, an
+optional output schema, middleware, an HTTP method/path (optional), and a
+handler. From that one spec, dendra *projects* every surface:
+
+| Surface | Produced by |
+|---|---|
+| Typed client (no codegen) | `createClient<AppRouter>()` — inference over `typeof appRouter` |
+| In-process caller | `createCaller(appRouter, ctx)` |
+| REST + OpenAPI 3.1 | `toRestHandler`, `toOpenApiDocument` |
+| RPC over HTTP | `toNextHandler`, `toFetchHandler`, `toNodeHandler` |
+| Streaming (NDJSON) & WebSocket | `route.stream(...)` + the adapters |
+| LLM tool | `.ai()` + `toToolset` / `createToolExecutor` |
+| MCP server | `mcpToolDefinitions` / `createMcpBridge` |
+
+Because every surface derives from the same spec, they can't drift: change the
+input schema and the client type, the REST validation, the OpenAPI entry, and the
+tool schema all change together.
+
+## The framework ↔ app boundary
+
+> Would **every** dendra user want this regardless of their DB, auth, UI, or which
+> servers they connect to? Yes → framework. No → app.
+
+The app owns, and dendra never touches: authentication, UI/navigation, voice, and
+MCP *connection* management (transports, a connection registry, OAuth to remote
+servers). dendra provides only the typed-procedure and tool-shaping primitives —
+which is why the core stays zero-dependency.
+
+## Validation as the guardrail
+
+Input validation runs before every handler — over HTTP, in-process, and when the
+**model** calls a tool. The same schema that rejects a bad REST body rejects a
+bad tool call, so model output is guarded by the same contract as everything else.
+
+## Context
+
+`createContext(req)` builds the per-request `ctx` (auth, tenant, db, pubsub,
+memory). Handlers read `ctx`; middleware (`.use()`) refines it. Swap the HTTP
+adapter for a WebSocket or test adapter and tenancy/auth still work, because every
+adapter builds `ctx` the same way.

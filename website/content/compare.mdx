@@ -1,0 +1,45 @@
+---
+title: vs tRPC + MCP
+---
+
+# dendra vs tRPC + MCP
+
+dendra sits where a typed-API framework and the AI/MCP world overlap. Here's how
+it compares to the pieces you'd otherwise assemble yourself.
+
+## vs tRPC
+
+tRPC gives you typed procedures and a typed client. dendra does that **and**:
+
+- **REST + OpenAPI** from the same procedures (tRPC is RPC-only).
+- **`.ai()` tools + MCP server** — your procedures become model tools with the
+  same validation; tRPC has no AI/MCP story.
+- **Standard Schema** — use built-in `s.*`, or Zod / Valibot / ArkType.
+- **Zero-dependency core.**
+
+If you only need typed RPC between your own client and server, tRPC is great.
+dendra is for when those same procedures also need to be REST endpoints and tools
+an agent (or Claude over MCP) can call.
+
+## vs the MCP SDK alone
+
+The MCP SDK lets you stand up an MCP server by hand-writing tool schemas and
+handlers. With dendra, the MCP server is a **projection of procedures you already
+have** — no second definition, and those same procedures are still your typed API.
+dendra also handles the other direction (consuming external MCP servers and
+merging their tools with yours).
+
+## vs the Vercel AI SDK / TanStack AI
+
+Those are **AI SDKs** — chat, streaming, provider adapters. dendra is the **API +
+tool + MCP layer underneath**. It complements them: expose `mergeToolsets()` output
+to whatever model stack you use. dendra's optional `runAgent` / `useAssistant`
+helpers are a convenience, not the point — the point is that your typed procedures
+*are* the tools, and they're also an MCP server.
+
+## When dendra is the right call
+
+- You're on Next.js (or any Web-standard runtime) and want typed RPC **and** REST.
+- Your procedures should also be tools an LLM or Claude (over MCP) can call.
+- You want to consume external MCP servers and manage the model's context (memory,
+  lazy tool loading) without rebuilding that plumbing.

@@ -1,0 +1,17 @@
+{
+  "name": "dendra-docs",
+  "private": true,
+  "description": "Documentation site for dendra",
+  "scripts": {
+    "dev": "next dev -p 3200",
+    "build": "next build",
+    "start": "next start -p 3200"
+  },
+  "dependencies": {
+    "next": "^15.1.6",
+    "nextra": "4.5.1",
+    "nextra-theme-docs": "4.5.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}

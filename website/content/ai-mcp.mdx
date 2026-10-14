@@ -1,0 +1,64 @@
+---
+title: AI & MCP
+---
+
+# AI & MCP
+
+This is where dendra differs from a plain API framework. Any procedure marked
+`.ai()` becomes a tool — a model can call it, and it's exposed over MCP — using
+the **same** validation and context as your HTTP calls. Nothing is authored
+twice.
+
+## Tools from your procedures
+
+```ts
+import { toToolset, createToolExecutor, mcpToolDefinitions } from 'dendra'
+
+const tools = toToolset(appRouter, { format: 'anthropic' }) // or 'openai' | 'plain'
+const execute = createToolExecutor(appRouter, ctx)          // validated, ctx-scoped
+const mcp = mcpToolDefinitions(appRouter)                   // MCP tools/list
+```
+
+Only `.ai()`-marked procedures are exposed — it's opt-in.
+
+## MCP, both directions
+
+**Expose** your procedures as an MCP server (stdio for Claude Desktop, or a
+remote HTTP endpoint for claude.ai). **Consume** an external MCP server and blend
+its tools with your own:
+
+```ts
+import { toToolSource, mergeToolsets, createMcpToolSource } from 'dendra'
+
+const local = toToolSource(appRouter, ctx, { format: 'anthropic' })
+const external = await createMcpToolSource(connectedMcpClient, { prefix: 'gh.' })
+const merged = mergeToolsets(local, external) // one { tools, execute }
+```
+
+The model can't tell local procedures from remote MCP tools — each call is routed
+back to the source that owns it.
+
+## The agent loop (optional)
+
+`dendra/anthropic` ships `runAgent` — the model↔tool loop every chat app
+rewrites, streaming typed parts as it goes:
+
+```ts
+import { runAgent } from 'dendra/anthropic'
+
+for await (const part of runAgent({
+  client, model, tools: merged.tools, execute: merged.execute, prompt
+})) {
+  // part: { type: 'text' } | { type: 'tool', name, input, result } | ...
+}
+```
+
+On the client, `dendra/react`'s `useAssistant` owns the chat thread and streaming
+over the same typed parts — you keep rendering. Both are opt-in peer-dep subpaths;
+if you already have a loop or UI, `mergeToolsets` alone is enough.
+
+## Memory & tool-context
+
+Two more opt-in pieces keep large agents healthy — persistent **memory** and
+**lazy tool loading** so a 100-tool connector doesn't flood the context window.
+See [Context management](/context).

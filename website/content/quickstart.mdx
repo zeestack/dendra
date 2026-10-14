@@ -1,0 +1,95 @@
+---
+title: Quickstart
+---
+
+# Quickstart
+
+The fastest path is the scaffolder:
+
+```bash
+npm create dendra-app@latest my-app
+# templates: minimal (RPC) or mcp (adds .ai() tools + an MCP server)
+cd my-app && npm run dev
+```
+
+Adding dendra to an existing Next.js app takes three files.
+
+## 1. Define the router
+
+```ts
+// server/router.ts
+import { initDendra, s, type RouterRecord } from 'dendra'
+import type { Ctx } from './context'
+
+const { route } = initDendra<Ctx>()
+
+export const appRouter = {
+  add: route
+    .input(s.object({ a: s.number(), b: s.number() }))
+    .handler(({ input }) => input.a + input.b),
+
+  notes: {
+    list: route.get('/notes').handler(({ ctx }) => ctx.db.notes.all()),
+    create: route
+      .post('/notes')
+      .input(s.object({ title: s.string(), body: s.string() }))
+      .ai({ description: 'Create a note' })
+      .handler(({ input, ctx }) => ctx.db.notes.insert(input)),
+    watch: route.stream(async function* ({ ctx }) {
+      for await (const ev of ctx.pubsub.subscribe('notes')) yield ev
+    })
+  }
+} satisfies RouterRecord
+
+export type AppRouter = typeof appRouter
+```
+
+## 2. Serve it (Next.js App Router)
+
+```ts
+// app/rpc/[...path]/route.ts
+import { toNextHandler } from 'dendra'
+import { appRouter } from '@/server/router'
+import { createContext } from '@/server/context'
+
+export const { GET, POST } = toNextHandler(appRouter, {
+  prefix: '/rpc/',
+  createContext
+})
+export const runtime = 'nodejs' // streaming needs Node, not edge
+export const dynamic = 'force-dynamic'
+```
+
+## 3. Call it — a typed client with no codegen
+
+```ts
+// lib/api.ts
+import { createClient } from 'dendra'
+import type { AppRouter } from '@/server/router'
+
+export const api = createClient<AppRouter>('', { prefix: '/rpc/' })
+
+await api.add({ a: 40, b: 2 })                 // → 42, fully typed
+for await (const ev of api.notes.watch()) { }  // streaming: for-await
+```
+
+In a Server Component, skip HTTP entirely with `createCaller(appRouter, ctx)`.
+
+## Context is the app's job
+
+`createContext(req)` builds `ctx` — auth, tenant, db, pubsub. dendra never
+authenticates; you guard procedures with `.use()`:
+
+```ts
+const authed = route.use(({ ctx }) => {
+  if (!ctx.user) throw new DendraError('UNAUTHORIZED', 'Sign in')
+  return { user: ctx.user }
+})
+```
+
+A tool behind `.use(auth)` is auth-guarded for the model too.
+
+## Other runtimes
+
+`toFetchHandler` (Hono/Bun/Deno/Workers), `toNodeHandler` (`node:http`),
+`toRestHandler` (plain REST), `toOpenApiDocument` (OpenAPI 3.1).
