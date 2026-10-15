@@ -72,3 +72,30 @@ const deep = {
 };
 const dc = createCaller(deep, { db: "x" });
 expectTypeOf(dc.a.b.c).toEqualTypeOf<(input: { x: number }) => Promise<number>>();
+
+// --- new combinators infer precise input types ------------------------------
+const combRouter = {
+  create: route
+    .input(
+      s.object({
+        status: s.enum(["open", "closed"] as const), // -> union literal
+        kind: s.literal("note"), // -> narrow literal
+        id: s.union([s.string(), s.number()]), // -> string | number
+        title: s.string().min(1).max(200), // constraints keep `string`
+        count: s.integer().min(0), // integer stays `number`
+        owner: s.nullable(s.string()), // string | null
+        meta: s.record(s.string()), // Record<string, string>
+      }),
+    )
+    .handler(({ input }) => input),
+};
+const cc = createCaller(combRouter, { db: "x" });
+expectTypeOf(cc.create).parameter(0).toEqualTypeOf<{
+  status: "open" | "closed";
+  kind: "note";
+  id: string | number;
+  title: string;
+  count: number;
+  owner: string | null;
+  meta: Record<string, string>;
+}>();

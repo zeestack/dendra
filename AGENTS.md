@@ -93,7 +93,11 @@ In a Server Component, skip HTTP with `createCaller(appRouter, ctx)`.
   in the router (`users: new UsersController(db)`). Keep injected deps in
   `#private` fields. A class-containing router can't use `satisfies RouterRecord`
   — the consumer functions accept `object` and `Client<AppRouter>` validates it.
-- **Validation:** built-in `s.*`, or any Standard Schema lib (Zod/Valibot/ArkType).
+- **Validation:** built-in `s.*` (`string/number/integer/boolean/literal/enum/
+  union/null/nullable/array/record/object`, with chainable constraints like
+  `s.string().min(1).max(200).email()`, `s.integer().min(1)`,
+  `s.object({…}).strict()`), or any Standard Schema lib (Zod/Valibot/ArkType).
+  Constraints are emitted into OpenAPI and AI tool schemas automatically.
 
 ## AI / MCP
 

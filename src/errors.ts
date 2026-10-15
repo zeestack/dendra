@@ -4,17 +4,25 @@
 
 export type ErrorCode =
   | "BAD_REQUEST"
-  | "NOT_FOUND"
   | "UNAUTHORIZED"
   | "FORBIDDEN"
-  | "INTERNAL";
+  | "NOT_FOUND"
+  | "CONFLICT"
+  | "UNPROCESSABLE"
+  | "TOO_MANY_REQUESTS"
+  | "INTERNAL"
+  | "NOT_IMPLEMENTED";
 
 const STATUS_BY_CODE: Record<ErrorCode, number> = {
   BAD_REQUEST: 400,
   UNAUTHORIZED: 401,
   FORBIDDEN: 403,
   NOT_FOUND: 404,
+  CONFLICT: 409,
+  UNPROCESSABLE: 422,
+  TOO_MANY_REQUESTS: 429,
   INTERNAL: 500,
+  NOT_IMPLEMENTED: 501,
 };
 
 export class DendraError extends Error {

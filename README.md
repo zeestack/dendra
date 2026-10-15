@@ -349,7 +349,11 @@ agents with no parallel tool layer, kept to one source of truth, and able to bot
   over one socket, same router.
 - **Request batching** — `createClient(url, { batch: true })` collects unary calls
   made in the same tick into one HTTP round-trip (streaming stays direct).
-- **Standard Schema** — Zod, Valibot, ArkType, or the built-in `s.*` validators.
+- **Standard Schema** — Zod, Valibot, ArkType, or the built-in `s.*` validators:
+  `string/number/integer/boolean/literal/enum/union/null/nullable/array/record/object`,
+  with fluent constraints (`s.string().min(1).max(200).email()`,
+  `s.integer().min(1)`, `s.object({…}).strict()`). Constraints flow straight into
+  OpenAPI **and** AI tool schemas, so the model sees enums, bounds, and formats.
 
 ## Architecture
 
@@ -408,13 +412,15 @@ git push --follow-tags
 
 ## Status
 
-**Pre-1.0 (v0.1.1) — experimental, but broad.** Implemented and tested
-(32 tests, runtime + type-level): builder/router/dispatch, Standard Schema
-validation, Next/Fetch/Node adapters, REST + OpenAPI, inferred client (unary +
-streaming), NDJSON streaming with cancellation, WebSocket transport, middleware
-(`.use()`), typed `.output()`, request batching, in-memory **and** Redis pub/sub,
-class controllers, AI tools, MCP (stdio + remote HTTP, consume external MCP
-servers), and optional `dendra/anthropic` + `dendra/react` helpers.
+**Pre-1.0 (v0.4.0) — experimental, but broad.** Implemented and tested
+(65 tests, runtime + type-level): builder/router/dispatch, a batteries-included
+Standard Schema validator set (literals, enums, unions, nullable, record, and
+fluent string/number/array constraints), Next/Fetch/Node adapters, REST +
+OpenAPI, inferred client (unary + streaming), NDJSON streaming with cancellation,
+WebSocket transport, middleware (`.use()`), typed `.output()`, request batching,
+in-memory **and** Redis pub/sub, class controllers, AI tools, MCP (stdio + remote
+HTTP, consume external MCP servers), persistent memory + lazy tool loading, and
+optional `dendra/anthropic` + `dendra/react` helpers.
 
 Published on npm as [`dendra`](https://www.npmjs.com/package/dendra). APIs may
 change before 1.0. What's planned next is in [`ROADMAP.md`](ROADMAP.md).
