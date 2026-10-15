@@ -4,5 +4,5 @@ export default {
   context: 'Context management',
   features: 'Features',
   architecture: 'Architecture',
-  compare: 'vs tRPC + MCP'
+  compare: 'Comparison'
 }

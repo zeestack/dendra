@@ -103,6 +103,21 @@ export type AppRouter = typeof appRouter
 const api = createClient<AppRouter>('', { prefix: '/rpc/' })
 await api.notes.create({ title, body })   // fully typed`
 
+const COMPARE = [
+  { label: 'Typed client, no codegen', trpc: true, mcp: false, dendra: true },
+  { label: 'REST + OpenAPI 3.1', trpc: false, mcp: false, dendra: true },
+  { label: 'Your API is also LLM tools', trpc: false, mcp: 'by hand', dendra: true },
+  { label: 'MCP server (expose procedures)', trpc: false, mcp: true, dendra: true },
+  { label: 'Consume external MCP', trpc: false, mcp: false, dendra: true },
+  { label: 'Context budget (memory + lazy tools)', trpc: false, mcp: false, dendra: true }
+]
+
+function Mark3({ v }) {
+  if (v === true) return <span className={styles.yes}>✓</span>
+  if (v === false) return <span className={styles.no}>—</span>
+  return <span className={styles.partial}>{v}</span>
+}
+
 export default function Home() {
   return (
     <main className={styles.page}>
@@ -213,6 +228,45 @@ export default function Home() {
             />
           </pre>
         </div>
+      </section>
+
+      <section className={styles.compare}>
+        <h2 className={styles.showcaseTitle}>how dendra compares</h2>
+        <p className={styles.diagramSub}>
+          A typed-API framework and the AI/MCP world in one layer — instead of
+          assembling the pieces yourself.
+        </p>
+        <div className={styles.tableWrap}>
+          <table className={styles.table}>
+            <thead>
+              <tr>
+                <th />
+                <th>tRPC</th>
+                <th>MCP SDK</th>
+                <th className={styles.me}>dendra</th>
+              </tr>
+            </thead>
+            <tbody>
+              {COMPARE.map((row) => (
+                <tr key={row.label}>
+                  <td className={styles.rowLabel}>{row.label}</td>
+                  <td>
+                    <Mark3 v={row.trpc} />
+                  </td>
+                  <td>
+                    <Mark3 v={row.mcp} />
+                  </td>
+                  <td className={styles.me}>
+                    <Mark3 v={row.dendra} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className={styles.diagramLink}>
+          <Link href="/compare">Full comparison — tRPC, MCP SDK, AI SDKs →</Link>
+        </p>
       </section>
 
       <footer className={styles.footer}>
