@@ -1,11 +1,23 @@
 ---
-title: vs tRPC + MCP
+title: Comparison
 ---
 
-# dendra vs tRPC + MCP
+# How dendra compares
 
 dendra sits where a typed-API framework and the AI/MCP world overlap. Here's how
 it compares to the pieces you'd otherwise assemble yourself.
+
+| | tRPC | ts-rest | MCP SDK | **dendra** |
+|---|:---:|:---:|:---:|:---:|
+| Typed client, no codegen | ✓ | ✓ | — | **✓** |
+| REST + OpenAPI 3.1 | — | ✓ | — | **✓** |
+| RPC (nested procedures) | ✓ | — | — | **✓** |
+| Streaming / WebSocket | ~ | — | — | **✓** |
+| One definition (no separate contract) | ✓ | — | — | **✓** |
+| Your API is also LLM tools | — | — | by hand | **✓** |
+| MCP server (expose procedures) | — | — | ✓ | **✓** |
+| Consume external MCP | — | — | — | **✓** |
+| Context budget (memory + lazy tools) | — | — | — | **✓** |
 
 ## vs tRPC
 
@@ -17,9 +29,35 @@ tRPC gives you typed procedures and a typed client. dendra does that **and**:
 - **Standard Schema** — use built-in `s.*`, or Zod / Valibot / ArkType.
 - **Zero-dependency core.**
 
-If you only need typed RPC between your own client and server, tRPC is great.
+If you only need typed RPC between your own client and server, tRPC is great — the
+largest ecosystem and the mature React Query integration are real advantages.
 dendra is for when those same procedures also need to be REST endpoints and tools
 an agent (or Claude over MCP) can call.
+
+## vs ts-rest
+
+ts-rest is contract-first typed REST: you declare a **contract** (routes + schemas),
+implement it separately, and get a typed client plus OpenAPI. dendra overlaps on
+typed REST + client, but differs in shape:
+
+- **One definition, not two.** In ts-rest the contract and the implementation are
+  separate objects you keep in sync; in dendra the procedure **is** the definition —
+  the client type comes from `typeof appRouter`.
+- **RPC + streaming + an in-process caller**, not REST-only.
+- **AI / MCP** — the same procedures are tools and an MCP server; ts-rest has no
+  AI/MCP story.
+
+Choose ts-rest if you want a clean REST contract and nothing more. Choose dendra if
+those endpoints should also be RPC, streaming, and agent-callable from one spec.
+
+## vs Hono
+
+Hono is a small, fast web framework — routing + middleware for any Web-standard
+runtime — with an optional typed RPC client. It sits a **layer below** dendra: it's
+the HTTP layer, not the typed-procedure + AI/MCP layer. The two are complementary,
+not competing — `toFetchHandler(appRouter)` mounts dendra **on** Hono (or Bun, Deno,
+Workers). Use Hono alone if you just want fast routing; add dendra when those routes
+should become typed procedures that are also REST, OpenAPI, and MCP tools.
 
 ## vs the MCP SDK alone
 
@@ -36,11 +74,6 @@ tool + MCP layer underneath**. It complements them: expose `mergeToolsets()` out
 to whatever model stack you use. dendra's optional `runAgent` / `useAssistant`
 helpers are a convenience, not the point — the point is that your typed procedures
 *are* the tools, and they're also an MCP server.
-
-## Choose tRPC when
-
-You're not doing AI/MCP, you want the largest ecosystem and community, you rely on
-its mature React Query integration / links, or you already have a tRPC codebase.
 
 ## Choose dendra when
 
