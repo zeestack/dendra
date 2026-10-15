@@ -59,7 +59,7 @@ table stakes it also happens to get right.
 ## One definition → many surfaces
 
 <div align="center">
-<img src="https://raw.githubusercontent.com/zeestack/dendra/main/assets/arch-framework.png" alt="dendra framework architecture: one definition branches into typed client, REST + OpenAPI, in-process caller, streaming, LLM tools, and an MCP server" width="820">
+<img src="https://raw.githubusercontent.com/zeestack/dendra/main/assets/arch-framework2.jpg" alt="dendra framework architecture: one definition branches into typed client, REST + OpenAPI, in-process caller, streaming, LLM tools, and an MCP server" width="820">
 <br>
 <sub><a href="https://products.techfoundry.io/dendra/architecture/framework.html">▶ open the interactive diagram</a></sub>
 </div>
