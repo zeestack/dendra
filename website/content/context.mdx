@@ -11,7 +11,7 @@ because memory, tools, skills, and history are the **same shape**: a compact
 descriptor always in context, full content loaded on demand, drawn from one token
 budget.
 
-Two sources ship today; the unifying manager is on the roadmap.
+Two sources ship today, unified by `createContextManager` under one token budget.
 
 ## Memory — `dendra/memory`
 
@@ -57,12 +57,41 @@ for await (const part of runAgent({ client, model, prompt, lazyToolset: lazy }))
 The live tool set **grows** as `search_tools` loads more; names are sanitized once
 and mapped back so your executor still receives the original.
 
-## The bigger picture
+## The manager — `createContextManager`
 
-The design is one `ContextSource` primitive and a `createContextManager` that
-assembles memory + tools + skills + history under a single token budget — so
-recall, `search_tools`, and `load_skill` are three faces of one engine. Memory and
-tools are the first two sources; the manager is extracted once both exist.
+Instead of wiring memory and tools separately, compose them as **sources** under
+one budget. `runAgent({ context })` then owns recall, lazy tool loading, history
+compaction, and write-backs — emitting a single `{ type: 'context' }` part stream.
+
+```ts
+import { createContextManager, memorySource, toolSource } from 'dendra'
+
+const context = createContextManager({
+  budget: { maxTokens: 100_000, count: (t) => estimateTokens(t) }, // you inject the counter
+  sources: [
+    memorySource(ctx.memory, {
+      recall: { k: 6 },                          // select  = recall before the turn
+      remember: ({ text }) => extractFacts(text) // commit  = persist after (explicit)
+    }),
+    toolSource(merged.tools, { pin: local.names, k: 6 }), // search_tools, deferred schemas
+  ],
+  history: { compact: (msgs, budget) => trimToFit(msgs, budget) }, // optional eviction hook
+})
+
+for await (const part of runAgent({ client, model, prompt, context })) {
+  // { type: 'context', source: 'memory', op: 'recalled' | 'saved', records }
+  // { type: 'context', source: 'tools',  op: 'loaded', tools: [...] }
+}
+```
+
+Each source is the same shape — compact descriptors always in context, full
+content pulled on demand, everything drawn from the **one** budget, so a recalled
+memory and a loaded tool schema compete for the same space. Adding **skills** and
+built-in history strategies is additive: a new `ContextSource`, same engine.
+
+The core stays zero-dependency — no tokenizer (you pass `count`), no embedder
+(that lives in your `MemoryStore`), no sandbox. It's entirely opt-in: a `runAgent`
+with no `context` behaves exactly as before.
 
 > tRPC gives you typed APIs. MCP gives you tools. dendra gives you typed APIs that
 > are also tools — and manages the model's context as one budgeted,

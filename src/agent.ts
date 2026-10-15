@@ -32,5 +32,23 @@ export interface AgentMemoryPart {
   records: MemoryRecord[];
 }
 
+/**
+ * A context-layer event from a `ContextManager` (unified memory + tools + …).
+ * Generalizes `AgentMemoryPart`: `source` names the origin ("memory", "tools", …)
+ * and `op` is what happened — `"recalled"`/`"saved"` carry memory `records`,
+ * `"loaded"` carries the `tools` names un-deferred into the live set.
+ */
+export interface AgentContextPart {
+  type: "context";
+  source: string;
+  op: "recalled" | "loaded" | "saved";
+  records?: MemoryRecord[];
+  tools?: string[];
+}
+
 /** One streamed part of an assistant turn. */
-export type AgentPart = AgentTextPart | AgentToolPart | AgentMemoryPart;
+export type AgentPart =
+  | AgentTextPart
+  | AgentToolPart
+  | AgentMemoryPart
+  | AgentContextPart;

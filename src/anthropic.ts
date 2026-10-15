@@ -10,6 +10,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { AgentPart } from "./agent.ts";
 import { recallMemory, rememberFacts, type MemoryStore } from "./memory.ts";
+import type { ContextManager } from "./context-manager.ts";
 
 /**
  * The minimal client surface `runAgent` needs — just `messages.stream`. Typed
@@ -44,6 +45,13 @@ export interface RunAgentOptions {
    * out of context. `execute` still runs the real tools.
    */
   lazyToolset?: import("./context.ts").LazyToolset;
+  /**
+   * Opt-in unified context management (`createContextManager`). Supersedes the
+   * `memory` / `lazyToolset` / `recall` / `remember` options below: the manager
+   * owns recall, lazy tool loading, history compaction, and write-backs under one
+   * token budget, emitting `{ type: "context" }` parts. Omit for no manager.
+   */
+  context?: ContextManager;
   /** The conversation so far, or a single user prompt. */
   messages?: Anthropic.MessageParam[];
   prompt?: string;
@@ -131,44 +139,75 @@ export async function* runAgent(opts: RunAgentOptions): AsyncGenerator<AgentPart
       return { ...t, name: safe };
     });
   const lazy = opts.lazyToolset;
-  let tools: Anthropic.Tool[];
-  if (lazy) {
-    // lazyToolset already sanitized names and owns the full safe→original map.
-    tools = lazy.tools as Anthropic.Tool[];
-    for (const [safe, orig] of lazy.nameMap) safeToOriginal.set(safe, orig);
-  } else {
-    tools = sanitize(opts.tools);
-  }
+  const ctx = opts.context;
 
-  const messages: Anthropic.MessageParam[] =
+  let messages: Anthropic.MessageParam[] =
     opts.messages?.slice() ??
     (opts.prompt !== undefined ? [{ role: "user", content: opts.prompt }] : []);
 
-  // ── Recall: retrieve relevant memories and inject them before the model runs.
-  // The search + formatting is shared (recallMemory); only the query derivation
-  // and injection are Anthropic-specific glue.
   let system = opts.system;
-  if (opts.memory && opts.recall !== false) {
-    const r = opts.recall ?? {};
-    const query = (r.query ?? lastUserText)(messages);
-    const { records, block } = await recallMemory(opts.memory, query, {
-      k: r.k,
-      minScore: r.minScore,
-    });
-    if (records.length) {
-      if ((r.into ?? "system") === "system") {
-        system = [system, block].filter(Boolean).join("\n\n");
-      } else {
-        messages.unshift({ role: "user", content: block });
-      }
-      yield { type: "memory", op: "recalled", records };
-    }
-  }
+  let tools: Anthropic.Tool[];
+  // Meta-tool names the context manager routes (instead of executing), e.g.
+  // search_tools. Stays empty unless a ContextManager is in play.
+  const metaNames = new Set<string>();
 
-  // ── Lazy tools: put the compact menu of deferred tools in the system prompt;
-  // the model loads the ones it needs via the search_tools meta-tool.
-  if (lazy && lazy.menu) {
-    system = [system, lazy.menu].filter(Boolean).join("\n\n");
+  if (ctx) {
+    // ── Unified context manager: owns recall, lazy tool loading, history
+    // compaction, and write-backs — all under one token budget.
+    messages = (await ctx.compact(messages)) as Anthropic.MessageParam[];
+    const turn = {
+      messages,
+      lastUserText: lastUserText(messages),
+      signal: opts.signal,
+    };
+    const prep = await ctx.prepare(turn);
+    system = [system, prep.system].filter(Boolean).join("\n\n") || undefined;
+    for (const [safe, orig] of prep.nameMap) safeToOriginal.set(safe, orig);
+    for (const n of prep.metaNames) metaNames.add(n);
+    // A tool source owns the list (its tools are deferred); otherwise the
+    // caller's own tools are always-on and the manager only adds meta-tools.
+    tools = prep.ownsTools
+      ? (prep.tools as Anthropic.Tool[])
+      : [...sanitize(opts.tools), ...(prep.tools as Anthropic.Tool[])];
+    for (const { source, loaded } of prep.selected) {
+      if (loaded.records?.length)
+        yield { type: "context", source, op: "recalled", records: loaded.records };
+    }
+  } else {
+    // ── Legacy standalone paths (unchanged): lazyToolset and/or memory.
+    if (lazy) {
+      // lazyToolset already sanitized names and owns the full safe→original map.
+      tools = lazy.tools as Anthropic.Tool[];
+      for (const [safe, orig] of lazy.nameMap) safeToOriginal.set(safe, orig);
+    } else {
+      tools = sanitize(opts.tools);
+    }
+
+    // Recall: retrieve relevant memories and inject them before the model runs.
+    // The search + formatting is shared (recallMemory); only the query
+    // derivation and injection are Anthropic-specific glue.
+    if (opts.memory && opts.recall !== false) {
+      const r = opts.recall ?? {};
+      const query = (r.query ?? lastUserText)(messages);
+      const { records, block } = await recallMemory(opts.memory, query, {
+        k: r.k,
+        minScore: r.minScore,
+      });
+      if (records.length) {
+        if ((r.into ?? "system") === "system") {
+          system = [system, block].filter(Boolean).join("\n\n");
+        } else {
+          messages.unshift({ role: "user", content: block });
+        }
+        yield { type: "memory", op: "recalled", records };
+      }
+    }
+
+    // Lazy tools: put the compact menu of deferred tools in the system prompt;
+    // the model loads the ones it needs via the search_tools meta-tool.
+    if (lazy && lazy.menu) {
+      system = [system, lazy.menu].filter(Boolean).join("\n\n");
+    }
   }
 
   // Accumulate the final assistant text so `remember` can extract from it.
@@ -215,6 +254,34 @@ export async function* runAgent(opts: RunAgentOptions): AsyncGenerator<AgentPart
     for (const tu of toolUses) {
       const original = safeToOriginal.get(tu.name) ?? tu.name;
 
+      // Context manager meta-tool (search_tools / …): route to the manager,
+      // which returns the result for the model plus any tool defs to add to the
+      // live set. Emitted as a `{ type: "context", op: "loaded" }` part.
+      if (ctx && metaNames.has(tu.name)) {
+        const turn = {
+          messages,
+          lastUserText: lastUserText(messages),
+          signal: opts.signal,
+        };
+        const h = ctx.handle(tu.name, tu.input, turn);
+        if (h) {
+          const loadedTools = (h.loaded.tools ?? []) as Anthropic.Tool[];
+          if (loadedTools.length) tools = [...tools, ...loadedTools];
+          yield {
+            type: "context",
+            source: h.source,
+            op: "loaded",
+            tools: loadedTools.map((t) => safeToOriginal.get(t.name) ?? t.name),
+          };
+          toolResults.push({
+            type: "tool_result",
+            tool_use_id: tu.id,
+            content: JSON.stringify(h.result),
+          });
+          continue;
+        }
+      }
+
       // Lazy tools: a search_tools call isn't executed — it loads matching tool
       // schemas into the live set for the next step, and returns the matches.
       // `handle` takes the sanitized name; loaded defs are already sanitized.
@@ -252,8 +319,20 @@ export async function* runAgent(opts: RunAgentOptions): AsyncGenerator<AgentPart
     messages.push({ role: "user", content: toolResults });
   }
 
-  // ── Remember: persist whatever the caller's function returns (explicit).
-  if (opts.memory && opts.remember) {
+  // ── Write-backs after the turn.
+  if (ctx) {
+    const turn = {
+      messages,
+      lastUserText: lastUserText(messages),
+      assistantText,
+      signal: opts.signal,
+    };
+    for (const { source, loaded } of await ctx.commit(turn)) {
+      if (loaded.records?.length)
+        yield { type: "context", source, op: "saved", records: loaded.records };
+    }
+  } else if (opts.memory && opts.remember) {
+    // Legacy: persist whatever the caller's function returns (explicit).
     const facts = await opts.remember({ text: assistantText, messages });
     for (const rec of await rememberFacts(opts.memory, facts)) {
       yield { type: "memory", op: "saved", records: [rec] };

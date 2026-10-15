@@ -48,6 +48,25 @@ export type { ToolFormat, PlainTool, ToolSource } from "./tools.ts";
 export { lazyToolset } from "./context.ts";
 export type { LazyToolset, LazyToolsetOptions } from "./context.ts";
 
+// The unified context layer: one budget over memory recall, lazy tools, and
+// history. `runAgent({ context })` drives it; sources wrap the existing pieces.
+export {
+  createContextManager,
+  memorySource,
+  toolSource,
+} from "./context-manager.ts";
+export type {
+  ContextManager,
+  ContextManagerOptions,
+  ContextSource,
+  Turn,
+  Budget,
+  Loaded,
+  PreparedContext,
+  MemorySourceOptions,
+  ToolSourceOptions,
+} from "./context-manager.ts";
+
 export { mcpToolDefinitions, createMcpBridge, createMcpToolSource } from "./mcp.ts";
 export type {
   McpToolDef,
@@ -72,6 +91,7 @@ export type {
   AgentTextPart,
   AgentToolPart,
   AgentMemoryPart,
+  AgentContextPart,
 } from "./agent.ts";
 
 // Memory: the store interface + a zero-dep reference implementation. The

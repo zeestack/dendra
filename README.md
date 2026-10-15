@@ -412,15 +412,16 @@ git push --follow-tags
 
 ## Status
 
-**Pre-1.0 (v0.4.0) — experimental, but broad.** Implemented and tested
-(65 tests, runtime + type-level): builder/router/dispatch, a batteries-included
+**Pre-1.0 (v0.5.0) — experimental, but broad.** Implemented and tested
+(72 tests, runtime + type-level): builder/router/dispatch, a batteries-included
 Standard Schema validator set (literals, enums, unions, nullable, record, and
 fluent string/number/array constraints), Next/Fetch/Node adapters, REST +
 OpenAPI, inferred client (unary + streaming), NDJSON streaming with cancellation,
 WebSocket transport, middleware (`.use()`), typed `.output()`, request batching,
 in-memory **and** Redis pub/sub, class controllers, AI tools, MCP (stdio + remote
-HTTP, consume external MCP servers), persistent memory + lazy tool loading, and
-optional `dendra/anthropic` + `dendra/react` helpers.
+HTTP, consume external MCP servers), a unified **context layer**
+(`createContextManager` — memory recall + lazy tool loading under one token
+budget), and optional `dendra/anthropic` + `dendra/react` helpers.
 
 Published on npm as [`dendra`](https://www.npmjs.com/package/dendra). APIs may
 change before 1.0. What's planned next is in [`ROADMAP.md`](ROADMAP.md).

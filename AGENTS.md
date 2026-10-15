@@ -121,6 +121,14 @@ Optional helpers (peer deps, opt-in):
 - `dendra/react` → `useAssistant({ stream, onPart, onDone })` owns the chat thread
   and streaming; you keep rendering.
 
+**Context layer (opt-in).** `createContextManager({ budget, sources })` unifies
+memory recall + lazy tool loading under one token budget; pass it as
+`runAgent({ context })`. Sources: `memorySource(store, { recall, remember })` and
+`toolSource(tools, { pin, k })` (defers schemas behind `search_tools`). Core has
+no tokenizer/embedder — you inject `budget.count`; the embedder lives in your
+`MemoryStore`. Standalone `memory`/`lazyToolset`/`recall`/`remember` options on
+`runAgent` still work when you don't use a manager.
+
 ## The framework ↔ app boundary (important)
 
 > Would **every** dendra user want this regardless of their DB, auth, UI, or which
