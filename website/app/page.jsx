@@ -179,6 +179,22 @@ export default function Home() {
         ))}
       </section>
 
+      <section className={styles.diagram}>
+        <h2 className={styles.showcaseTitle}>one definition, many surfaces</h2>
+        <p className={styles.diagramSub}>
+          Your router is one object of procedures. dendra projects it into every
+          surface — they can’t drift, because they all derive from the same spec.
+        </p>
+        <img
+          className={styles.diagramImg}
+          src="/dendra/img/arch-framework2.jpg"
+          alt="dendra architecture: a router of procedures projects into a typed client, HTTP adapters (Next/Fetch/Node), REST + OpenAPI, an in-process caller, and a tool layer that becomes an MCP server and consumes external MCP"
+        />
+        <p className={styles.diagramLink}>
+          <Link href="/architecture">See the full architecture →</Link>
+        </p>
+      </section>
+
       <section className={styles.showcase}>
         <h2 className={styles.showcaseTitle}>define → serve → call</h2>
         <div className={styles.window}>
