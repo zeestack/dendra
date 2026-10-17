@@ -5,6 +5,7 @@
 // bytes can't (cheaply). Web-standard File/Blob only; no dependencies.
 
 import type { JSONSchema, Schema, StandardResult } from "./schema.ts";
+import { DendraError } from "./errors.ts";
 
 // ── Byte signatures ────────────────────────────────────────────────────────
 
@@ -97,4 +98,81 @@ export function isFileSchema(js: JSONSchema | undefined): boolean {
 export function fileFields(inputJsonSchema: JSONSchema | undefined): string[] {
   const props = inputJsonSchema?.properties ?? {};
   return Object.keys(props).filter((k) => isFileSchema(props[k]));
+}
+
+// ── Reading uploads ────────────────────────────────────────────────────────
+
+/** Default cap on a multipart or form request body: 10 MB. */
+export const DEFAULT_MAX_BODY_BYTES = 10 * 1024 * 1024;
+
+function tooLarge(max: number): DendraError {
+  return new DendraError("PAYLOAD_TOO_LARGE", `Request body exceeds ${max} bytes`);
+}
+
+// Read a body, failing as soon as it passes `max` — the declared Content-Length
+// is checked first, and the count is enforced while reading, so a chunked
+// upload can't slip past the cap or make the server buffer it.
+export async function limitedBytes(req: Request, max: number): Promise<Uint8Array> {
+  const declared = Number(req.headers.get("content-length"));
+  if (declared > max) throw tooLarge(max);
+  if (!req.body) return new Uint8Array();
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > max) {
+      await reader.cancel().catch(() => {});
+      throw tooLarge(max);
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(size);
+  let at = 0;
+  for (const c of chunks) {
+    out.set(c, at);
+    at += c.byteLength;
+  }
+  return out;
+}
+
+/**
+ * Turn a multipart or urlencoded request into a procedure input. dendra's
+ * client sends non-file fields as one JSON part named `$input` and each file as
+ * its own part; a plain form (no `$input`) contributes its string fields as-is.
+ * The caller has already done the CSRF check (see `csrfReject` in server.ts).
+ */
+export async function readFormInput(
+  req: Request,
+  maxBodyBytes: number,
+): Promise<Record<string, unknown>> {
+  const bytes = await limitedBytes(req, maxBodyBytes);
+  let form: FormData;
+  try {
+    form = await new Response(bytes, {
+      headers: { "content-type": req.headers.get("content-type") ?? "" },
+    }).formData();
+  } catch {
+    throw new DendraError("BAD_REQUEST", "Malformed form body");
+  }
+  const json = form.get("$input");
+  let input: Record<string, unknown> = {};
+  if (typeof json === "string") {
+    try {
+      const parsed = JSON.parse(json) as unknown;
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        input = parsed as Record<string, unknown>;
+      }
+    } catch {
+      throw new DendraError("BAD_REQUEST", "Invalid JSON in $input");
+    }
+  }
+  for (const [k, v] of form.entries()) {
+    if (k === "$input") continue;
+    if (typeof v !== "string") input[k] = v;
+    else if (json === null) input[k] = v;
+  }
+  return input;
 }

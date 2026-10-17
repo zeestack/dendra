@@ -87,9 +87,11 @@ export function createClient<R extends object>(
       apply(_t, _this, args: unknown[]) {
         const dotted = path.join(".");
         const url = base + prefix + dotted;
-        const batchUnary = opts.batch
-          ? (input: unknown) => enqueue(dotted, input)
-          : undefined;
+        // Uploads go direct: a batch is one JSON body, which can't carry files.
+        const batchUnary =
+          opts.batch && !hasBlob(args[0])
+            ? (input: unknown) => enqueue(dotted, input)
+            : undefined;
         return lazyCall(doFetch, url, args[0], opts.headers, batchUnary);
       },
     });
@@ -99,6 +101,28 @@ export function createClient<R extends object>(
 
 function noop(): void {}
 
+// True when a top-level input field is a File/Blob — the call goes multipart.
+function hasBlob(input: unknown): boolean {
+  return (
+    typeof input === "object" &&
+    input !== null &&
+    Object.values(input).some((v) => typeof Blob !== "undefined" && v instanceof Blob)
+  );
+}
+
+// Files become their own parts; everything else rides in one JSON part,
+// `$input`, so numbers, booleans and nested objects keep their types.
+function toFormData(input: Record<string, unknown>): FormData {
+  const fd = new FormData();
+  const rest: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(input)) {
+    if (v instanceof Blob) fd.append(k, v);
+    else rest[k] = v;
+  }
+  fd.set("$input", JSON.stringify(rest));
+  return fd;
+}
+
 function lazyCall(
   doFetch: typeof fetch,
   url: string,
@@ -107,11 +131,21 @@ function lazyCall(
   batchUnary?: (input: unknown) => Promise<unknown>,
 ) {
   const start = () =>
-    doFetch(url, {
-      method: "POST",
-      headers: { ...jsonHeaders, ...(headers ?? {}) },
-      body: JSON.stringify(input ?? null),
-    });
+    doFetch(
+      url,
+      hasBlob(input)
+        ? {
+            // No content-type: fetch sets multipart/form-data with its boundary.
+            method: "POST",
+            headers: { "x-dendra": "1", ...(headers ?? {}) },
+            body: toFormData(input as Record<string, unknown>),
+          }
+        : {
+            method: "POST",
+            headers: { ...jsonHeaders, ...(headers ?? {}) },
+            body: JSON.stringify(input ?? null),
+          },
+    );
 
   return {
     // Unary path: awaiting the call reads a single JSON envelope — or joins the
