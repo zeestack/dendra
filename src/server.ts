@@ -10,12 +10,63 @@ import type { AnyProc, HttpMethod, RouterRecord } from "./core.ts";
 import { invokeStream, invokeUnary, resolveProc } from "./core.ts";
 import type { JSONSchema } from "./schema.ts";
 import { DendraError } from "./errors.ts";
+import { DEFAULT_MAX_BODY_BYTES, fileResponse, isFileResult, readFormInput } from "./files.ts";
 
 export interface ServerOptions<Ctx> {
   /** URL prefix that procedure paths live under. Default `/rpc/`. */
   prefix?: string;
   /** Build per-request context (auth, db handles, capabilities) from the request. */
   createContext?: (req: Request) => Ctx | Promise<Ctx>;
+  /**
+   * Accept plain HTML form posts (urlencoded, or multipart without dendra's
+   * `X-Dendra` header). Off by default: browsers send these cross-site with no
+   * preflight, so turning this on makes CSRF protection the app's job (e.g. a
+   * token checked in `.use()`).
+   */
+  allowFormPosts?: boolean;
+  /** Cap on multipart / form request bodies, in bytes. Default 10 MB. */
+  maxBodyBytes?: number;
+}
+
+// CSRF guard for POST. A cross-site page can only send "simple" requests
+// without a CORS preflight: GET, or POST with a form/text content type (or none
+// at all). So a POST must be JSON, or multipart carrying the `X-Dendra` header
+// the typed client always sends (a custom header forces a preflight) — anything
+// else could have come from another site riding the user's cookies. Returns the
+// rejection, or undefined when the request may proceed.
+export function csrfReject(req: Request, opts: ServerOptions<unknown>): Response | undefined {
+  const type = mediaType(req);
+  if (type === "application/json") return undefined;
+  if (opts.allowFormPosts && isFormType(type)) return undefined;
+  if (type === "multipart/form-data") {
+    if (req.headers.get("x-dendra") === "1") return undefined;
+    return jsonResponse(
+      {
+        error: {
+          code: "FORBIDDEN",
+          message: "Multipart requests need the X-Dendra: 1 header (or allowFormPosts)",
+        },
+      },
+      403,
+    );
+  }
+  return jsonResponse(
+    {
+      error: {
+        code: "UNSUPPORTED_MEDIA_TYPE",
+        message: "Send JSON (Content-Type: application/json)",
+      },
+    },
+    415,
+  );
+}
+
+function isFormType(type: string): boolean {
+  return type === "multipart/form-data" || type === "application/x-www-form-urlencoded";
+}
+
+function mediaType(req: Request): string {
+  return (req.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
 }
 
 const enc = new TextEncoder();
@@ -26,6 +77,7 @@ export function toFetchHandler<Ctx>(
 ): (req: Request) => Promise<Response> {
   const root = router as RouterRecord;
   const prefix = opts.prefix ?? "/rpc/";
+  const maxBody = opts.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
   return async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
     if (!url.pathname.startsWith(prefix)) {
@@ -35,6 +87,10 @@ export function toFetchHandler<Ctx>(
       );
     }
     const dotted = url.pathname.slice(prefix.length);
+    if (req.method === "POST") {
+      const rejected = csrfReject(req, opts as ServerOptions<unknown>);
+      if (rejected) return rejected;
+    }
 
     let ctx: unknown = {};
     try {
@@ -72,6 +128,7 @@ export function toFetchHandler<Ctx>(
               result: await invokeUnary(p, call.input, ctx, {
                 path: call.path,
                 transport: "rpc",
+                batch: true,
               }),
             };
           } catch (e) {
@@ -94,20 +151,45 @@ export function toFetchHandler<Ctx>(
         404,
       );
     }
+    // POST reaches anything; GET/HEAD (no preflight, embeddable) only reads.
+    // Anything else (PUT, DELETE, …) isn't part of the RPC protocol.
+    const readish = req.method === "GET" || req.method === "HEAD";
+    if (req.method !== "POST" && !(readish && proc.method === "GET")) {
+      return jsonResponse(
+        {
+          error: {
+            code: "METHOD_NOT_ALLOWED",
+            message: `'${dotted}' isn't a read; call it with POST (declare reads with .get())`,
+          },
+        },
+        405,
+      );
+    }
 
     let raw: unknown;
-    try {
-      if (req.method === "GET") {
-        raw = Object.fromEntries(url.searchParams);
-      } else {
-        const text = await req.text();
-        raw = text ? JSON.parse(text) : undefined;
+    if (isFormType(mediaType(req))) {
+      // Uploads and form posts: string fields get the same coercion as REST.
+      try {
+        raw = coerceInput(proc, await readFormInput(req, maxBody));
+      } catch (e) {
+        return errorToResponse(e);
       }
-    } catch {
-      return jsonResponse(
-        { error: { code: "BAD_REQUEST", message: "Invalid JSON body" } },
-        400,
-      );
+    } else {
+      try {
+        if (readish) {
+          // `$input` (from urlFor) carries typed JSON; otherwise flat strings.
+          const json = url.searchParams.get("$input");
+          raw = json !== null ? JSON.parse(json) : Object.fromEntries(url.searchParams);
+        } else {
+          const text = await req.text();
+          raw = text ? JSON.parse(text) : undefined;
+        }
+      } catch {
+        return jsonResponse(
+          { error: { code: "BAD_REQUEST", message: "Invalid JSON body" } },
+          400,
+        );
+      }
     }
 
     const site = { path: dotted, transport: "rpc" as const };
@@ -116,6 +198,7 @@ export function toFetchHandler<Ctx>(
         return ndjsonResponse(invokeStream(proc, raw, ctx, site));
       }
       const result = await invokeUnary(proc, raw, ctx, site);
+      if (isFileResult(result)) return fileResponse(result, req);
       return jsonResponse({ result }, 200);
     } catch (e) {
       return errorToResponse(e);
@@ -130,7 +213,6 @@ export function toNodeHandler<Ctx>(
   const handler = toFetchHandler(router, opts);
   return async (req: IncomingMessage, res: ServerResponse) => {
     const method = req.method ?? "GET";
-    const body = await readBody(req);
     // Tie an AbortSignal to the socket closing, so a client that disconnects
     // (or cancels a stream) aborts the request — handlers read `req.signal`
     // (via createContext) to stop subscriptions and long work.
@@ -139,12 +221,12 @@ export function toNodeHandler<Ctx>(
     const request = new Request("http://localhost" + (req.url ?? "/"), {
       method,
       headers: req.headers as Record<string, string>,
-      body:
-        body.length && method !== "GET" && method !== "HEAD"
-          ? body.toString("utf8")
-          : undefined,
+      // Stream the body through (bytes untouched, so binary uploads survive) and
+      // let the fetch handler's cap stop reading early — no buffering here.
+      body: method !== "GET" && method !== "HEAD" ? bodyStream(req) : undefined,
+      duplex: "half",
       signal: controller.signal,
-    });
+    } as RequestInit);
     const response = await handler(request);
     res.statusCode = response.status;
     response.headers.forEach((v, k) => res.setHeader(k, v));
@@ -157,6 +239,7 @@ export function toNodeHandler<Ctx>(
       }
     }
     res.end();
+    req.emit("dendra:responded");
   };
 }
 
@@ -217,7 +300,7 @@ function coerceInput(
   for (const [k, v] of Object.entries(out)) {
     if (typeof v !== "string") continue;
     const t = (props[k] as JSONSchema | undefined)?.type;
-    if (t === "number") {
+    if (t === "number" || t === "integer") {
       const n = Number(v);
       if (!Number.isNaN(n)) out[k] = n;
     } else if (t === "boolean") {
@@ -233,6 +316,7 @@ export function toRestHandler<Ctx>(
 ): (req: Request) => Promise<Response> {
   const table = buildRestTable(router as RouterRecord);
   const base = opts.prefix ?? "";
+  const maxBody = opts.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
   return async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
     const method = (req.method ?? "GET") as HttpMethod;
@@ -269,6 +353,12 @@ export function toRestHandler<Ctx>(
       params[name] = decodeURIComponent(m![i + 1]);
     });
 
+    // PUT/PATCH/DELETE always preflight cross-site, so only POST needs the guard.
+    if (method === "POST") {
+      const rejected = csrfReject(req, opts as ServerOptions<unknown>);
+      if (rejected) return rejected;
+    }
+
     let ctx: unknown = {};
     try {
       ctx = (await opts.createContext?.(req)) ?? {};
@@ -277,7 +367,13 @@ export function toRestHandler<Ctx>(
     }
 
     let body: Record<string, unknown> = {};
-    if (method !== "GET") {
+    if (isFormType(mediaType(req))) {
+      try {
+        body = await readFormInput(req, maxBody);
+      } catch (e) {
+        return errorToResponse(e);
+      }
+    } else if (method !== "GET") {
       try {
         const text = await req.text();
         if (text) body = JSON.parse(text) as Record<string, unknown>;
@@ -298,6 +394,7 @@ export function toRestHandler<Ctx>(
         return ndjsonResponse(invokeStream(matched.proc, input, ctx, site));
       }
       const result = await invokeUnary(matched.proc, input, ctx, site);
+      if (isFileResult(result)) return fileResponse(result, req);
       return jsonResponse(result, 200);
     } catch (e) {
       return errorToResponse(e);
@@ -305,12 +402,40 @@ export function toRestHandler<Ctx>(
   };
 }
 
-function readBody(req: IncomingMessage): Promise<Buffer> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => resolve(Buffer.concat(chunks)));
-    req.on("error", reject);
+// A Web stream over a Node request, with backpressure. Whatever isn't read —
+// the rest of an upload past the body cap, or a body an early 4xx never looked
+// at — is drained and discarded once the response is written, rather than
+// destroying the socket, so the response gets through and keep-alive keeps
+// working. (Cancelling the Request's body doesn't reach this stream: undici
+// wraps it.) `done` guards the late "end" — closing twice would throw.
+function bodyStream(req: IncomingMessage): ReadableStream<Uint8Array> {
+  let done = false;
+  const discard = () => {
+    done = true;
+    req.removeAllListeners("data");
+    req.resume();
+  };
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      req.on("data", (c: Buffer) => {
+        controller.enqueue(new Uint8Array(c.buffer, c.byteOffset, c.byteLength));
+        if ((controller.desiredSize ?? 1) <= 0) req.pause();
+      });
+      req.on("end", () => {
+        if (!done) controller.close();
+        done = true;
+      });
+      req.on("error", (e) => {
+        if (!done) controller.error(e);
+        done = true;
+      });
+      // Once the response is written, nothing will read the body any more.
+      req.once("dendra:responded", discard);
+    },
+    pull() {
+      req.resume();
+    },
+    cancel: discard,
   });
 }
 

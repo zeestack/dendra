@@ -7,6 +7,7 @@
 
 import type { AnyProc, RouterRecord } from "./core.ts";
 import type { JSONSchema } from "./schema.ts";
+import { FILE_MARKER, fileFields } from "./files.ts";
 
 export interface OpenApiInfo {
   title: string;
@@ -50,6 +51,17 @@ export function toOpenApiDocument(
     ...(opts.servers ? { servers: opts.servers } : {}),
     paths,
   };
+}
+
+// Uploads are documented as plain OpenAPI binary fields; dendra's internal
+// file marker stays out of the published spec.
+function withoutFileMarkers(schema: JSONSchema, files: string[]): JSONSchema {
+  const properties = { ...schema.properties };
+  for (const k of files) {
+    const { [FILE_MARKER]: _marker, ...rest } = properties[k] as JSONSchema;
+    properties[k] = rest;
+  }
+  return { ...schema, properties };
 }
 
 function buildOperation(proc: AnyProc, operationId: string): Record<string, unknown> {
@@ -96,9 +108,13 @@ function buildOperation(proc: AnyProc, operationId: string): Record<string, unkn
   };
 
   if (!isGet && proc.inputJsonSchema) {
+    const files = fileFields(proc.inputJsonSchema);
     op.requestBody = {
       required: true,
-      content: { "application/json": { schema: proc.inputJsonSchema } },
+      content:
+        files.length > 0
+          ? { "multipart/form-data": { schema: withoutFileMarkers(proc.inputJsonSchema, files) } }
+          : { "application/json": { schema: proc.inputJsonSchema } },
     };
   }
   if (proc.kind === "stream") op["x-dendra-streaming"] = true;

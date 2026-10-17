@@ -6,6 +6,7 @@
 // right usage; the runtime object happens to support both.
 
 import type { Client } from "./caller.ts";
+import type { ReadBrand } from "./core.ts";
 import { DendraClientError } from "./errors.ts";
 
 export interface ClientOptions {
@@ -19,6 +20,11 @@ export interface ClientOptions {
    */
   batch?: boolean;
 }
+
+// `X-Dendra` marks a request as coming from dendra's client. Browsers can't
+// send a custom header cross-site without a CORS preflight, so the server uses
+// it as CSRF proof on multipart uploads.
+const jsonHeaders = { "content-type": "application/json", "x-dendra": "1" };
 
 interface BatchCall {
   path: string;
@@ -45,7 +51,7 @@ export function createClient<R extends object>(
     try {
       const res = await doFetch(base + prefix + "__batch", {
         method: "POST",
-        headers: { "content-type": "application/json", ...(opts.headers ?? {}) },
+        headers: { ...jsonHeaders, ...(opts.headers ?? {}) },
         body: JSON.stringify(calls.map((c) => ({ path: c.path, input: c.input ?? null }))),
       });
       const data = (await res.json()) as Array<{
@@ -76,15 +82,21 @@ export function createClient<R extends object>(
       get(_t, key) {
         // Keep the path-proxy itself non-thenable / non-iterable; only the
         // object returned from a call is.
+        if (key === URL_OF) {
+          return (input: unknown) =>
+            base + prefix + path.join(".") + "?$input=" + encodeURIComponent(JSON.stringify(input ?? null));
+        }
         if (typeof key !== "string" || key === "then") return undefined;
         return build([...path, key]);
       },
       apply(_t, _this, args: unknown[]) {
         const dotted = path.join(".");
         const url = base + prefix + dotted;
-        const batchUnary = opts.batch
-          ? (input: unknown) => enqueue(dotted, input)
-          : undefined;
+        // Uploads go direct: a batch is one JSON body, which can't carry files.
+        const batchUnary =
+          opts.batch && !hasBlob(args[0])
+            ? (input: unknown) => enqueue(dotted, input)
+            : undefined;
         return lazyCall(doFetch, url, args[0], opts.headers, batchUnary);
       },
     });
@@ -94,6 +106,47 @@ export function createClient<R extends object>(
 
 function noop(): void {}
 
+// A symbol, not a property name, so it can't collide with a router key.
+const URL_OF = Symbol("dendra.urlOf");
+
+/**
+ * The GET URL for a read — for `<img src>`, download links, or prefetching.
+ * Only procedures declared `.get()` qualify (a type error otherwise, and a 405
+ * from the server): a URL anyone can embed must never trigger a mutation.
+ */
+export function urlFor<In>(
+  procedure: ((input: In) => Promise<unknown>) & ReadBrand,
+  input: In,
+): string {
+  const build = (procedure as unknown as Record<symbol, unknown>)[URL_OF];
+  if (typeof build !== "function") {
+    throw new TypeError("urlFor expects a procedure from createClient");
+  }
+  return (build as (input: unknown) => string)(input);
+}
+
+// True when a top-level input field is a File/Blob — the call goes multipart.
+function hasBlob(input: unknown): boolean {
+  return (
+    typeof input === "object" &&
+    input !== null &&
+    Object.values(input).some((v) => typeof Blob !== "undefined" && v instanceof Blob)
+  );
+}
+
+// Files become their own parts; everything else rides in one JSON part,
+// `$input`, so numbers, booleans and nested objects keep their types.
+function toFormData(input: Record<string, unknown>): FormData {
+  const fd = new FormData();
+  const rest: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(input)) {
+    if (v instanceof Blob) fd.append(k, v);
+    else rest[k] = v;
+  }
+  fd.set("$input", JSON.stringify(rest));
+  return fd;
+}
+
 function lazyCall(
   doFetch: typeof fetch,
   url: string,
@@ -102,11 +155,21 @@ function lazyCall(
   batchUnary?: (input: unknown) => Promise<unknown>,
 ) {
   const start = () =>
-    doFetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json", ...(headers ?? {}) },
-      body: JSON.stringify(input ?? null),
-    });
+    doFetch(
+      url,
+      hasBlob(input)
+        ? {
+            // No content-type: fetch sets multipart/form-data with its boundary.
+            method: "POST",
+            headers: { "x-dendra": "1", ...(headers ?? {}) },
+            body: toFormData(input as Record<string, unknown>),
+          }
+        : {
+            method: "POST",
+            headers: { ...jsonHeaders, ...(headers ?? {}) },
+            body: JSON.stringify(input ?? null),
+          },
+    );
 
   return {
     // Unary path: awaiting the call reads a single JSON envelope — or joins the
@@ -120,6 +183,9 @@ function lazyCall(
       const result = batchUnary
         ? batchUnary(input)
         : start().then(async (res) => {
+            // A file response is the raw bytes, flagged by X-Dendra (not the
+            // content type — a downloaded file can itself be JSON).
+            if (res.ok && res.headers.get("x-dendra") === "file") return res.blob();
             const data = (await res.json()) as {
               result?: unknown;
               error?: { code?: string; message?: string; details?: unknown };

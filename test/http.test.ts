@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   initDendra,
   toFetchHandler,
+  toRestHandler,
   createClient,
   DendraClientError,
   s,
@@ -47,5 +48,18 @@ describe("HTTP transport (client <-> server)", () => {
     const out: string[] = [];
     for await (const t of client.chat({ n: 3 })) out.push(t);
     expect(out).toEqual(["t0", "t1", "t2"]);
+  });
+});
+
+describe("REST coercion", () => {
+  it("coerces path params declared s.integer()", async () => {
+    const r = {
+      get: route
+        .get("/items/:id")
+        .input(s.object({ id: s.integer() }))
+        .handler(({ input }) => input.id),
+    } satisfies RouterRecord;
+    const res = await toRestHandler(r)(new Request("http://x/items/42"));
+    expect(await res.json()).toBe(42);
   });
 });

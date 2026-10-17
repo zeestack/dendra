@@ -4,6 +4,59 @@ Field notes from adopting dendra in **Question Tool** (TechFoundry's content and
 
 The app needs every request checked against the user's organisation and workspace, an audit trail of who did what, AI usage recorded per workspace, and some actions (Approve, Publish) that only an approver may run and that must never become AI tools. These are the gaps that forced custom code, most valuable first.
 
+## Bugs found while adopting (17 October 2026, dendra 0.3.0)
+
+### B1. zod schemas don't type-check as `.input()` (Standard Schema type too narrow)
+
+> **Fixed in dendra 0.7.0:** `StandardIssue.path` accepts `{ key }` segments (normalised to plain keys in `details`), `types` accepts `undefined`, and a test now type-checks Zod 4, Zod 3 (`zod/v3`), Valibot and ArkType. The `zs()` cast helper can go.
+
+**What happens:** `route.input(z.object({ a: z.number() }))` with zod 3.25 fails to compile:
+
+```
+Argument of type 'ZodObject<...>' is not assignable to parameter of type 'StandardSchemaV1<unknown, unknown>'.
+```
+
+and `input` in the handler becomes `unknown`. At runtime it works (zod implements `~standard.validate`).
+
+**Why:** `src/schema.ts` declares
+
+```ts
+export interface StandardIssue {
+  readonly message: string;
+  readonly path?: ReadonlyArray<PropertyKey>;
+}
+```
+
+but the Standard Schema spec allows path segments to be objects too: `ReadonlyArray<PropertyKey | { readonly key: PropertyKey }>`, and zod's types (`zod/v3/standard-schema.d.ts`) declare exactly that. So zod's `validate` return type isn't assignable to dendra's, and the whole schema is rejected. Valibot and ArkType are likely affected the same way.
+
+**Fix:** widen the type to match the spec, and normalise segments where dendra reads them (error details, OpenAPI):
+
+```ts
+export interface StandardPathSegment { readonly key: PropertyKey }
+export interface StandardIssue {
+  readonly message: string;
+  readonly path?: ReadonlyArray<PropertyKey | StandardPathSegment> | undefined;
+}
+```
+
+Also worth making `types?` accept `| undefined` (zod declares `types?: Types<I, O> | undefined`, which fails under `exactOptionalPropertyTypes`).
+
+**Test to add:** a type-level test that `route.input(z.object({ a: z.number() }))` compiles and `input.a` is `number` (and the same for Valibot and ArkType), so the README's "Zod, Valibot, ArkType" claim is checked.
+
+**Workaround in Question Tool:** a cast helper `zs(schema)` returning `StandardSchemaV1<z.input<T>, z.output<T>>` (`src/server/procedures/shared.ts`).
+
+### B2. Any procedure runs from a GET request, and the RPC handler accepts any body type
+
+> **Fixed in dendra 0.7.0:** GET only reaches procedures declared `.get()` (405 otherwise); POST must be `application/json` (415) or a dendra multipart upload with `X-Dendra: 1` (403). The workaround route can go back to exporting `GET` too, if any procedures are `.get()` reads.
+
+**What happens:** `toFetchHandler` turns a GET's query string into input for **every** procedure (`raw = Object.fromEntries(url.searchParams)`), and parses POST bodies with `JSON.parse(await req.text())` whatever the `Content-Type`.
+
+**Why it matters:** with cookie sessions, a mutation can be triggered by another website, through a plain link or `<img src="https://app/rpc/drafts.approve?id=1">` (GET), or through a `text/plain` form POST, which browsers send without a preflight check. SameSite=Lax cookies block the cross-site POST but not a top-level GET navigation.
+
+**Fix:** only allow GET for procedures declared as reads (`.get()` or a file/query marker); answer 405 otherwise. Require `Content-Type: application/json` on JSON POSTs (415 otherwise), or a dendra header the client always sends.
+
+**Workaround in Question Tool:** the RPC route exports POST only and returns 415 unless the body is JSON (`src/app/api/rpc/[...path]/route.ts`).
+
 ## Must have
 
 ### 1. Files in and out

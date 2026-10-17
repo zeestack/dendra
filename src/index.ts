@@ -11,9 +11,12 @@ export type {
   AfterInfo,
   CallSite,
   Transport,
+  ReadBrand,
 } from "./core.ts";
 
 export { createCaller } from "./caller.ts";
+export { file } from "./files.ts";
+export type { FileOptions, FileResult, FileBody } from "./files.ts";
 export type { Client } from "./caller.ts";
 
 export { toFetchHandler, toNodeHandler, toRestHandler } from "./server.ts";
@@ -36,7 +39,7 @@ export type {
   WhatwgSocket,
 } from "./ws.ts";
 
-export { createClient } from "./client.ts";
+export { createClient, urlFor } from "./client.ts";
 export type { ClientOptions } from "./client.ts";
 
 export {

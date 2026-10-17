@@ -1,5 +1,13 @@
 import { expectTypeOf } from "vitest";
-import { initDendra, createCaller, s, type RouterRecord } from "../src/index.ts";
+import {
+  initDendra,
+  createCaller,
+  createClient,
+  file,
+  urlFor,
+  s,
+  type RouterRecord,
+} from "../src/index.ts";
 
 // Type-level tests: prove end-to-end inference with no codegen.
 const { route } = initDendra<{ db: string }>();
@@ -111,3 +119,35 @@ route
     if (!info.ok) expectTypeOf(info.code).toEqualTypeOf<import("../src/index.ts").ErrorCode>();
   })
   .handler(() => "ok");
+
+// `.get()` marks a read; the client keeps the brand so `urlFor` can require it.
+{
+  const r = {
+    read: route.get().handler(() => 1),
+    write: route.handler(() => 1),
+  };
+  const api = createCaller(r, { db: "x" });
+  expectTypeOf(api.read).toMatchTypeOf<import("../src/index.ts").ReadBrand>();
+  expectTypeOf(api.write).not.toMatchTypeOf<import("../src/index.ts").ReadBrand>();
+}
+
+// s.file() infers File.
+expectTypeOf<import("../src/schema.ts").InferOutput<ReturnType<typeof s.file>>>().toEqualTypeOf<File>();
+
+// A handler returning file() gives the client a Blob.
+{
+  const r = { dl: route.get().handler(() => file("x", { type: "text/plain" })) };
+  expectTypeOf(createCaller(r, { db: "x" }).dl).returns.resolves.toEqualTypeOf<Blob>();
+}
+
+// urlFor only accepts reads.
+{
+  const r = {
+    read: route.get().input(s.object({ id: s.integer() })).handler(() => 1),
+    write: route.input(s.object({ id: s.integer() })).handler(() => 1),
+  };
+  const api = createClient<typeof r>("");
+  urlFor(api.read, { id: 1 });
+  // @ts-expect-error — not a .get() read
+  urlFor(api.write, { id: 1 });
+}

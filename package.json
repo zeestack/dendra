@@ -1,6 +1,6 @@
 {
   "name": "dendra",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": false,
   "license": "MIT",
   "repository": {
@@ -78,9 +78,12 @@
     "@anthropic-ai/sdk": "^0.30.1",
     "@types/node": "^22.7.0",
     "@types/react": "^18.3.11",
+    "arktype": "^2.2.8",
     "react": "^18.3.1",
     "tsup": "^8.3.0",
     "typescript": "^5.6.3",
-    "vitest": "^2.1.9"
+    "valibot": "^1.5.0",
+    "vitest": "^2.1.9",
+    "zod": "^4.6.7"
   }
 }
