@@ -73,7 +73,7 @@ export function createWsSession(
           });
           return;
         }
-        invokeUnary(proc, msg.input, ctx).then(
+        invokeUnary(proc, msg.input, ctx, { path: msg.path, transport: "ws" }).then(
           (result) => out({ id: msg.id, type: "result", result }),
           (e) => out({ id: msg.id, type: "error", error: toErr(e) }),
         );
@@ -95,7 +95,10 @@ export function createWsSession(
         const subCtx = { ...ctx, signal: ac.signal };
         void (async () => {
           try {
-            for await (const value of invokeStream(proc, msg.input, subCtx)) {
+            for await (const value of invokeStream(proc, msg.input, subCtx, {
+              path: msg.path,
+              transport: "ws",
+            })) {
               if (ac.signal.aborted) break;
               out({ id: msg.id, type: "next", value });
             }

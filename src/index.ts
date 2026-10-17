@@ -7,6 +7,10 @@ export type {
   HttpMethod,
   ProcedureKind,
   Middleware,
+  AfterHook,
+  AfterInfo,
+  CallSite,
+  Transport,
 } from "./core.ts";
 
 export { createCaller } from "./caller.ts";

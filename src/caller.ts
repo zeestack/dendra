@@ -28,20 +28,21 @@ export function createCaller<R extends object>(
   router: R,
   ctx: unknown = {},
 ): Client<R> {
-  const wrap = (node: unknown): unknown => {
+  const wrap = (node: unknown, path: string): unknown => {
     if (isProc(node)) {
+      const site = { path, transport: "caller" as const };
       if (node.kind === "stream") {
-        return (input: unknown) => invokeStream(node, input, ctx);
+        return (input: unknown) => invokeStream(node, input, ctx, site);
       }
-      return (input: unknown) => invokeUnary(node, input, ctx);
+      return (input: unknown) => invokeUnary(node, input, ctx, site);
     }
     const out: Record<string, unknown> = {};
     for (const k of Object.keys(node as Record<string, unknown>)) {
-      out[k] = wrap((node as Record<string, unknown>)[k]);
+      out[k] = wrap((node as Record<string, unknown>)[k], path ? `${path}.${k}` : k);
     }
     return out;
   };
-  return wrap(router) as Client<R>;
+  return wrap(router, "") as Client<R>;
 }
 
 function isProc(

@@ -86,6 +86,10 @@ In a Server Component, skip HTTP with `createCaller(appRouter, ctx)`.
   const authed = route.use(({ ctx }) => { if (!ctx.user) throw new DendraError("UNAUTHORIZED","…"); return { user: ctx.user }; });
   ```
   A tool behind `.use(auth)` is auth-guarded for the model too.
+- **After-hooks for audit/usage.** `.after(({ ctx, path, transport, ok, result,
+  error, code, durationMs }) => …)` runs once the call settles, on every transport
+  (incl. AI tools). Awaited; throws are logged, not returned. It only sees calls
+  that passed the `.use()`s before it — place it before auth to record rejections.
 - **`.ai()` is opt-in.** Only `.ai()`-marked procedures are exposed as tools.
 - **Other runtimes:** `toFetchHandler` (Hono/Bun/Deno/Workers), `toNodeHandler`
   (`node:http`), `toRestHandler` (plain REST), `toOpenApiDocument` (3.1 spec).

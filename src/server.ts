@@ -68,7 +68,12 @@ export function toFetchHandler<Ctx>(
             };
           }
           try {
-            return { result: await invokeUnary(p, call.input, ctx) };
+            return {
+              result: await invokeUnary(p, call.input, ctx, {
+                path: call.path,
+                transport: "rpc",
+              }),
+            };
           } catch (e) {
             return { error: errorBody(e) };
           }
@@ -105,11 +110,12 @@ export function toFetchHandler<Ctx>(
       );
     }
 
+    const site = { path: dotted, transport: "rpc" as const };
     try {
       if (proc.kind === "stream") {
-        return ndjsonResponse(invokeStream(proc, raw, ctx));
+        return ndjsonResponse(invokeStream(proc, raw, ctx, site));
       }
-      const result = await invokeUnary(proc, raw, ctx);
+      const result = await invokeUnary(proc, raw, ctx, site);
       return jsonResponse({ result }, 200);
     } catch (e) {
       return errorToResponse(e);
@@ -167,13 +173,15 @@ interface RestRoute {
   regex: RegExp;
   paramNames: string[];
   proc: AnyProc;
+  name: string; // dotted router path, e.g. "notes.get"
 }
 
 function buildRestTable(router: RouterRecord): RestRoute[] {
   const routes: RestRoute[] = [];
-  const walk = (node: RouterRecord): void => {
+  const walk = (node: RouterRecord, prefix: string): void => {
     for (const k of Object.keys(node)) {
       const child = node[k];
+      const name = prefix ? `${prefix}.${k}` : k;
       if ((child as AnyProc)._dendra) {
         const proc = child as AnyProc;
         if (proc.path) {
@@ -187,14 +195,15 @@ function buildRestTable(router: RouterRecord): RestRoute[] {
             regex: new RegExp("^" + pattern + "/?$"),
             paramNames,
             proc,
+            name,
           });
         }
       } else {
-        walk(child as RouterRecord);
+        walk(child as RouterRecord, name);
       }
     }
   };
-  walk(router);
+  walk(router, "");
   return routes;
 }
 
@@ -283,11 +292,12 @@ export function toRestHandler<Ctx>(
     const query = Object.fromEntries(url.searchParams);
     const input = coerceInput(matched.proc, { ...body, ...query, ...params });
 
+    const site = { path: matched.name, transport: "rest" as const };
     try {
       if (matched.proc.kind === "stream") {
-        return ndjsonResponse(invokeStream(matched.proc, input, ctx));
+        return ndjsonResponse(invokeStream(matched.proc, input, ctx, site));
       }
-      const result = await invokeUnary(matched.proc, input, ctx);
+      const result = await invokeUnary(matched.proc, input, ctx, site);
       return jsonResponse(result, 200);
     } catch (e) {
       return errorToResponse(e);

@@ -99,3 +99,15 @@ expectTypeOf(cc.create).parameter(0).toEqualTypeOf<{
   owner: string | null;
   meta: Record<string, string>;
 }>();
+
+// After-hooks see ctx as enriched by the middlewares before them, plus the input.
+route
+  .use(() => ({ userId: "u1" }))
+  .input(s.object({ id: s.string() }))
+  .after((info) => {
+    expectTypeOf(info.ctx.userId).toEqualTypeOf<string>();
+    expectTypeOf(info.ctx.db).toEqualTypeOf<string>();
+    expectTypeOf(info.input).toEqualTypeOf<{ id: string }>();
+    if (!info.ok) expectTypeOf(info.code).toEqualTypeOf<import("../src/index.ts").ErrorCode>();
+  })
+  .handler(() => "ok");

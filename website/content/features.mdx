@@ -42,6 +42,20 @@ const authed = route.use(({ ctx }) => {
 
 A tool behind `.use(auth)` is auth-guarded for the model too.
 
+## After-hooks (audit, usage, metrics)
+
+`.after()` runs once a call settles — success or failure — on every transport,
+including AI/MCP tool calls. It's awaited, and a hook that throws is only logged:
+
+```ts
+const audited = authed.after(({ ctx, path, transport, ok, code, durationMs }) =>
+  ctx.db.audit.insert({ user: ctx.user.id, path, transport, ok, code, durationMs }),
+)
+```
+
+A hook only sees calls that passed the `.use()`s before it — put it before the
+auth guard to also record rejections.
+
 ## Class controllers (NestJS-style, no decorators)
 
 A class whose fields are procedures; put an *instance* in the router. Keep

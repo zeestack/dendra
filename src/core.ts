@@ -9,7 +9,7 @@ import type {
   JSONSchema,
   StandardSchemaV1,
 } from "./schema.ts";
-import { DendraError } from "./errors.ts";
+import { DendraError, type ErrorCode } from "./errors.ts";
 
 export type ProcedureKind = "unary" | "stream";
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -24,6 +24,37 @@ export type Middleware<Ctx, In, CtxAdd> = (opts: {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyMiddleware = (opts: { ctx: any; input: any }) => any;
+
+/** Which transport a call arrived on — handy for "was this the model?" audits. */
+export type Transport = "rpc" | "rest" | "caller" | "ws" | "tool";
+
+/** Where a call came from, threaded through `invokeUnary` / `invokeStream`. */
+export interface CallSite {
+  path?: string;
+  transport?: Transport;
+}
+
+// What an after-hook sees once the call settles. `ok` discriminates success
+// (with `result`; undefined for streams) from failure (with the thrown `error`
+// and its `code` — "INTERNAL" for anything that isn't a DendraError).
+export type AfterInfo<Ctx, In> = {
+  ctx: Ctx;
+  input: In;
+  path: string;
+  transport: Transport;
+  durationMs: number;
+} & (
+  | { ok: true; result: unknown; error?: undefined; code?: undefined }
+  | { ok: false; result?: undefined; error: unknown; code: ErrorCode }
+);
+
+export type AfterHook<Ctx, In> = (info: AfterInfo<Ctx, In>) => void | Promise<void>;
+
+// `at` = how many middlewares preceded the hook in the chain. The hook runs only
+// if those all passed, and sees ctx as it was at that point — so its typed ctx
+// is never a lie, and a hook placed before an auth guard also sees rejections.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AfterEntry = { at: number; fn: AfterHook<any, any> };
 
 export interface Proc<
   Ctx = unknown,
@@ -41,6 +72,7 @@ export interface Proc<
   readonly inputJsonSchema?: JSONSchema;
   readonly outputJsonSchema?: JSONSchema;
   readonly middlewares?: ReadonlyArray<AnyMiddleware>;
+  readonly afterHooks?: ReadonlyArray<AfterEntry>;
   readonly handler: (input: In, ctx: Ctx) => Promise<Out> | AsyncIterable<Out>;
   // Phantom carrier so inference can recover In/Out even when erased elsewhere.
   readonly _types?: { in: In; out: Out };
@@ -66,6 +98,7 @@ interface State<Ctx, In> {
   inputJsonSchema?: JSONSchema;
   outputJsonSchema?: JSONSchema;
   middlewares?: AnyMiddleware[];
+  afterHooks?: AfterEntry[];
 }
 
 class Builder<Ctx, In, DOut = never> {
@@ -118,6 +151,20 @@ class Builder<Ctx, In, DOut = never> {
       middlewares: [...(this.state.middlewares ?? []), mw as AnyMiddleware],
     });
   }
+  /**
+   * Add an after-hook. It runs once the call settles — success or failure —
+   * on every transport, and is awaited before the response goes out. It only
+   * runs for calls that passed the middlewares before it, and sees that ctx.
+   * Errors thrown in the hook are logged, never returned to the caller.
+   */
+  after(fn: AfterHook<Ctx, In>) {
+    return this.next<In>({
+      afterHooks: [
+        ...(this.state.afterHooks ?? []),
+        { at: this.state.middlewares?.length ?? 0, fn },
+      ],
+    });
+  }
   /** Attach an input schema. Any Standard Schema works (Zod/Valibot/built-in). */
   input<S extends StandardSchemaV1>(schema: S) {
     const jsonSchema = (schema as { jsonSchema?: JSONSchema }).jsonSchema;
@@ -158,6 +205,7 @@ class Builder<Ctx, In, DOut = never> {
       inputJsonSchema: s.inputJsonSchema,
       outputJsonSchema: s.outputJsonSchema,
       middlewares: s.middlewares,
+      afterHooks: s.afterHooks,
       handler: async (input: In, ctx: Ctx) => fn({ input, ctx }),
     } as Proc<Ctx, In, [DOut] extends [never] ? Awaited<Out> : DOut, "unary">;
   }
@@ -177,6 +225,7 @@ class Builder<Ctx, In, DOut = never> {
       inputJsonSchema: s.inputJsonSchema,
       outputJsonSchema: s.outputJsonSchema,
       middlewares: s.middlewares,
+      afterHooks: s.afterHooks,
       handler: (input: In, ctx: Ctx) => fn({ input, ctx }),
     } as Proc<Ctx, In, Out, "stream">;
   }
@@ -215,42 +264,114 @@ async function validateInput(proc: AnyProc, raw: unknown): Promise<unknown> {
 }
 
 // Run the middleware chain: each one may reject (throw) or return a ctx patch
-// that is merged in for everything downstream.
+// that is merged in for everything downstream. `seen[i]` records ctx as it was
+// before middleware i (and `seen[n]` the final ctx), so after-hooks can tell how
+// far a call got and see ctx at their own point in the chain — even on a throw.
 async function runMiddleware(
   proc: AnyProc,
   input: unknown,
   ctx: unknown,
+  seen: unknown[],
 ): Promise<unknown> {
-  const mws = proc.middlewares;
-  if (!mws || mws.length === 0) return ctx;
   let acc = ctx;
-  for (const mw of mws) {
+  seen.push(acc);
+  for (const mw of proc.middlewares ?? []) {
     const patch = await mw({ ctx: acc, input });
     if (patch && typeof patch === "object") {
       acc = { ...(acc as object), ...(patch as object) };
     }
+    seen.push(acc);
   }
   return acc;
 }
 
-/** Run a unary procedure: validate, run middleware, then call the handler. */
+// Run the after-hooks whose preceding middlewares all passed, in registration
+// order. A hook that throws is logged and skipped — it never changes the outcome.
+async function runAfterHooks(
+  proc: AnyProc,
+  site: CallSite,
+  input: unknown,
+  seen: unknown[],
+  started: number,
+  outcome: { ok: true; result: unknown } | { ok: false; error: unknown },
+): Promise<void> {
+  const hooks = proc.afterHooks;
+  if (!hooks || hooks.length === 0) return;
+  const durationMs = Date.now() - started;
+  const settled = outcome.ok
+    ? { ok: true as const, result: outcome.result }
+    : {
+        ok: false as const,
+        error: outcome.error,
+        code: outcome.error instanceof DendraError ? outcome.error.code : ("INTERNAL" as const),
+      };
+  for (const { at, fn } of hooks) {
+    if (at >= seen.length) continue;
+    try {
+      await fn({
+        ctx: seen[at],
+        input,
+        path: site.path ?? "",
+        transport: site.transport ?? "caller",
+        durationMs,
+        ...settled,
+      });
+    } catch (e) {
+      console.error(`[dendra] after-hook for '${site.path ?? ""}' threw:`, e);
+    }
+  }
+}
+
+/** Run a unary procedure: validate, run middleware, call the handler, then after-hooks. */
 export async function invokeUnary(
   proc: AnyProc,
   raw: unknown,
   ctx: unknown,
+  site: CallSite = {},
 ): Promise<unknown> {
   const input = await validateInput(proc, raw);
-  const ctx2 = await runMiddleware(proc, input, ctx);
-  return (await proc.handler(input, ctx2)) as unknown;
+  const started = Date.now();
+  const seen: unknown[] = [];
+  let result: unknown;
+  try {
+    const ctx2 = await runMiddleware(proc, input, ctx, seen);
+    result = await proc.handler(input, ctx2);
+  } catch (error) {
+    await runAfterHooks(proc, site, input, seen, started, { ok: false, error });
+    throw error;
+  }
+  await runAfterHooks(proc, site, input, seen, started, { ok: true, result });
+  return result;
 }
 
-/** Run a streaming procedure: validate, run middleware, then yield. */
+/**
+ * Run a streaming procedure: validate, run middleware, yield, then after-hooks
+ * once the stream ends (a consumer stopping early counts as success).
+ */
 export async function* invokeStream(
   proc: AnyProc,
   raw: unknown,
   ctx: unknown,
+  site: CallSite = {},
 ): AsyncIterable<unknown> {
   const input = await validateInput(proc, raw);
-  const ctx2 = await runMiddleware(proc, input, ctx);
-  yield* proc.handler(input, ctx2) as AsyncIterable<unknown>;
+  const started = Date.now();
+  const seen: unknown[] = [];
+  let failure: { error: unknown } | undefined;
+  try {
+    const ctx2 = await runMiddleware(proc, input, ctx, seen);
+    yield* proc.handler(input, ctx2) as AsyncIterable<unknown>;
+  } catch (error) {
+    failure = { error };
+    throw error;
+  } finally {
+    await runAfterHooks(
+      proc,
+      site,
+      input,
+      seen,
+      started,
+      failure ? { ok: false, error: failure.error } : { ok: true, result: undefined },
+    );
+  }
 }

@@ -245,6 +245,27 @@ tool runs through the same dispatch path, a procedure behind `.use(auth)` is
 authorization-guarded for the model too — it inherits the user's permissions, it
 can't bypass them.
 
+### After-hooks (`.after()`) — audit, usage, metrics
+
+`.use()` runs before the handler; `.after()` runs once the call **settles** and
+sees the outcome. Same reach: every transport, including AI/MCP tool calls.
+
+```ts
+const audited = authed.after(({ ctx, path, transport, input, ok, result, code, durationMs }) =>
+  ctx.db.audit.insert({ user: ctx.userId, path, transport, ok, code, durationMs }),
+);
+```
+
+- `ok: true` carries `result` (undefined for streams, which settle when they end);
+  `ok: false` carries the thrown `error` and its `code` (`"INTERNAL"` for
+  non-`DendraError`s). `transport` is `"rpc" | "rest" | "caller" | "ws" | "tool"`.
+- Hooks are **awaited** before the response goes out (safe on serverless), run
+  in the order added, and a hook that throws is logged — it never changes the result.
+- **Position matters:** a hook only runs for calls that passed the `.use()`s
+  before it, and sees that ctx — so `ctx.userId` above is typed and real. Put a
+  hook *before* the auth guard to also record rejected calls. Input that fails
+  validation never reaches the chain, so it doesn't trigger hooks.
+
 ## Class-based controllers (NestJS-style, no decorators)
 
 Prefer classes for grouping and dependency injection? A controller is just a
@@ -412,7 +433,7 @@ git push --follow-tags
 
 ## Status
 
-**Pre-1.0 (v0.5.0) — experimental, but broad.** Implemented and tested
+**Pre-1.0 (v0.6.0) — experimental, but broad.** Implemented and tested
 (72 tests, runtime + type-level): builder/router/dispatch, a batteries-included
 Standard Schema validator set (literals, enums, unions, nullable, record, and
 fluent string/number/array constraints), Next/Fetch/Node adapters, REST +

@@ -141,13 +141,14 @@ export function createToolExecutor<Ctx>(
     // Streaming tools: collect the chunks into a single result (join strings,
     // else return the array) so a streaming procedure can be an LLM/MCP tool.
     // Validation runs first in both paths — the guardrail on model output.
+    const site = { path: name, transport: "tool" as const };
     if (proc.kind === "stream") {
       const chunks: unknown[] = [];
-      for await (const chunk of invokeStream(proc, args, ctx)) chunks.push(chunk);
+      for await (const chunk of invokeStream(proc, args, ctx, site)) chunks.push(chunk);
       return chunks.every((c) => typeof c === "string")
         ? chunks.join("")
         : chunks;
     }
-    return invokeUnary(proc, args, ctx);
+    return invokeUnary(proc, args, ctx, site);
   };
 }
