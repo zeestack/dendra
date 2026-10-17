@@ -159,8 +159,13 @@ const blob = await api.covers.exportMarkdown({ draftId: 9 });          // → Bl
     with `allowFormPosts: true`; then string parts become fields (REST runs them
     through `coerceInput`) and CSRF protection is the app's job (e.g. a token
     checked in `.use()`). Docs say so next to the option.
-  - **JSON bodies require `Content-Type: application/json`** → otherwise
-    `UNSUPPORTED_MEDIA_TYPE` (415). This closes an existing hole: today a
+  - **Every POST must be one of:** `Content-Type: application/json`;
+    multipart with `X-Dendra: 1`; or a form type when `allowFormPosts` is on —
+    otherwise `UNSUPPORTED_MEDIA_TYPE` (415). This applies even with an empty
+    body: a cross-site `fetch(url, { method: "POST", mode: "no-cors" })` with no
+    body and no `Content-Type` is a simple request (no preflight) and would
+    otherwise run a no-input mutation. PUT/PATCH/DELETE (REST) always preflight
+    cross-site, so they may omit `Content-Type` when the body is empty. This closes an existing hole: today a
     cross-site `text/plain` form post with a JSON body runs as a normal call.
     _My call — slightly breaking for non-dendra clients that POST without the
     header (e.g. `curl -d`); called out in release notes._
