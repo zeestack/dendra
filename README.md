@@ -321,11 +321,17 @@ const blob = await api.drafts.exportMarkdown({ draftId: 9 });       // Blob
 
 dendra's client sends `X-Dendra: 1` on every request. Because a cross-site page
 can't send a custom header (or a JSON body) without a CORS preflight, the server
-requires: **GET** only for `.get()` reads (else `405`); **POST** as JSON (else
-`415`), or multipart carrying `X-Dendra` (else `403`). Plain HTML form posts are
+requires: **GET/HEAD** only for `.get()` reads, other methods besides POST
+never (`405`); **POST** as JSON (else `415`), or multipart carrying `X-Dendra`
+(else `403`). Plain HTML form posts are
 off unless you pass `allowFormPosts: true` — then CSRF protection is your job
 (e.g. a token checked in `.use()`). This assumes you don't enable
 CORS-with-credentials for untrusted origins.
+
+**WebSockets are the exception:** browsers apply no CORS to them, and any site
+can open one to your server with the user's cookies. dendra receives an
+already-open socket (`attachWs`), so check the upgrade request's `Origin`
+against your allowed origins before you accept it.
 
 ## Class-based controllers (NestJS-style, no decorators)
 

@@ -45,6 +45,15 @@ describe("CSRF: GET only reaches reads", () => {
     expect(approved).not.toHaveBeenCalled();
   });
 
+  it("rejects HEAD and other methods on non-reads without running them", async () => {
+    approved.mockClear();
+    for (const method of ["HEAD", "PUT", "DELETE", "PATCH"]) {
+      const res = await rpc(new Request("http://x/rpc/approve", { method }));
+      expect(res.status).toBe(405);
+    }
+    expect(approved).not.toHaveBeenCalled();
+  });
+
   it("answers GET for a .get() read", async () => {
     const res = await rpc(new Request("http://x/rpc/notes.get?id=1"));
     expect(res.status).toBe(200);

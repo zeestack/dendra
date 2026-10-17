@@ -151,7 +151,10 @@ export function toFetchHandler<Ctx>(
         404,
       );
     }
-    if (req.method === "GET" && proc.method !== "GET") {
+    // POST reaches anything; GET/HEAD (no preflight, embeddable) only reads.
+    // Anything else (PUT, DELETE, …) isn't part of the RPC protocol.
+    const readish = req.method === "GET" || req.method === "HEAD";
+    if (req.method !== "POST" && !(readish && proc.method === "GET")) {
       return jsonResponse(
         {
           error: {
@@ -173,7 +176,7 @@ export function toFetchHandler<Ctx>(
       }
     } else {
       try {
-        if (req.method === "GET") {
+        if (readish) {
           // `$input` (from urlFor) carries typed JSON; otherwise flat strings.
           const json = url.searchParams.get("$input");
           raw = json !== null ? JSON.parse(json) : Object.fromEntries(url.searchParams);
