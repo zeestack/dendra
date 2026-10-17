@@ -174,7 +174,9 @@ export function toFetchHandler<Ctx>(
     } else {
       try {
         if (req.method === "GET") {
-          raw = Object.fromEntries(url.searchParams);
+          // `$input` (from urlFor) carries typed JSON; otherwise flat strings.
+          const json = url.searchParams.get("$input");
+          raw = json !== null ? JSON.parse(json) : Object.fromEntries(url.searchParams);
         } else {
           const text = await req.text();
           raw = text ? JSON.parse(text) : undefined;

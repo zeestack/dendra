@@ -1,5 +1,13 @@
 import { expectTypeOf } from "vitest";
-import { initDendra, createCaller, file, s, type RouterRecord } from "../src/index.ts";
+import {
+  initDendra,
+  createCaller,
+  createClient,
+  file,
+  urlFor,
+  s,
+  type RouterRecord,
+} from "../src/index.ts";
 
 // Type-level tests: prove end-to-end inference with no codegen.
 const { route } = initDendra<{ db: string }>();
@@ -130,4 +138,16 @@ expectTypeOf<import("../src/schema.ts").InferOutput<ReturnType<typeof s.file>>>(
 {
   const r = { dl: route.get().handler(() => file("x", { type: "text/plain" })) };
   expectTypeOf(createCaller(r, { db: "x" }).dl).returns.resolves.toEqualTypeOf<Blob>();
+}
+
+// urlFor only accepts reads.
+{
+  const r = {
+    read: route.get().input(s.object({ id: s.integer() })).handler(() => 1),
+    write: route.input(s.object({ id: s.integer() })).handler(() => 1),
+  };
+  const api = createClient<typeof r>("");
+  urlFor(api.read, { id: 1 });
+  // @ts-expect-error — not a .get() read
+  urlFor(api.write, { id: 1 });
 }

@@ -39,7 +39,7 @@ export type {
   WhatwgSocket,
 } from "./ws.ts";
 
-export { createClient } from "./client.ts";
+export { createClient, urlFor } from "./client.ts";
 export type { ClientOptions } from "./client.ts";
 
 export {

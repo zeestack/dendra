@@ -6,6 +6,7 @@
 // right usage; the runtime object happens to support both.
 
 import type { Client } from "./caller.ts";
+import type { ReadBrand } from "./core.ts";
 import { DendraClientError } from "./errors.ts";
 
 export interface ClientOptions {
@@ -81,6 +82,10 @@ export function createClient<R extends object>(
       get(_t, key) {
         // Keep the path-proxy itself non-thenable / non-iterable; only the
         // object returned from a call is.
+        if (key === URL_OF) {
+          return (input: unknown) =>
+            base + prefix + path.join(".") + "?$input=" + encodeURIComponent(JSON.stringify(input ?? null));
+        }
         if (typeof key !== "string" || key === "then") return undefined;
         return build([...path, key]);
       },
@@ -100,6 +105,25 @@ export function createClient<R extends object>(
 }
 
 function noop(): void {}
+
+// A symbol, not a property name, so it can't collide with a router key.
+const URL_OF = Symbol("dendra.urlOf");
+
+/**
+ * The GET URL for a read — for `<img src>`, download links, or prefetching.
+ * Only procedures declared `.get()` qualify (a type error otherwise, and a 405
+ * from the server): a URL anyone can embed must never trigger a mutation.
+ */
+export function urlFor<In>(
+  procedure: ((input: In) => Promise<unknown>) & ReadBrand,
+  input: In,
+): string {
+  const build = (procedure as unknown as Record<symbol, unknown>)[URL_OF];
+  if (typeof build !== "function") {
+    throw new TypeError("urlFor expects a procedure from createClient");
+  }
+  return (build as (input: unknown) => string)(input);
+}
 
 // True when a top-level input field is a File/Blob — the call goes multipart.
 function hasBlob(input: unknown): boolean {
