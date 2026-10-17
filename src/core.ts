@@ -10,7 +10,7 @@ import type {
   StandardSchemaV1,
 } from "./schema.ts";
 import { DendraError, type ErrorCode } from "./errors.ts";
-import { fileMeta, isFileResult } from "./files.ts";
+import { fileFields, fileMeta, isFileResult } from "./files.ts";
 
 export type ProcedureKind = "unary" | "stream";
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -132,6 +132,18 @@ interface State<Ctx, In> {
   afterHooks?: AfterEntry[];
 }
 
+// Models can't send bytes through a tool call, so a file-input tool could only
+// ever fail. Refuse it where it's defined rather than ship a broken tool.
+function assertAiCompatible<Ctx, In>(s: State<Ctx, In>): void {
+  if (!s.ai?.expose) return;
+  const files = fileFields(s.inputJsonSchema);
+  if (files.length === 0) return;
+  throw new Error(
+    `A procedure with file input (${files.join(", ")}) can't be an AI tool: ` +
+      `models can't send files through tool calls. Remove .ai().`,
+  );
+}
+
 class Builder<Ctx, In, DOut = never, Rd extends boolean = false> {
   readonly state: State<Ctx, In>;
   constructor(state: State<Ctx, In>) {
@@ -230,6 +242,7 @@ class Builder<Ctx, In, DOut = never, Rd extends boolean = false> {
       : DOut | Promise<DOut>,
   ): Branded<Proc<Ctx, In, [DOut] extends [never] ? Awaited<Out> : DOut, "unary">, Rd> {
     const s = this.state;
+    assertAiCompatible(s);
     return {
       _dendra: true,
       kind: "unary",
@@ -250,6 +263,7 @@ class Builder<Ctx, In, DOut = never, Rd extends boolean = false> {
     fn: (o: { input: In; ctx: Ctx }) => AsyncIterable<Out>,
   ): Branded<Proc<Ctx, In, Out, "stream">, Rd> {
     const s = this.state;
+    assertAiCompatible(s);
     return {
       _dendra: true,
       kind: "stream",

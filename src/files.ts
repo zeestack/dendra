@@ -44,7 +44,7 @@ export interface FileSchema extends Schema<File> {
   describe(description: string): FileSchema;
 }
 
-const FILE_MARKER = "x-dendra-file";
+export const FILE_MARKER = "x-dendra-file";
 
 export function fileSchema(opts: FileSchemaOptions = {}, description?: string): FileSchema {
   const mimes = (opts.types ?? []).filter((t) => !t.startsWith(".")).map((t) => t.toLowerCase());
