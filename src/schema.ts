@@ -6,9 +6,14 @@
 // so richer constraints here mean richer OpenAPI specs AND more accurate model
 // tool calls.
 
+/** The spec lets a path segment be a bare key or `{ key }` (Zod, Valibot, … use both). */
+export interface StandardPathSegment {
+  readonly key: PropertyKey;
+}
+
 export interface StandardIssue {
   readonly message: string;
-  readonly path?: ReadonlyArray<PropertyKey>;
+  readonly path?: ReadonlyArray<PropertyKey | StandardPathSegment> | undefined;
 }
 
 export type StandardResult<T> =
@@ -22,7 +27,7 @@ export interface StandardSchemaV1<Input = unknown, Output = Input> {
     readonly validate: (
       value: unknown,
     ) => StandardResult<Output> | Promise<StandardResult<Output>>;
-    readonly types?: { readonly input: Input; readonly output: Output };
+    readonly types?: { readonly input: Input; readonly output: Output } | undefined;
   };
 }
 

@@ -302,13 +302,19 @@ export function resolveProc(
 async function validateInput(proc: AnyProc, raw: unknown): Promise<unknown> {
   if (!proc.inputSchema) return raw;
   const res = await proc.inputSchema["~standard"].validate(raw);
-  if ((res as { issues?: unknown }).issues !== undefined) {
-    throw new DendraError(
-      "BAD_REQUEST",
-      "Input validation failed",
-      400,
-      (res as { issues: unknown }).issues,
+  if (res.issues !== undefined) {
+    // Normalise `{ key }` path segments so `details` paths are plain keys.
+    const issues = res.issues.map((is) =>
+      is.path
+        ? {
+            ...is,
+            path: is.path.map((seg) =>
+              typeof seg === "object" && seg !== null ? seg.key : seg,
+            ),
+          }
+        : is,
     );
+    throw new DendraError("BAD_REQUEST", "Input validation failed", 400, issues);
   }
   return (res as { value: unknown }).value;
 }

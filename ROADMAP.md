@@ -48,6 +48,8 @@ optional convenience, not the moat.
   cap), `file()` downloads (nosniff, safe filenames, no inline HTML/SVG,
   ETag/304), `urlFor()`. Security: GET only reaches `.get()` reads and POST must
   be JSON — closing two CSRF holes in the RPC handler.
+  Fixes: Zod 3/4, Valibot and ArkType schemas now type-check as `.input()`
+  (Standard Schema path segments may be `{ key }`), checked by tests.
 
 ---
 
