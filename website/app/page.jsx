@@ -5,10 +5,21 @@ import styles from './home.module.css'
 
 hljs.registerLanguage('typescript', ts)
 
+const homeDescription =
+  'dendra: define a procedure once and get a typed client, REST + OpenAPI, streaming, an LLM tool, and an MCP server — a zero-dependency TypeScript framework for Next.js, no codegen, no decorators.'
+
 export const metadata = {
-  title: 'dendra — typed RPC & MCP for Next.js',
-  description:
-    'Define a procedure once. Get a typed client, REST + OpenAPI, streaming, an LLM tool, and an MCP server — zero-dependency core, no codegen, no decorators.'
+  // Nextra reads this page's title for its page map, which needs a string —
+  // sidebarTitle gives it one, while `absolute` keeps the layout's template off.
+  title: { absolute: 'dendra — typed RPC & MCP framework for Next.js and TypeScript' },
+  sidebarTitle: 'Home',
+  description: homeDescription,
+  alternates: { canonical: 'https://products.techfoundry.io/dendra/' },
+  openGraph: {
+    title: 'dendra — typed RPC & MCP framework for Next.js and TypeScript',
+    description: homeDescription,
+    url: 'https://products.techfoundry.io/dendra/'
+  }
 }
 
 /* The real dendra mark: a branching dendrite — one node → two → four.
@@ -158,13 +169,16 @@ export default function Home() {
           <span className={styles.pill}>MCP both directions</span>
         </div>
         <h1 className={styles.h1}>
-          One procedure.
-          <br />
-          <span className={styles.grad}>Every surface.</span>
+          <span className={styles.heroName}>dendra</span>
+          <span className={styles.tagline}>
+            One procedure.
+            <br />
+            <span className={styles.grad}>Every surface.</span>
+          </span>
         </h1>
         <p className={styles.sub}>
-          Typed RPC/REST for Next.js where every procedure is also an LLM tool
-          and an MCP server. Define it once — get a typed client, REST, OpenAPI,
+          dendra is a typed RPC/REST framework for Next.js and TypeScript where
+          every procedure is also an LLM tool and an MCP server. Define it once — get a typed client, REST, OpenAPI,
           streaming, and tools an agent can call. No codegen, no decorators.
         </p>
         <div className={styles.ctas}>

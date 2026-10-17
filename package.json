@@ -1,13 +1,13 @@
 {
   "name": "dendra",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "private": false,
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/zeestack/dendra.git"
   },
-  "homepage": "https://github.com/zeestack/dendra#readme",
+  "homepage": "https://products.techfoundry.io/dendra/",
   "bugs": "https://github.com/zeestack/dendra/issues",
   "description": "Lightweight, decorator-free, codegen-free typed RPC/REST framework for Next.js and any Web-standard runtime — with first-class AI/MCP tool support.",
   "type": "module",
@@ -72,7 +72,12 @@
     "mcp",
     "ai",
     "streaming",
-    "typed-client"
+    "typed-client",
+    "trpc-alternative",
+    "model-context-protocol",
+    "mcp-server",
+    "llm-tools",
+    "ai-agents"
   ],
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.30.1",

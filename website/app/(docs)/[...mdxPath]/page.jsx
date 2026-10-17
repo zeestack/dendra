@@ -6,7 +6,14 @@ export const generateStaticParams = generateStaticParamsFor('mdxPath')
 export async function generateMetadata(props) {
   const params = await props.params
   const { metadata } = await importPage(params.mdxPath)
-  return metadata
+  // Absolute canonical + social preview per page (metadata URLs don't get the
+  // basePath added automatically).
+  const url = `https://products.techfoundry.io/dendra/${(params.mdxPath ?? []).join('/')}/`
+  return {
+    ...metadata,
+    alternates: { canonical: url },
+    openGraph: { title: metadata.title, description: metadata.description, url }
+  }
 }
 
 const Wrapper = getMDXComponents().wrapper

@@ -126,6 +126,16 @@
   letter-spacing: -0.03em;
   margin: 0 0 20px;
 }
+/* The product name leads the hero (and the page's h1, which search engines read). */
+.heroName {
+  display: block;
+  font-size: 1.45em;
+  letter-spacing: -0.04em;
+  margin-bottom: 14px;
+}
+.tagline {
+  display: block;
+}
 .grad {
   background: linear-gradient(120deg, #7c9cff, #5be3b3);
   -webkit-background-clip: text;

@@ -504,7 +504,7 @@ git push --follow-tags
 
 ## Status
 
-**Pre-1.0 (v0.7.0) — experimental, but broad.** Implemented and tested
+**Pre-1.0 (v0.7.1) — experimental, but broad.** Implemented and tested
 (143 tests, runtime + type-level): builder/router/dispatch, a batteries-included
 Standard Schema validator set (literals, enums, unions, nullable, record, and
 fluent string/number/array constraints), Next/Fetch/Node adapters, REST +
