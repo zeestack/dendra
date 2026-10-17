@@ -33,6 +33,20 @@ optional convenience, not the moat.
 
 ---
 
+## Shipped — 0.4.0 – 0.6.0
+
+- **0.4.0** — batteries-included `s.*`: `literal`, `enum`, `union`, `null`,
+  `nullable`, `integer`, `record`; chainable constraints (`.min/.max/.email/.uuid/
+  .url/.pattern`, `object().strict()`) emitted into OpenAPI and AI tool schemas;
+  `CONFLICT`, `UNPROCESSABLE`, `TOO_MANY_REQUESTS`, `NOT_IMPLEMENTED` error codes.
+- **0.5.0** — `createContextManager`: memory recall and lazy tool loading under one
+  token budget (see the context layer below).
+- **0.6.0** — `.after()` hooks: see the outcome of every call (result or error
+  code, duration, path, transport, ctx) on every transport — the primitive for
+  audit trails and usage recording. _First of the Question Tool requests._
+
+---
+
 ## 0.2.0 — "adoptable, and deeper on the wedge"
 
 The focused set (the four that move the needle) is marked ⭐.
@@ -92,10 +106,11 @@ the progressive-disclosure loop inside `runAgent`. See
 - [ ] **Eviction — working-window history**. `compactHistory` with an explicit
   **`strategy`** mirroring Anthropic's split: `"clear-tool-results"` (delete stale
   tool outputs) vs `"summarize"` (model summary of old turns) vs `"drop-oldest"`.
-- [ ] **The manager — `createContextManager`**. Assembles descriptors from every
-  source into the system prompt, owns the meta-tools, enforces one shared token
-  budget across memory + tools + skills + history, and runs eviction. Extract it
-  once sources #1 and #2 both exist (don't design the abstraction in a vacuum).
+- [x] **The manager — `createContextManager`** (shipped 0.5.0). Assembles
+  descriptors from every source into the system prompt, owns the meta-tools,
+  enforces one shared token budget across memory + tools + skills + history, and
+  runs eviction. Wired in via `runAgent({ context })` with `memorySource` and
+  `toolSource`; skills plug in as they land.
 
 ### Deepen the AI / MCP differentiator (model & protocol reach)
 - [ ] ⭐ **`dendra/openai`** — a `runAgent` for the OpenAI SDK, mirroring
@@ -173,6 +188,49 @@ default, no CSS-framework choice — keep it to 2–3 questions; link docs for t
 - [ ] **tRPC → dendra codemod** — slash switching cost for existing codebases.
 - [ ] **More examples** — minimal starter, an auth example, an edge example.
 - [ ] **Versioned docs site** with runnable playground.
+
+---
+
+## Field requests — Question Tool
+
+From adopting dendra in a multi-tenant Next.js app (Postgres, Bedrock, Better
+Auth). Full notes, with the proposed APIs: [`docs/requests/question-tool.md`](docs/requests/question-tool.md).
+If only two get built: **files** and **after-hooks** — the two places the app
+has to step outside dendra to stay safe.
+
+### Must have
+- [ ] ⭐ **Files in and out** — `s.file({ types, maxBytes })` parsed from
+  `multipart/form-data` (type checked from the bytes, not just the header),
+  `.returns("file")` for binary responses that still run the `.use()` chain, and a
+  typed client that sends `File`/`Blob` and returns `Blob`. _Extends "File uploads
+  (multipart)" above with the download half._
+- [x] ⭐ **After-handler hooks** (shipped 0.6.0) — `.after(({ ctx, input, result, error, durationMs,
+  path }) => …)` on every transport (RPC, REST, caller, WebSocket, AI/MCP); errors
+  in the hook are logged, not returned. _The primitive "Observability hooks" builds on._
+- [ ] **`inspectRouter(appRouter)`** — `[{ path, kind, method, restPath,
+  middlewares, ai, meta }]`, plus named middleware and typed `.meta()`, so a test
+  can fail the build when a procedure lacks its tenant or role check.
+- [ ] **Safe-by-default AI** — `.noAi()` (build-time error if `.ai()` is also set)
+  and `.ai({ confirm: true })` returning a pending action a person approves before
+  the handler runs. _Overlaps MCP annotations + the 1.0 security review._
+
+### Should have
+- [ ] **Background jobs** — `.background(handler)` → `{ jobId }` with status /
+  progress / result / error, one-running-job-per-key, a pluggable store (Postgres),
+  a progress subscription, and Next.js `after()`.
+- [ ] **Postgres pub/sub** — `createPostgresPubSub(pool)` over `LISTEN/NOTIFY`,
+  same interface as the Redis adapter.
+- [ ] **Idempotency** — `.idempotent({ key, ttl })` returns the first result for repeats.
+
+### Nice to have
+- [x] `CONFLICT` (409) and `TOO_MANY_REQUESTS` (429) error codes. _Shipped 0.4.0,
+  along with `UNPROCESSABLE` (422) and `NOT_IMPLEMENTED` (501)._
+- [ ] Next.js helpers — `createServerCaller(router, createContext)` reading
+  `headers()`, and mapping `NOT_FOUND` → `notFound()`, `UNAUTHORIZED` → sign-in redirect.
+- [ ] `useProcedure(api.x.get, input, { refetchWhile })` polling hook (or fold into
+  `dendra/react-query`).
+- [ ] Better Auth recipe in the docs (session in `createContext`, org/role as middleware).
+- `dendra/bedrock` — already planned above.
 
 ---
 
