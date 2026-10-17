@@ -209,12 +209,14 @@ describe("after-hooks (.after)", () => {
       await handler(
         new Request("http://x/rpc/notes.get", {
           method: "POST",
+          headers: { "content-type": "application/json" },
           body: JSON.stringify({ id: 1 }),
         }),
       );
       await handler(
         new Request("http://x/rpc/__batch", {
           method: "POST",
+          headers: { "content-type": "application/json" },
           body: JSON.stringify([{ path: "notes.get", input: { id: 2 } }]),
         }),
       );

@@ -20,6 +20,11 @@ export interface ClientOptions {
   batch?: boolean;
 }
 
+// `X-Dendra` marks a request as coming from dendra's client. Browsers can't
+// send a custom header cross-site without a CORS preflight, so the server uses
+// it as CSRF proof on multipart uploads.
+const jsonHeaders = { "content-type": "application/json", "x-dendra": "1" };
+
 interface BatchCall {
   path: string;
   input: unknown;
@@ -45,7 +50,7 @@ export function createClient<R extends object>(
     try {
       const res = await doFetch(base + prefix + "__batch", {
         method: "POST",
-        headers: { "content-type": "application/json", ...(opts.headers ?? {}) },
+        headers: { ...jsonHeaders, ...(opts.headers ?? {}) },
         body: JSON.stringify(calls.map((c) => ({ path: c.path, input: c.input ?? null }))),
       });
       const data = (await res.json()) as Array<{
@@ -104,7 +109,7 @@ function lazyCall(
   const start = () =>
     doFetch(url, {
       method: "POST",
-      headers: { "content-type": "application/json", ...(headers ?? {}) },
+      headers: { ...jsonHeaders, ...(headers ?? {}) },
       body: JSON.stringify(input ?? null),
     });
 

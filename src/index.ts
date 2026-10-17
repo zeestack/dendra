@@ -11,6 +11,7 @@ export type {
   AfterInfo,
   CallSite,
   Transport,
+  ReadBrand,
 } from "./core.ts";
 
 export { createCaller } from "./caller.ts";

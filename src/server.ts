@@ -16,6 +16,44 @@ export interface ServerOptions<Ctx> {
   prefix?: string;
   /** Build per-request context (auth, db handles, capabilities) from the request. */
   createContext?: (req: Request) => Ctx | Promise<Ctx>;
+  /**
+   * Accept plain HTML form posts (urlencoded, or multipart without dendra's
+   * `X-Dendra` header). Off by default: browsers send these cross-site with no
+   * preflight, so turning this on makes CSRF protection the app's job (e.g. a
+   * token checked in `.use()`).
+   */
+  allowFormPosts?: boolean;
+}
+
+// CSRF guard. A cross-site page can only send "simple" requests without a CORS
+// preflight: GET, or POST with a form/text content type (or none at all). So a
+// POST must be JSON, or multipart carrying the `X-Dendra` header the typed
+// client always sends (a custom header forces a preflight) — anything else
+// could have come from another site riding the user's cookies.
+export function postAllowed(req: Request, opts: ServerOptions<unknown>): boolean {
+  const type = mediaType(req);
+  if (type === "application/json") return true;
+  if (type === "multipart/form-data") {
+    return req.headers.get("x-dendra") === "1" || opts.allowFormPosts === true;
+  }
+  if (type === "application/x-www-form-urlencoded") return opts.allowFormPosts === true;
+  return false;
+}
+
+function mediaType(req: Request): string {
+  return (req.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+}
+
+function unsupportedMediaType(): Response {
+  return jsonResponse(
+    {
+      error: {
+        code: "UNSUPPORTED_MEDIA_TYPE",
+        message: "Send JSON (Content-Type: application/json)",
+      },
+    },
+    415,
+  );
 }
 
 const enc = new TextEncoder();
@@ -35,6 +73,9 @@ export function toFetchHandler<Ctx>(
       );
     }
     const dotted = url.pathname.slice(prefix.length);
+    if (req.method === "POST" && !postAllowed(req, opts as ServerOptions<unknown>)) {
+      return unsupportedMediaType();
+    }
 
     let ctx: unknown = {};
     try {
@@ -92,6 +133,17 @@ export function toFetchHandler<Ctx>(
           },
         },
         404,
+      );
+    }
+    if (req.method === "GET" && proc.method !== "GET") {
+      return jsonResponse(
+        {
+          error: {
+            code: "METHOD_NOT_ALLOWED",
+            message: `'${dotted}' isn't a read; call it with POST (declare reads with .get())`,
+          },
+        },
+        405,
       );
     }
 
@@ -268,6 +320,11 @@ export function toRestHandler<Ctx>(
     matched.paramNames.forEach((name, i) => {
       params[name] = decodeURIComponent(m![i + 1]);
     });
+
+    // PUT/PATCH/DELETE always preflight cross-site, so only POST needs the guard.
+    if (method === "POST" && !postAllowed(req, opts as ServerOptions<unknown>)) {
+      return unsupportedMediaType();
+    }
 
     let ctx: unknown = {};
     try {

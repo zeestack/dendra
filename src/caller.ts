@@ -5,7 +5,7 @@
 // type that makes the whole framework typesafe with no codegen: it reads the
 // router's shape and projects each procedure to a typed function.
 
-import type { Proc } from "./core.ts";
+import type { Proc, ReadBrand } from "./core.ts";
 import { invokeStream, invokeUnary } from "./core.ts";
 
 // Recursion uses `object` (not the index-signature `RouterRecord`) so a class
@@ -16,9 +16,10 @@ export type Client<R> = {
   // concrete context type (ctx is contravariant in `handler`).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [K in keyof R]: R[K] extends Proc<any, infer In, infer Out, infer Kind>
-    ? Kind extends "stream"
-      ? (input: In) => AsyncIterable<Out>
-      : (input: In) => Promise<Out>
+    ? (Kind extends "stream"
+        ? (input: In) => AsyncIterable<Out>
+        : (input: In) => Promise<Out>) &
+        (R[K] extends ReadBrand ? ReadBrand : unknown)
     : R[K] extends object
       ? Client<R[K]>
       : never;

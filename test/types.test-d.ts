@@ -111,3 +111,14 @@ route
     if (!info.ok) expectTypeOf(info.code).toEqualTypeOf<import("../src/index.ts").ErrorCode>();
   })
   .handler(() => "ok");
+
+// `.get()` marks a read; the client keeps the brand so `urlFor` can require it.
+{
+  const r = {
+    read: route.get().handler(() => 1),
+    write: route.handler(() => 1),
+  };
+  const api = createCaller(r, { db: "x" });
+  expectTypeOf(api.read).toMatchTypeOf<import("../src/index.ts").ReadBrand>();
+  expectTypeOf(api.write).not.toMatchTypeOf<import("../src/index.ts").ReadBrand>();
+}

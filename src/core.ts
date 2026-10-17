@@ -78,6 +78,13 @@ export interface Proc<
   readonly _types?: { in: In; out: Out };
 }
 
+/**
+ * Type-level marker for procedures declared with `.get()`: reads that are safe
+ * to reach by GET (and so by a link or `<img src>`). `urlFor` requires it.
+ */
+export type ReadBrand = { readonly _read: true };
+type Branded<P, Rd extends boolean> = Rd extends true ? P & ReadBrand : P;
+
 // Structural "bag" type used only for storage/dispatch. `any` (not `unknown`)
 // is deliberate: handler parameters are contravariant, so a concrete
 // Proc<Ctx, {a,b}, ...> is only assignable here when these slots are `any`.
@@ -101,19 +108,24 @@ interface State<Ctx, In> {
   afterHooks?: AfterEntry[];
 }
 
-class Builder<Ctx, In, DOut = never> {
+class Builder<Ctx, In, DOut = never, Rd extends boolean = false> {
   readonly state: State<Ctx, In>;
   constructor(state: State<Ctx, In>) {
     this.state = state;
   }
-  private next<In2>(patch: Partial<State<Ctx, In2>>): Builder<Ctx, In2, DOut> {
-    return new Builder<Ctx, In2, DOut>({
+  private next<In2>(patch: Partial<State<Ctx, In2>>): Builder<Ctx, In2, DOut, Rd> {
+    return new Builder<Ctx, In2, DOut, Rd>({
       ...(this.state as unknown as State<Ctx, In2>),
       ...patch,
     });
   }
-  get(path: string) {
-    return this.next<In>({ method: "GET", path });
+  /**
+   * Declare a read. Only reads answer GET, so a cross-site link or `<img src>`
+   * can never trigger a mutation. The path is optional: with one, it's also a
+   * REST route; without, it's an RPC read (e.g. a file for `urlFor`).
+   */
+  get(path?: string): Builder<Ctx, In, DOut, true> {
+    return new Builder<Ctx, In, DOut, true>({ ...this.state, method: "GET", path });
   }
   post(path: string) {
     return this.next<In>({ method: "POST", path });
@@ -142,8 +154,8 @@ class Builder<Ctx, In, DOut = never> {
    */
   use<CtxAdd extends Record<string, unknown> | void>(
     mw: Middleware<Ctx, In, CtxAdd>,
-  ): Builder<Ctx & (CtxAdd extends void ? unknown : CtxAdd), In, DOut> {
-    return new Builder<Ctx & (CtxAdd extends void ? unknown : CtxAdd), In, DOut>({
+  ): Builder<Ctx & (CtxAdd extends void ? unknown : CtxAdd), In, DOut, Rd> {
+    return new Builder<Ctx & (CtxAdd extends void ? unknown : CtxAdd), In, DOut, Rd>({
       ...(this.state as unknown as State<
         Ctx & (CtxAdd extends void ? unknown : CtxAdd),
         In
@@ -180,9 +192,9 @@ class Builder<Ctx, In, DOut = never> {
    */
   output<S extends StandardSchemaV1>(
     schema: S,
-  ): Builder<Ctx, In, InferOutput<S>> {
+  ): Builder<Ctx, In, InferOutput<S>, Rd> {
     const jsonSchema = (schema as { jsonSchema?: JSONSchema }).jsonSchema;
-    return new Builder<Ctx, In, InferOutput<S>>({
+    return new Builder<Ctx, In, InferOutput<S>, Rd>({
       ...this.state,
       outputJsonSchema: jsonSchema,
     });
@@ -192,7 +204,7 @@ class Builder<Ctx, In, DOut = never> {
     fn: (o: { input: In; ctx: Ctx }) => [DOut] extends [never]
       ? Out | Promise<Out>
       : DOut | Promise<DOut>,
-  ): Proc<Ctx, In, [DOut] extends [never] ? Awaited<Out> : DOut, "unary"> {
+  ): Branded<Proc<Ctx, In, [DOut] extends [never] ? Awaited<Out> : DOut, "unary">, Rd> {
     const s = this.state;
     return {
       _dendra: true,
@@ -207,12 +219,12 @@ class Builder<Ctx, In, DOut = never> {
       middlewares: s.middlewares,
       afterHooks: s.afterHooks,
       handler: async (input: In, ctx: Ctx) => fn({ input, ctx }),
-    } as Proc<Ctx, In, [DOut] extends [never] ? Awaited<Out> : DOut, "unary">;
+    } as Branded<Proc<Ctx, In, [DOut] extends [never] ? Awaited<Out> : DOut, "unary">, Rd>;
   }
   /** Streaming procedure: returns an async iterable of elements. */
   stream<Out>(
     fn: (o: { input: In; ctx: Ctx }) => AsyncIterable<Out>,
-  ): Proc<Ctx, In, Out, "stream"> {
+  ): Branded<Proc<Ctx, In, Out, "stream">, Rd> {
     const s = this.state;
     return {
       _dendra: true,
@@ -227,7 +239,7 @@ class Builder<Ctx, In, DOut = never> {
       middlewares: s.middlewares,
       afterHooks: s.afterHooks,
       handler: (input: In, ctx: Ctx) => fn({ input, ctx }),
-    } as Proc<Ctx, In, Out, "stream">;
+    } as Branded<Proc<Ctx, In, Out, "stream">, Rd>;
   }
 }
 
