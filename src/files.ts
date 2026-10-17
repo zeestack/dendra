@@ -176,3 +176,134 @@ export async function readFormInput(
   }
   return input;
 }
+
+// ── file() outputs ─────────────────────────────────────────────────────────
+
+export interface FileOptions {
+  /** The response's Content-Type. */
+  type: string;
+  /** Download name for Content-Disposition (sanitized before it's sent). */
+  filename?: string;
+  /** Show in the browser rather than download. Ignored for active types. */
+  inline?: boolean;
+  /** Default `private, no-store` — tenant data stays out of shared caches. */
+  cacheControl?: string;
+  /** Sent as `ETag`; a matching `If-None-Match` gets a bodiless 304. */
+  etag?: string;
+  /** Allow `inline` for HTML/SVG/XML. Only for content you fully control. */
+  allowUnsafeInline?: boolean;
+  /** Extra headers. Can't override Content-Type/-Disposition or nosniff. */
+  headers?: Record<string, string>;
+}
+
+export type FileBody = Blob | ReadableStream<Uint8Array> | ArrayBuffer | Uint8Array | string;
+type ResponseBody = ConstructorParameters<typeof Response>[0];
+
+/** What `file()` returns. Servers send it raw; clients and callers see a Blob. */
+export interface FileResult {
+  readonly _dendraFile: true;
+  readonly body: FileBody;
+  readonly options: FileOptions;
+}
+
+/** Return a file from a handler: sent as a raw response, not JSON. */
+export function file(body: FileBody, options: FileOptions): FileResult {
+  return { _dendraFile: true, body, options };
+}
+
+export function isFileResult(v: unknown): v is FileResult {
+  return typeof v === "object" && v !== null && (v as FileResult)._dendraFile === true;
+}
+
+function sizeOf(body: FileBody): number | undefined {
+  if (typeof body === "string") return new TextEncoder().encode(body).byteLength;
+  if (body instanceof Blob) return body.size;
+  if (body instanceof ArrayBuffer || body instanceof Uint8Array) return body.byteLength;
+  return undefined; // a stream's length isn't known up front
+}
+
+/** What `.after()` hooks see instead of a FileResult — never the bytes. */
+export function fileMeta(f: FileResult): {
+  file: { type: string; filename?: string; size?: number };
+} {
+  const meta: { type: string; filename?: string; size?: number } = { type: f.options.type };
+  if (f.options.filename !== undefined) meta.filename = f.options.filename;
+  const size = sizeOf(f.body);
+  if (size !== undefined) meta.size = size;
+  return { file: meta };
+}
+
+/** The Blob a caller gets for a FileResult. */
+export async function toBlob(f: FileResult): Promise<Blob> {
+  if (f.body instanceof Blob) return f.body;
+  return new Blob([await new Response(f.body as ResponseBody).arrayBuffer()], {
+    type: f.options.type,
+  });
+}
+
+// Types a browser executes as a document on our origin when shown inline.
+const ACTIVE_TYPES = new Set([
+  "text/html",
+  "application/xhtml+xml",
+  "image/svg+xml",
+  "text/xml",
+  "application/xml",
+]);
+function isActive(type: string): boolean {
+  const t = type.split(";")[0].trim().toLowerCase();
+  return ACTIVE_TYPES.has(t) || t.endsWith("+xml");
+}
+
+// RFC 6266: a quoted ASCII fallback plus the exact name in RFC 5987 `filename*`.
+// The fallback drops quotes, backslashes and control characters (no header
+// injection, no broken quoting); non-ASCII becomes "_".
+function disposition(kind: "inline" | "attachment", name: string): string {
+  const ascii =
+    name
+      .replace(/[\x00-\x1f\x7f"\\]/g, "")
+      .replace(/[^\x20-\x7e]/g, "_") || "download";
+  const exact = encodeURIComponent(name).replace(
+    /['()*]/g,
+    (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase(),
+  );
+  return `${kind}; filename="${ascii}"; filename*=UTF-8''${exact}`;
+}
+
+const PROTECTED = new Set(["content-type", "content-disposition", "x-content-type-options", "x-dendra"]);
+
+function etagMatches(header: string | null, etag: string): boolean {
+  if (!header) return false;
+  return header.split(",").some((part) => {
+    const t = part.trim().replace(/^W\//, "").replace(/^"|"$/g, "");
+    return t === "*" || t === etag;
+  });
+}
+
+/** Build the raw HTTP response for a FileResult. */
+export function fileResponse(f: FileResult, req: Request): Response {
+  const o = f.options;
+  const headers = new Headers();
+  for (const [k, v] of Object.entries(o.headers ?? {})) {
+    if (!PROTECTED.has(k.toLowerCase())) headers.set(k, v);
+  }
+  headers.set("content-type", o.type);
+  headers.set("cache-control", o.cacheControl ?? "private, no-store");
+  headers.set("x-content-type-options", "nosniff");
+  headers.set("x-dendra", "file");
+
+  const inline = o.inline === true && (!isActive(o.type) || o.allowUnsafeInline === true);
+  if (o.filename !== undefined) {
+    headers.set("content-disposition", disposition(inline ? "inline" : "attachment", o.filename));
+  } else if (!inline) {
+    headers.set("content-disposition", "attachment");
+  }
+
+  if (o.etag !== undefined) {
+    const etag = o.etag.replace(/["\x00-\x1f\x7f]/g, "");
+    headers.set("etag", `"${etag}"`);
+    if (etagMatches(req.headers.get("if-none-match"), etag)) {
+      return new Response(null, { status: 304, headers });
+    }
+  }
+  return new Response(f.body as ResponseBody, { status: 200, headers });
+}

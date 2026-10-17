@@ -10,6 +10,7 @@ import type {
   StandardSchemaV1,
 } from "./schema.ts";
 import { DendraError, type ErrorCode } from "./errors.ts";
+import { fileMeta, isFileResult } from "./files.ts";
 
 export type ProcedureKind = "unary" | "stream";
 export type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -32,6 +33,29 @@ export type Transport = "rpc" | "rest" | "caller" | "ws" | "tool";
 export interface CallSite {
   path?: string;
   transport?: Transport;
+  /** Part of a request batch (which, like WS and tools, can't carry files). */
+  batch?: boolean;
+}
+
+// File results are raw HTTP responses; transports that speak JSON frames can't
+// carry them. Failing inside invoke (not in each transport) means after-hooks
+// record the failure too.
+function rejectFileResult(result: unknown, site: CallSite): void {
+  if (!isFileResult(result)) return;
+  const path = site.path ?? "";
+  if (site.transport === "tool") {
+    throw new DendraError(
+      "NOT_IMPLEMENTED",
+      `Tool '${path}' returned a file; file outputs can't be tool results`,
+    );
+  }
+  const over = site.batch ? "batch" : site.transport === "ws" ? "WebSocket" : undefined;
+  if (over) {
+    throw new DendraError(
+      "NOT_IMPLEMENTED",
+      `'${path}' returned a file; file outputs aren't supported over ${over}`,
+    );
+  }
 }
 
 // What an after-hook sees once the call settles. `ok` discriminates success
@@ -310,8 +334,12 @@ async function runAfterHooks(
   const hooks = proc.afterHooks;
   if (!hooks || hooks.length === 0) return;
   const durationMs = Date.now() - started;
+  // Hooks see a file's name/type/size, never its bytes — audit logs stay clean.
   const settled = outcome.ok
-    ? { ok: true as const, result: outcome.result }
+    ? {
+        ok: true as const,
+        result: isFileResult(outcome.result) ? fileMeta(outcome.result) : outcome.result,
+      }
     : {
         ok: false as const,
         error: outcome.error,
@@ -348,6 +376,7 @@ export async function invokeUnary(
   try {
     const ctx2 = await runMiddleware(proc, input, ctx, seen);
     result = await proc.handler(input, ctx2);
+    rejectFileResult(result, site);
   } catch (error) {
     await runAfterHooks(proc, site, input, seen, started, { ok: false, error });
     throw error;

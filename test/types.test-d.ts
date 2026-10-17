@@ -1,5 +1,5 @@
 import { expectTypeOf } from "vitest";
-import { initDendra, createCaller, s, type RouterRecord } from "../src/index.ts";
+import { initDendra, createCaller, file, s, type RouterRecord } from "../src/index.ts";
 
 // Type-level tests: prove end-to-end inference with no codegen.
 const { route } = initDendra<{ db: string }>();
@@ -125,3 +125,9 @@ route
 
 // s.file() infers File.
 expectTypeOf<import("../src/schema.ts").InferOutput<ReturnType<typeof s.file>>>().toEqualTypeOf<File>();
+
+// A handler returning file() gives the client a Blob.
+{
+  const r = { dl: route.get().handler(() => file("x", { type: "text/plain" })) };
+  expectTypeOf(createCaller(r, { db: "x" }).dl).returns.resolves.toEqualTypeOf<Blob>();
+}

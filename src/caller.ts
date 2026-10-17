@@ -7,6 +7,7 @@
 
 import type { Proc, ReadBrand } from "./core.ts";
 import { invokeStream, invokeUnary } from "./core.ts";
+import { isFileResult, toBlob, type FileResult } from "./files.ts";
 
 // Recursion uses `object` (not the index-signature `RouterRecord`) so a class
 // instance used as a sub-router — which has no index signature — still maps. A
@@ -18,7 +19,7 @@ export type Client<R> = {
   [K in keyof R]: R[K] extends Proc<any, infer In, infer Out, infer Kind>
     ? (Kind extends "stream"
         ? (input: In) => AsyncIterable<Out>
-        : (input: In) => Promise<Out>) &
+        : (input: In) => Promise<Out extends FileResult ? Blob : Out>) &
         (R[K] extends ReadBrand ? ReadBrand : unknown)
     : R[K] extends object
       ? Client<R[K]>
@@ -35,7 +36,11 @@ export function createCaller<R extends object>(
       if (node.kind === "stream") {
         return (input: unknown) => invokeStream(node, input, ctx, site);
       }
-      return (input: unknown) => invokeUnary(node, input, ctx, site);
+      // A file comes back as a Blob, matching what the HTTP client returns.
+      return async (input: unknown) => {
+        const out = await invokeUnary(node, input, ctx, site);
+        return isFileResult(out) ? toBlob(out) : out;
+      };
     }
     const out: Record<string, unknown> = {};
     for (const k of Object.keys(node as Record<string, unknown>)) {

@@ -10,7 +10,7 @@ import type { AnyProc, HttpMethod, RouterRecord } from "./core.ts";
 import { invokeStream, invokeUnary, resolveProc } from "./core.ts";
 import type { JSONSchema } from "./schema.ts";
 import { DendraError } from "./errors.ts";
-import { DEFAULT_MAX_BODY_BYTES, readFormInput } from "./files.ts";
+import { DEFAULT_MAX_BODY_BYTES, fileResponse, isFileResult, readFormInput } from "./files.ts";
 
 export interface ServerOptions<Ctx> {
   /** URL prefix that procedure paths live under. Default `/rpc/`. */
@@ -128,6 +128,7 @@ export function toFetchHandler<Ctx>(
               result: await invokeUnary(p, call.input, ctx, {
                 path: call.path,
                 transport: "rpc",
+                batch: true,
               }),
             };
           } catch (e) {
@@ -192,6 +193,7 @@ export function toFetchHandler<Ctx>(
         return ndjsonResponse(invokeStream(proc, raw, ctx, site));
       }
       const result = await invokeUnary(proc, raw, ctx, site);
+      if (isFileResult(result)) return fileResponse(result, req);
       return jsonResponse({ result }, 200);
     } catch (e) {
       return errorToResponse(e);
@@ -387,6 +389,7 @@ export function toRestHandler<Ctx>(
         return ndjsonResponse(invokeStream(matched.proc, input, ctx, site));
       }
       const result = await invokeUnary(matched.proc, input, ctx, site);
+      if (isFileResult(result)) return fileResponse(result, req);
       return jsonResponse(result, 200);
     } catch (e) {
       return errorToResponse(e);

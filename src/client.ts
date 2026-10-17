@@ -159,6 +159,9 @@ function lazyCall(
       const result = batchUnary
         ? batchUnary(input)
         : start().then(async (res) => {
+            // A file response is the raw bytes, flagged by X-Dendra (not the
+            // content type — a downloaded file can itself be JSON).
+            if (res.ok && res.headers.get("x-dendra") === "file") return res.blob();
             const data = (await res.json()) as {
               result?: unknown;
               error?: { code?: string; message?: string; details?: unknown };
