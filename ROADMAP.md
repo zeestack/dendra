@@ -65,9 +65,8 @@ The focused set (the four that move the needle) is marked ⭐.
   `useMutation`) over the router. Closes the biggest tRPC parity gap. Optional peer dep.
 - [ ] ⭐ **Benchmarks** vs tRPC / Hono (throughput, cold start, bundle size) — a
   credible performance story.
-- [ ] **Package-page docs** — absolute image URLs in the README so the npm and
-  GitHub Packages pages render the hero and diagrams (currently relative paths
-  break off-repo). Ships with the next published version.
+- [x] **Package-page docs** (shipped 0.7.0) — absolute image and link URLs in
+  the README so the npm and GitHub Packages pages render the diagrams and links.
 
 ### `dendra/context` — unified context management ⭐ (the spine)
 

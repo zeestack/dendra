@@ -9,8 +9,8 @@
 [![npm](https://img.shields.io/npm/v/dendra?color=7c9cff&label=npm)](https://www.npmjs.com/package/dendra)
 [![downloads](https://img.shields.io/npm/dm/dendra?color=5be3b3&label=downloads)](https://www.npmjs.com/package/dendra)
 [![CI](https://github.com/zeestack/dendra/actions/workflows/ci.yml/badge.svg)](https://github.com/zeestack/dendra/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-7c9cff.svg)](LICENSE)
-[![runtime deps](https://img.shields.io/badge/runtime%20deps-0-5be3b3.svg)](package.json)
+[![License: MIT](https://img.shields.io/badge/license-MIT-7c9cff.svg)](https://github.com/zeestack/dendra/blob/main/LICENSE)
+[![runtime deps](https://img.shields.io/badge/runtime%20deps-0-5be3b3.svg)](https://github.com/zeestack/dendra/blob/main/package.json)
 [![types](https://img.shields.io/badge/types-included-7c9cff.svg)](#)
 [![no codegen](https://img.shields.io/badge/codegen-none-5be3b3.svg)](#)
 
@@ -156,7 +156,7 @@ Streaming procedures can be tools too — when an LLM/MCP calls a `.stream()` to
 its chunks are **collected** into the tool result (string chunks are joined; other
 chunks become an array), so you can expose streaming work without a special path.
 
-The [Next.js example](examples/nextjs-app/) ships a working MCP server both ways:
+The [Next.js example](https://github.com/zeestack/dendra/tree/main/examples/nextjs-app) ships a working MCP server both ways:
 a **stdio** server for Claude Desktop and a **remote HTTP** endpoint for claude.ai
 (with optional OAuth 2.1) — so Claude can list, create, and delete your app's data
 through the exact procedures you already wrote.
@@ -449,7 +449,7 @@ agents with no parallel tool layer, kept to one source of truth, and able to bot
 
 ## Architecture
 
-[`ARCHITECTURE.md`](ARCHITECTURE.md) explains the split between the **framework**
+[`ARCHITECTURE.md`](https://github.com/zeestack/dendra/blob/main/ARCHITECTURE.md) explains the split between the **framework**
 (`dendra`, in `src/`) and the **app** (the Next.js example) — and why auth,
 navigation, voice, and MCP connection/OAuth management are app concerns while only
 the typed-procedure and tool-shaping primitives live in the framework.
@@ -458,9 +458,9 @@ the typed-procedure and tool-shaping primitives live in the framework.
 
 Building an app *with* dendra? Two aids ship in the repo:
 
-- [`AGENTS.md`](AGENTS.md) — a compact cheat sheet (install, the define→serve→call
+- [`AGENTS.md`](https://github.com/zeestack/dendra/blob/main/AGENTS.md) — a compact cheat sheet (install, the define→serve→call
   pattern, conventions, and the framework-vs-app rule) that any coding agent can read.
-- A packaged skill at [`.claude/skills/dendra/`](.claude/skills/dendra/SKILL.md) —
+- A packaged skill at [`.claude/skills/dendra/`](https://github.com/zeestack/dendra/blob/main/.claude/skills/dendra/SKILL.md) —
   available automatically when this repo is opened in Claude Code; it teaches an
   agent to scaffold and extend a dendra app idiomatically.
 
@@ -475,9 +475,9 @@ MCP; point any MCP client at its `/api/mcp` or stdio server.)
 <sub><a href="https://products.techfoundry.io/dendra/architecture/example.html">▶ open the interactive diagram</a></sub>
 </div>
 
-- [`examples/demo.ts`](examples/demo.ts) — caller, unary, validation, streaming, AI tools, pub/sub.
-- [`examples/rest-ws-demo.ts`](examples/rest-ws-demo.ts) — REST, OpenAPI, WebSocket transport.
-- [`examples/nextjs-app/`](examples/nextjs-app/) — full Next.js app: RPC + REST,
+- [`examples/demo.ts`](https://github.com/zeestack/dendra/blob/main/examples/demo.ts) — caller, unary, validation, streaming, AI tools, pub/sub.
+- [`examples/rest-ws-demo.ts`](https://github.com/zeestack/dendra/blob/main/examples/rest-ws-demo.ts) — REST, OpenAPI, WebSocket transport.
+- [`examples/nextjs-app/`](https://github.com/zeestack/dendra/tree/main/examples/nextjs-app) — full Next.js app: RPC + REST,
   Server Components, generative-UI chat with voice, real LLM, subdomain
   multi-tenancy, resilient real-time notes, a NestJS-style class controller, MCP
   both ways (serve to Claude **and** connect out to external MCP servers with
@@ -494,7 +494,7 @@ npm run demo:restws
 ```
 
 **Releasing** is automated: bump the version and push the tag, and CI publishes to
-npm (with provenance) via [`.github/workflows/publish.yml`](.github/workflows/publish.yml)
+npm (with provenance) via [`.github/workflows/publish.yml`](https://github.com/zeestack/dendra/blob/main/.github/workflows/publish.yml)
 — requires an `NPM_TOKEN` repo secret.
 
 ```bash
@@ -522,8 +522,11 @@ budget), and optional `dendra/anthropic` + `dendra/react` helpers. Also after-ho
 > otherwise). dendra's client is unaffected; hand-written `fetch`/`curl` calls
 > need the JSON header, and GET-able procedures need `.get()`.
 
-Published on npm as [`dendra`](https://www.npmjs.com/package/dendra). APIs may
-change before 1.0. What's planned next is in [`ROADMAP.md`](ROADMAP.md).
+Published on npm as [`dendra`](https://www.npmjs.com/package/dendra). Docs:
+[products.techfoundry.io/dendra](https://products.techfoundry.io/dendra/) —
+what changed in each version is in the
+[release notes](https://products.techfoundry.io/dendra/releases/). APIs may
+change before 1.0. What's planned next is in [`ROADMAP.md`](https://github.com/zeestack/dendra/blob/main/ROADMAP.md).
 
 ## License
 
