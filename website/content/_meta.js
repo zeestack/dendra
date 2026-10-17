@@ -4,5 +4,6 @@ export default {
   context: 'Context management',
   features: 'Features',
   architecture: 'Architecture',
-  compare: 'Comparison'
+  compare: 'Comparison',
+  releases: 'Release notes'
 }

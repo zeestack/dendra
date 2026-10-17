@@ -27,6 +27,12 @@ let inference do the rest — never hand-write client types or `.d.ts`.
 1. **Define** procedures on the router (`initDendra<Ctx>()` → `route`):
    - Unary: `route.input(schema).handler(({ input, ctx }) => …)`.
    - REST: add a path — `.get("/x")`, `.post("/x")`, `.delete("/x/:id")`.
+   - Reads: only `.get()` procedures answer GET (path optional — `route.get()` is
+     an RPC-only read). Mutations stay POST; never make them `.get()`.
+   - Files: `s.file({ types, maxBytes })` in the input (handler gets a `File`);
+     return `file(body, { type, filename, inline? })` for downloads (client gets a
+     `Blob`); `urlFor(api.x.get, input)` for `<img src>` (needs `.get()`).
+     File-input procedures can't be `.ai()`.
    - Streaming / real-time: `.stream(async function* ({ ctx }) { yield … })`.
    - Typed output (and OpenAPI response): `.output(schema)`.
    - Expose to an LLM/MCP as a tool: `.ai({ description: "…" })` (opt-in).
@@ -58,6 +64,16 @@ const authed = route.use(({ ctx }) => {
 
 A tool behind `.use(auth)` is auth-guarded for the model too — it inherits the
 user's permissions.
+
+Audit / usage: `.after(({ ctx, path, transport, ok, code, durationMs }) => …)`
+runs once a call settles, on every transport. It only sees calls that passed the
+`.use()`s before it — put it before auth to also record rejections. Log file
+metadata, never file contents.
+
+CSRF: the server only takes POST as JSON (or dendra multipart with `X-Dendra: 1`)
+and GET for `.get()` reads. Hand-written `fetch` calls must send
+`Content-Type: application/json`. Don't enable `allowFormPosts` without a CSRF
+token check, and check `Origin` before `attachWs`.
 
 ## AI / MCP
 

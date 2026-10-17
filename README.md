@@ -427,7 +427,10 @@ agents with no parallel tool layer, kept to one source of truth, and able to bot
 
 - **REST + OpenAPI** — give a procedure `.get("/users/:id")` and `.output(schema)`
   (type-checks the handler's return *and* documents the response); `toRestHandler`
-  serves it, `toOpenApiDocument` emits a 3.1 spec.
+  serves it, `toOpenApiDocument` emits a 3.1 spec (file uploads as multipart).
+  `.get()` with no path marks an RPC read — the only procedures that answer GET.
+- **Files** — `s.file()` uploads, `file()` downloads, `urlFor()` for `<img src>`;
+  see [Files in and out](#files-in-and-out).
 - **Real-time** — a subscription is a streaming procedure fed by a `PubSub`
   interface: `createInMemoryPubSub()` for dev, `createRedisPubSub(client)` for
   multi-instance fan-out.
@@ -437,8 +440,9 @@ agents with no parallel tool layer, kept to one source of truth, and able to bot
   over one socket, same router.
 - **Request batching** — `createClient(url, { batch: true })` collects unary calls
   made in the same tick into one HTTP round-trip (streaming stays direct).
-- **Standard Schema** — Zod, Valibot, ArkType, or the built-in `s.*` validators:
-  `string/number/integer/boolean/literal/enum/union/null/nullable/array/record/object`,
+- **Standard Schema** — Zod (3 and 4), Valibot, ArkType — each type-checked in
+  the test suite — or the built-in `s.*` validators:
+  `string/number/integer/boolean/literal/enum/union/null/nullable/array/record/object/file`,
   with fluent constraints (`s.string().min(1).max(200).email()`,
   `s.integer().min(1)`, `s.object({…}).strict()`). Constraints flow straight into
   OpenAPI **and** AI tool schemas, so the model sees enums, bounds, and formats.
@@ -501,7 +505,7 @@ git push --follow-tags
 ## Status
 
 **Pre-1.0 (v0.7.0) — experimental, but broad.** Implemented and tested
-(137 tests, runtime + type-level): builder/router/dispatch, a batteries-included
+(143 tests, runtime + type-level): builder/router/dispatch, a batteries-included
 Standard Schema validator set (literals, enums, unions, nullable, record, and
 fluent string/number/array constraints), Next/Fetch/Node adapters, REST +
 OpenAPI, inferred client (unary + streaming), NDJSON streaming with cancellation,

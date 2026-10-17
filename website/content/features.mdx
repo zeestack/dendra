@@ -9,8 +9,12 @@ Beyond typed RPC and the AI/MCP story, every procedure definition gives you:
 ## REST + OpenAPI 3.1
 
 A procedure with a method and path (`route.get('/notes')`) is a REST endpoint;
-`toOpenApiDocument(appRouter)` emits an OpenAPI 3.1 spec. Same validation, same
-handler.
+`toOpenApiDocument(appRouter, { info })` emits an OpenAPI 3.1 spec (file uploads
+are documented as `multipart/form-data`). Same validation, same handler.
+
+`.get()` also marks a procedure as a **read**: only reads answer GET (and so can
+sit behind a link or `<img src>`). The path is optional — `route.get()` is an
+RPC-only read.
 
 ## Streaming & real-time
 
@@ -76,9 +80,28 @@ arrives as a `Blob`, and `urlFor(api.cover, { id })` gives an `<img src>`. File
 types are checked from the bytes, bodies are capped (10 MB default), file
 responses send `nosniff`, and HTML/SVG never render inline.
 
-Only `.get()` procedures answer GET and POST must be JSON (or a dendra
-multipart upload with `X-Dendra: 1`), so another site can't trigger a call with
-the user's cookies.
+Audit hooks see `{ file: { type, filename, size } }` for a file result, never the
+bytes. A procedure with file input can't be `.ai()` — models can't send files.
+
+## Security: CSRF by default
+
+dendra's client sends `X-Dendra: 1` on every request, and the server only accepts
+what a cross-site page can't forge without a CORS preflight:
+
+| Request | Allowed when | Otherwise |
+| --- | --- | --- |
+| GET / HEAD | the procedure is a `.get()` read | `405` |
+| PUT / PATCH / DELETE (RPC) | never | `405` |
+| POST, JSON | `Content-Type: application/json` | `415` |
+| POST, multipart | `X-Dendra: 1` header | `403` |
+| POST, plain HTML form | `allowFormPosts: true` (then CSRF is your job) | `415` |
+
+File responses always send `X-Content-Type-Options: nosniff`, sanitize the
+filename, and never render HTML/SVG/XML inline unless you set
+`allowUnsafeInline`.
+
+**WebSockets bypass CORS:** check the upgrade request's `Origin` against your
+allowed origins before handing the socket to `attachWs`.
 
 ## Class controllers (NestJS-style, no decorators)
 
@@ -109,5 +132,6 @@ core tool-shaping primitives are enough on their own.
 
 ## Standard Schema
 
-Validate with the built-in `s.*`, or any Standard Schema library — Zod, Valibot,
-or ArkType — interchangeably.
+Validate with the built-in `s.*` (including `s.file()`), or any Standard Schema
+library — Zod 3 and 4, Valibot, or ArkType — interchangeably. Each is
+type-checked in dendra's test suite, so `input` infers correctly.

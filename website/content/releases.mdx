@@ -1,0 +1,59 @@
+---
+title: Release notes
+---
+
+# Release notes
+
+## 0.7.0 — files in and out, CSRF by default
+
+**New**
+
+- `s.file({ types, maxBytes })` — uploads inside any `s.object`; types are checked
+  against the file's bytes (PNG, JPEG, GIF, WebP, PDF, ZIP) or by MIME/extension.
+- `file(body, { type, filename, inline, cacheControl, etag })` — downloads; the
+  client and `createCaller` return a `Blob`. `nosniff`, safe filenames, no inline
+  HTML/SVG, ETag → 304.
+- `urlFor(api.x.get, input)` — a GET URL for `<img src>` and download links.
+- `.get()` without a path marks an RPC read.
+- Server options `maxBodyBytes` (default 10 MB) and `allowFormPosts`.
+- Error codes `METHOD_NOT_ALLOWED` (405), `PAYLOAD_TOO_LARGE` (413),
+  `UNSUPPORTED_MEDIA_TYPE` (415).
+
+**Fixed**
+
+- Zod (3 and 4), Valibot and ArkType schemas now type-check as `.input()` — the
+  Standard Schema issue-path type was too narrow, leaving `input` as `unknown`.
+- `toNodeHandler` decoded request bodies as UTF-8, corrupting binary uploads; it
+  now streams bytes untouched.
+- REST and form coercion now converts `s.integer()` fields (they arrived as strings).
+
+**Breaking (security)**
+
+The RPC handler used to run **any** procedure from a GET (input from the query
+string) and parse POST bodies as JSON whatever the `Content-Type` — so another
+site could trigger a mutation with a link, an `<img>`, or a `text/plain` form.
+
+- GET/HEAD now reach only procedures declared `.get()`; other non-POST methods
+  get `405`.
+- POST must be `application/json` (`415`), or a dendra multipart upload with
+  `X-Dendra: 1` (`403`).
+
+**Upgrading:** dendra's typed client needs no change. Add `.get()` to procedures
+you call by GET (e.g. image URLs), and send `Content-Type: application/json` from
+hand-written `fetch`/`curl` calls.
+
+## 0.6.0 — after-hooks
+
+- `.after(({ ctx, input, path, transport, ok, result, error, code, durationMs }) => …)`
+  runs once a call settles, on every transport including AI/MCP tools — for audit
+  trails and usage recording. Awaited; a throwing hook is logged, never returned.
+
+## 0.5.0 — context manager
+
+- `createContextManager({ budget, sources })` — memory recall and lazy tool
+  loading under one token budget, via `runAgent({ context })`.
+
+## 0.4.0 — batteries-included validators
+
+- `s.literal/enum/union/null/nullable/integer/record`, fluent constraints, and
+  `CONFLICT` / `UNPROCESSABLE` / `TOO_MANY_REQUESTS` / `NOT_IMPLEMENTED`.
