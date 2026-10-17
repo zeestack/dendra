@@ -266,6 +266,67 @@ const audited = authed.after(({ ctx, path, transport, input, ok, result, code, d
   hook *before* the auth guard to also record rejected calls. Input that fails
   validation never reaches the chain, so it doesn't trigger hooks.
 
+## Files in and out
+
+A file route is just a procedure, so the tenant check in `.use()` and the audit
+trail in `.after()` cover it like any other call.
+
+```ts
+import { file, s } from "dendra";
+
+export const covers = {
+  upload: tenant
+    .input(s.object({
+      workspaceId: s.integer(),
+      image: s.file({ types: ["image/png", "image/jpeg", "image/webp"], maxBytes: 8_000_000 }),
+    }))
+    .handler(({ input, ctx }) => ctx.storage.put(input.workspaceId, input.image)), // input.image: File
+
+  get: tenant
+    .get()                                  // a read: reachable by GET / urlFor
+    .input(s.object({ workspaceId: s.integer(), draftId: s.integer() }))
+    .handler(async ({ input, ctx }) => {
+      const obj = await ctx.storage.get(input.draftId);
+      return file(obj.stream, { type: obj.type, filename: "cover.webp", inline: true,
+                                cacheControl: "private, max-age=300", etag: obj.hash });
+    }),
+};
+```
+
+```tsx
+await api.covers.upload({ workspaceId: 3, image: fileFromInput }); // sent as multipart
+const blob = await api.drafts.exportMarkdown({ draftId: 9 });       // Blob
+<img src={urlFor(api.covers.get, { workspaceId: 3, draftId: 9 })} />
+```
+
+- **Uploads:** `s.file({ types, maxBytes })` sits in an ordinary `s.object`.
+  PNG, JPEG, GIF, WebP, PDF and ZIP are checked against the file's leading bytes,
+  not just the browser's header; other types match by MIME type or extension
+  (`".csv"`). Request bodies are capped by `maxBodyBytes` (default 10 MB),
+  enforced while reading → `413 PAYLOAD_TOO_LARGE`. Files live at the top level
+  of the input and go direct (never batched). A file-input procedure can't be `.ai()`.
+- **Downloads:** return `file(body, opts)`. Every file response carries
+  `X-Content-Type-Options: nosniff`; the filename is sanitized; `Cache-Control`
+  defaults to `private, no-store`; `etag` enables `304`. HTML, SVG and XML are
+  always sent as attachments unless you set `allowUnsafeInline` — an uploaded
+  file must never run script on your origin. Tool, batch and WebSocket calls
+  can't return files.
+- **`urlFor` needs `.get()`.** Only procedures declared `.get()` (path optional)
+  answer GET, and `urlFor` won't type-check for anything else — so a link or
+  `<img>` on another site can never trigger a mutation.
+- **Audit hooks see metadata, never bytes:** for a file result, `.after()` gets
+  `{ file: { type, filename, size } }`. Log `input.image.name/type/size`, not the File.
+
+### CSRF
+
+dendra's client sends `X-Dendra: 1` on every request. Because a cross-site page
+can't send a custom header (or a JSON body) without a CORS preflight, the server
+requires: **GET** only for `.get()` reads (else `405`); **POST** as JSON (else
+`415`), or multipart carrying `X-Dendra` (else `403`). Plain HTML form posts are
+off unless you pass `allowFormPosts: true` — then CSRF protection is your job
+(e.g. a token checked in `.use()`). This assumes you don't enable
+CORS-with-credentials for untrusted origins.
+
 ## Class-based controllers (NestJS-style, no decorators)
 
 Prefer classes for grouping and dependency injection? A controller is just a
@@ -433,8 +494,8 @@ git push --follow-tags
 
 ## Status
 
-**Pre-1.0 (v0.6.0) — experimental, but broad.** Implemented and tested
-(72 tests, runtime + type-level): builder/router/dispatch, a batteries-included
+**Pre-1.0 (v0.7.0) — experimental, but broad.** Implemented and tested
+(137 tests, runtime + type-level): builder/router/dispatch, a batteries-included
 Standard Schema validator set (literals, enums, unions, nullable, record, and
 fluent string/number/array constraints), Next/Fetch/Node adapters, REST +
 OpenAPI, inferred client (unary + streaming), NDJSON streaming with cancellation,
@@ -442,7 +503,14 @@ WebSocket transport, middleware (`.use()`), typed `.output()`, request batching,
 in-memory **and** Redis pub/sub, class controllers, AI tools, MCP (stdio + remote
 HTTP, consume external MCP servers), a unified **context layer**
 (`createContextManager` — memory recall + lazy tool loading under one token
-budget), and optional `dendra/anthropic` + `dendra/react` helpers.
+budget), and optional `dendra/anthropic` + `dendra/react` helpers. Also after-hooks
+(`.after()`) and files in and out (`s.file()`, `file()`, `urlFor`).
+
+> **Breaking in 0.7.0 (security):** the RPC handler now answers GET only for
+> procedures declared `.get()` (`405` otherwise), and POST only with
+> `Content-Type: application/json` or a dendra multipart upload (`415`
+> otherwise). dendra's client is unaffected; hand-written `fetch`/`curl` calls
+> need the JSON header, and GET-able procedures need `.get()`.
 
 Published on npm as [`dendra`](https://www.npmjs.com/package/dendra). APIs may
 change before 1.0. What's planned next is in [`ROADMAP.md`](ROADMAP.md).

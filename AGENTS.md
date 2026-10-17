@@ -86,6 +86,13 @@ In a Server Component, skip HTTP with `createCaller(appRouter, ctx)`.
   const authed = route.use(({ ctx }) => { if (!ctx.user) throw new DendraError("UNAUTHORIZED","…"); return { user: ctx.user }; });
   ```
   A tool behind `.use(auth)` is auth-guarded for the model too.
+- **Reads are `.get()`.** Only `.get()` procedures (path optional) answer GET;
+  others get 405. POST must be JSON (415 otherwise). The client handles this.
+- **Files:** `s.file({ types, maxBytes })` in the input (handler gets a `File`;
+  client sends multipart); return `file(body, { type, filename, inline? })` for
+  downloads (client gets a `Blob`); `urlFor(api.x.get, input)` for `<img src>`
+  — needs `.get()`. File-input procedures can't be `.ai()`. Don't enable
+  `allowFormPosts` without your own CSRF token check.
 - **After-hooks for audit/usage.** `.after(({ ctx, path, transport, ok, result,
   error, code, durationMs }) => …)` runs once the call settles, on every transport
   (incl. AI tools). Awaited; throws are logged, not returned. It only sees calls

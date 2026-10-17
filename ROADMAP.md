@@ -33,7 +33,7 @@ optional convenience, not the moat.
 
 ---
 
-## Shipped — 0.4.0 – 0.6.0
+## Shipped — 0.4.0 – 0.7.0
 
 - **0.4.0** — batteries-included `s.*`: `literal`, `enum`, `union`, `null`,
   `nullable`, `integer`, `record`; chainable constraints (`.min/.max/.email/.uuid/
@@ -44,6 +44,10 @@ optional convenience, not the moat.
 - **0.6.0** — `.after()` hooks: see the outcome of every call (result or error
   code, duration, path, transport, ctx) on every transport — the primitive for
   audit trails and usage recording. _First of the Question Tool requests._
+- **0.7.0** — files in and out: `s.file()` (byte-checked types, streamed size
+  cap), `file()` downloads (nosniff, safe filenames, no inline HTML/SVG,
+  ETag/304), `urlFor()`. Security: GET only reaches `.get()` reads and POST must
+  be JSON — closing two CSRF holes in the RPC handler.
 
 ---
 
@@ -181,7 +185,7 @@ default, no CSS-framework choice — keep it to 2–3 questions; link docs for t
 
 - [ ] **SSE subscriptions** — real-time without standing up WebSocket infra.
 - [ ] **Serialization transformers** (superjson-style) — Dates / Maps / BigInt over the wire.
-- [ ] **File uploads** (multipart).
+- [x] **File uploads** (multipart). _Shipped 0.7.0 with downloads; see Field requests._
 - [ ] **Observability hooks** — logging / tracing / OpenTelemetry via middleware.
 - [ ] **Edge streaming** — investigate Web Streams so streaming isn't Node-only.
 - [ ] **Typed client errors** — discriminated error results and error-formatting hooks.
@@ -199,7 +203,7 @@ If only two get built: **files** and **after-hooks** — the two places the app
 has to step outside dendra to stay safe.
 
 ### Must have
-- [ ] ⭐ **Files in and out** — `s.file({ types, maxBytes })` parsed from
+- [x] ⭐ **Files in and out** (shipped 0.7.0) — `s.file({ types, maxBytes })` parsed from
   `multipart/form-data` (type checked from the bytes, not just the header),
   `.returns("file")` for binary responses that still run the `.use()` chain, and a
   typed client that sends `File`/`Blob` and returns `Blob`. _Extends "File uploads

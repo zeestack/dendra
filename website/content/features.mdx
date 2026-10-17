@@ -56,6 +56,30 @@ const audited = authed.after(({ ctx, path, transport, ok, code, durationMs }) =>
 A hook only sees calls that passed the `.use()`s before it — put it before the
 auth guard to also record rejections.
 
+## Files in and out
+
+Uploads and downloads are ordinary procedures, so `.use()` and `.after()` cover them:
+
+```ts
+upload: tenant
+  .input(s.object({ workspaceId: s.integer(), image: s.file({ types: ['image/png', 'image/webp'], maxBytes: 8_000_000 }) }))
+  .handler(({ input }) => store(input.image)),          // input.image: File
+
+cover: tenant
+  .get()                                                 // reads answer GET → usable in <img>
+  .input(s.object({ id: s.integer() }))
+  .handler(() => file(bytes, { type: 'image/webp', inline: true })),
+```
+
+On the client, `api.upload({ …, image })` sends multipart, a `file()` result
+arrives as a `Blob`, and `urlFor(api.cover, { id })` gives an `<img src>`. File
+types are checked from the bytes, bodies are capped (10 MB default), file
+responses send `nosniff`, and HTML/SVG never render inline.
+
+Only `.get()` procedures answer GET and POST must be JSON (or a dendra
+multipart upload with `X-Dendra: 1`), so another site can't trigger a call with
+the user's cookies.
+
 ## Class controllers (NestJS-style, no decorators)
 
 A class whose fields are procedures; put an *instance* in the router. Keep
