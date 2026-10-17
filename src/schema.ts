@@ -535,3 +535,5 @@ export function object<Sh extends Record<string, Schema<unknown>>>(
 
 // Reserved-word exports: `s.enum(...)` and `s.null()`.
 export { enumSchema as enum, nullSchema as null };
+export { fileSchema as file } from "./files.ts";
+export type { FileSchema, FileSchemaOptions } from "./files.ts";

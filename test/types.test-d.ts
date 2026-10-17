@@ -122,3 +122,6 @@ route
   expectTypeOf(api.read).toMatchTypeOf<import("../src/index.ts").ReadBrand>();
   expectTypeOf(api.write).not.toMatchTypeOf<import("../src/index.ts").ReadBrand>();
 }
+
+// s.file() infers File.
+expectTypeOf<import("../src/schema.ts").InferOutput<ReturnType<typeof s.file>>>().toEqualTypeOf<File>();
