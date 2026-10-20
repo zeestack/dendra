@@ -36,6 +36,8 @@ let inference do the rest — never hand-write client types or `.d.ts`.
    - Streaming / real-time: `.stream(async function* ({ ctx, signal }) { yield … })`.
      Pass `signal` to `ctx.pubsub.subscribe(topic, { signal })` so the stream stops
      when the client goes away. Clients abort with `api.x(input, { signal })`.
+     Across processes, use `createRedisPubSub(client)` or `createPgPubSub(pool)`
+     (Postgres LISTEN/NOTIFY; payloads under 8000 bytes, so publish ids).
    - Typed output (and OpenAPI response): `.output(schema)`.
    - Expose to an LLM/MCP as a tool: `.ai({ description: "…" })` (opt-in).
    - Keep the object `satisfies RouterRecord` — unless it contains a class

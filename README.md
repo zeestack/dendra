@@ -477,10 +477,18 @@ agents with no parallel tool layer, kept to one source of truth, and able to bot
 - **Files** — `s.file()` uploads, `file()` downloads, `urlFor()` for `<img src>`;
   see [Files in and out](#files-in-and-out).
 - **Real-time** — a subscription is a streaming procedure fed by a `PubSub`
-  interface: `createInMemoryPubSub()` for dev, `createRedisPubSub(client)` for
-  multi-instance fan-out. Stream handlers get a `signal` that aborts when the
+  interface: `createInMemoryPubSub()` for dev, `createRedisPubSub(client)` or
+  `createPgPubSub(pool)` (Postgres LISTEN/NOTIFY, see below) for multi-instance
+  fan-out. Stream handlers get a `signal` that aborts when the
   client goes away (disconnect, cancel, unsubscribe) — pass it to
   `subscribe(topic, { signal })`.
+- **Postgres pub/sub** — `createPgPubSub(new pg.Pool(…))` holds one LISTEN
+  connection per process (reconnecting with backoff) and sends every message as
+  `{ topic, message }` JSON on one channel (`"dendra"` by default), so a trigger
+  can publish too:
+  `pg_notify('dendra', json_build_object('topic', 'notes', 'message', row_to_json(NEW))::text)`.
+  NOTIFY payloads must be under 8000 bytes — publish an id, not the row, when it
+  can be large; `publish` throws on oversize messages before sending.
 - **External MCP tools** — `createMcpToolSource(client)` + `mergeToolsets(...)`
   blend remote tools into your agent loop.
 - **WebSocket** — `attachWs` / `connectWs` multiplex unary calls + subscriptions
@@ -560,7 +568,7 @@ Standard Schema validator set (literals, enums, unions, nullable, record, and
 fluent string/number/array constraints), Next/Fetch/Node adapters, REST +
 OpenAPI, inferred client (unary + streaming), NDJSON streaming with cancellation,
 WebSocket transport, middleware (`.use()`), typed `.output()`, request batching,
-in-memory **and** Redis pub/sub, class controllers, AI tools, MCP (stdio + remote
+in-memory, Redis **and** Postgres pub/sub, class controllers, AI tools, MCP (stdio + remote
 HTTP, consume external MCP servers), a unified **context layer**
 (`createContextManager` — memory recall + lazy tool loading under one token
 budget), and optional `dendra/anthropic` + `dendra/react` helpers. Also after-hooks

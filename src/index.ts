@@ -86,6 +86,14 @@ export { createInMemoryPubSub } from "./pubsub.ts";
 export type { PubSub } from "./pubsub.ts";
 export { createRedisPubSub } from "./redis-pubsub.ts";
 export type { RedisPubSubClient } from "./redis-pubsub.ts";
+export { createPgPubSub } from "./pg-pubsub.ts";
+export type {
+  PgPubSub,
+  PgPubSubOptions,
+  PgPool,
+  PgListenClient,
+  PgNotification,
+} from "./pg-pubsub.ts";
 
 export { DendraError, DendraClientError } from "./errors.ts";
 export type { ErrorCode } from "./errors.ts";
