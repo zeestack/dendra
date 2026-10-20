@@ -13,6 +13,11 @@ import { isFileResult, toBlob, type FileResult } from "./files.ts";
 export interface CallOptions {
   /** Abort the call: a pending result rejects, and a stream ends, with the reason. */
   signal?: AbortSignal;
+  /**
+   * HTTP client with `batch: true` only: `false` sends this call on its own
+   * (say, one you don't want sharing a request with others). Ignored elsewhere.
+   */
+  batch?: boolean;
 }
 
 // Recursion uses `object` (not the index-signature `RouterRecord`) so a class

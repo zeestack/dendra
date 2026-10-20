@@ -16,7 +16,10 @@ export interface ClientOptions {
   prefix?: string;
   /**
    * Automatically batch unary calls made in the same tick into one HTTP request
-   * (POST <prefix>__batch). Streaming calls always go direct. Off by default.
+   * (POST <prefix>__batch?p=a,b). Results stream back as each call settles, so a
+   * slow call doesn't hold back the rest. Streaming calls and uploads always go
+   * direct; pass `{ batch: false }` as a call's options to send it alone. Off by
+   * default.
    */
   batch?: boolean;
 }
@@ -25,6 +28,11 @@ export interface ClientOptions {
 // send a custom header cross-site without a CORS preflight, so the server uses
 // it as CSRF proof on multipart uploads.
 const jsonHeaders = { "content-type": "application/json", "x-dendra": "1" };
+
+interface BatchReply {
+  result?: unknown;
+  error?: { code?: string; message?: string; details?: unknown };
+}
 
 interface BatchCall {
   path: string;
@@ -48,31 +56,49 @@ export function createClient<R extends object>(
     const calls = queue;
     queue = [];
     scheduled = false;
+    // Each call settles once, so the fallbacks below only reach calls the
+    // response never answered.
+    const settle = (c: BatchCall | undefined, r: BatchReply | undefined) => {
+      if (!c || !r) return;
+      if (r.error) c.reject(new DendraClientError(r.error));
+      else c.resolve(r.result);
+    };
     try {
-      const res = await doFetch(base + prefix + "__batch", {
+      // `?p=` names the procedures, so logs, rate limits and network mocks
+      // can still tell batched calls apart.
+      const names = calls.map((c) => encodeURIComponent(c.path)).join(",");
+      const res = await doFetch(base + prefix + "__batch?p=" + names, {
         method: "POST",
-        headers: { ...jsonHeaders, ...(opts.headers ?? {}) },
+        headers: { ...jsonHeaders, accept: "application/x-ndjson", ...(opts.headers ?? {}) },
         body: JSON.stringify(calls.map((c) => ({ path: c.path, input: c.input ?? null }))),
       });
-      const data = (await res.json()) as Array<{
-        result?: unknown;
-        error?: { code?: string; message?: string; details?: unknown };
-      }>;
-      calls.forEach((c, i) => {
-        const r = data[i];
-        if (r && r.error) c.reject(new DendraClientError(r.error));
-        else c.resolve(r ? r.result : undefined);
-      });
+      if (res.body && res.headers.get("content-type")?.startsWith("application/x-ndjson")) {
+        // One line per call, in the order they settle on the server.
+        for await (const line of readNdjson(res.body)) {
+          const r = line as BatchReply & { i: number };
+          settle(calls[r.i], r);
+        }
+      } else {
+        // An older server answers with the whole array; a failed request (e.g.
+        // createContext threw) with a single error envelope.
+        const data = (await res.json()) as BatchReply[] | BatchReply;
+        if (Array.isArray(data)) calls.forEach((c, i) => settle(c, data[i]));
+        else for (const c of calls) settle(c, data);
+      }
     } catch (e) {
       for (const c of calls) c.reject(e);
     }
+    const missing = { code: "INTERNAL", message: "The batch response had no result for this call" };
+    for (const c of calls) c.reject(new DendraClientError(missing));
   };
   const enqueue = (path: string, input: unknown) =>
     new Promise<unknown>((resolve, reject) => {
       queue.push({ path, input, resolve, reject });
       if (!scheduled) {
         scheduled = true;
-        queueMicrotask(flush);
+        // A macrotask, not a microtask: `await call` reaches `.then` a microtask
+        // late, so a microtask flush would split one tick across two batches.
+        setTimeout(flush, 0);
       }
     });
   // -----------------------------------------------------------------------
@@ -92,12 +118,13 @@ export function createClient<R extends object>(
       apply(_t, _this, args: unknown[]) {
         const dotted = path.join(".");
         const url = base + prefix + dotted;
+        const call = (args[1] ?? {}) as CallOptions;
         // Uploads go direct: a batch is one JSON body, which can't carry files.
         const batchUnary =
-          opts.batch && !hasBlob(args[0])
+          opts.batch && call.batch !== false && !hasBlob(args[0])
             ? (input: unknown) => enqueue(dotted, input)
             : undefined;
-        const { signal } = (args[1] ?? {}) as CallOptions;
+        const { signal } = call;
         return lazyCall(doFetch, url, args[0], opts.headers, batchUnary, signal);
       },
     });

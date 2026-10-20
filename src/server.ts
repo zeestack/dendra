@@ -99,8 +99,12 @@ export function toFetchHandler<Ctx>(
       return errorToResponse(e);
     }
 
-    // Batch: POST <prefix>__batch with [{ path, input }, ...] → [{ result }|{ error }, ...]
-    // in the same order. One context for the whole batch; unary procedures only.
+    // Batch: POST <prefix>__batch with [{ path, input }, ...]. A client that
+    // accepts NDJSON gets one `{ i, result }|{ i, error }` line per call as it
+    // settles, so a slow call never holds back a quick one; otherwise the reply
+    // is the whole `[{ result }|{ error }, ...]` array, in order. One context
+    // for the whole batch; unary procedures only. (`?p=` names the procedures
+    // for logs and mocks; the server doesn't need it.)
     if (dotted === "__batch") {
       let calls: Array<{ path: string; input?: unknown }>;
       try {
@@ -112,31 +116,32 @@ export function toFetchHandler<Ctx>(
           400,
         );
       }
-      const results = await Promise.all(
-        calls.map(async (call) => {
-          const p = resolveProc(root, (call.path ?? "").split(".").filter(Boolean));
-          if (!p || p.kind !== "unary") {
-            return {
-              error: {
-                code: "NOT_FOUND",
-                message: `Procedure '${call.path}' not found (or not unary)`,
-              },
-            };
-          }
-          try {
-            return {
-              result: await invokeUnary(p, call.input, ctx, {
-                path: call.path,
-                transport: "rpc",
-                batch: true,
-              }),
-            };
-          } catch (e) {
-            return { error: errorBody(e) };
-          }
-        }),
-      );
-      return jsonResponse(results, 200);
+      const settled = calls.map(async (call): Promise<BatchResult> => {
+        const p = resolveProc(root, (call.path ?? "").split(".").filter(Boolean));
+        if (!p || p.kind !== "unary") {
+          return {
+            error: {
+              code: "NOT_FOUND",
+              message: `Procedure '${call.path}' not found (or not unary)`,
+            },
+          };
+        }
+        try {
+          return {
+            result: await invokeUnary(p, call.input, ctx, {
+              path: call.path,
+              transport: "rpc",
+              batch: true,
+            }),
+          };
+        } catch (e) {
+          return { error: errorBody(e) };
+        }
+      });
+      if ((req.headers.get("accept") ?? "").includes("application/x-ndjson")) {
+        return ndjsonResponse(inSettleOrder(settled), () => {});
+      }
+      return jsonResponse(await Promise.all(settled), 200);
     }
 
     const proc = resolveProc(root, dotted.split(".").filter(Boolean));
@@ -466,6 +471,20 @@ function errorBody(e: unknown): {
 function errorToResponse(e: unknown): Response {
   const status = e instanceof DendraError ? e.status : 500;
   return jsonResponse({ error: errorBody(e) }, status);
+}
+
+type BatchResult = { result: unknown } | { error: ReturnType<typeof errorBody> };
+
+// Yield each batch result, tagged with its index, as soon as it settles.
+async function* inSettleOrder(
+  settled: Promise<BatchResult>[],
+): AsyncIterable<{ i: number } & BatchResult> {
+  const pending = new Map(settled.map((p, i) => [i, p.then((r) => ({ i, ...r }))]));
+  while (pending.size) {
+    const next = await Promise.race(pending.values());
+    pending.delete(next.i);
+    yield next;
+  }
 }
 
 // A stream ends when the request is aborted (the runtime noticed the client
