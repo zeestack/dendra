@@ -20,7 +20,7 @@ let inference do the rest — never hand-write client types or `.d.ts`.
 - Find the router (usually `server/router.ts`) and the context factory
   (`server/context.ts`). Match the existing file layout and style.
 - Optional peers, only if the task needs them: `@anthropic-ai/sdk` for
-  `dendra/anthropic`, `react` for `dendra/react`.
+  `dendra/anthropic`, `react` for `dendra/react`, `next` for `dendra/next`.
 
 ## The core pattern — define → serve → call
 
@@ -49,7 +49,10 @@ let inference do the rest — never hand-write client types or `.d.ts`.
    - Else: `toFetchHandler` (Hono/Bun/Deno/Workers), `toNodeHandler` (`node:http`),
      `toRestHandler` (plain REST). `toOpenApiDocument(appRouter, info)` emits 3.1.
 3. **Call** with the inferred client: `createClient<AppRouter>(baseUrl, { prefix })`.
-   In a Server Component, use `createCaller(appRouter, ctx)` (no HTTP).
+   In a Server Component, use `createCaller(appRouter, ctx)` (no HTTP), wrapped in
+   `orPage(call, { signIn })` from `dendra/next` to turn NOT_FOUND into a 404 and
+   UNAUTHORIZED into a sign-in redirect. Client results are typed as JSON
+   (`Jsonify`: a `Date` is a `string`); the caller keeps real types.
 
 ## Context, auth, middleware
 

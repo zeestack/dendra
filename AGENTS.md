@@ -26,6 +26,7 @@ npm i dendra
 # optional helpers, only if used:
 npm i @anthropic-ai/sdk   # for dendra/anthropic (runAgent)
 npm i react               # for dendra/react (useAssistant)
+npm i next                # for dendra/next (orPage)
 ```
 
 ## The one pattern: define → serve → call
@@ -77,7 +78,9 @@ export const api = createClient<AppRouter>("", { prefix: "/rpc/" });
 // Every call takes an optional 2nd arg: { signal } to abort, { batch: false }.
 ```
 
-In a Server Component, skip HTTP with `createCaller(appRouter, ctx)`.
+In a Server Component, skip HTTP with `createCaller(appRouter, ctx)`, and wrap
+calls in `orPage(call, { signIn })` from `dendra/next` so NOT_FOUND/BAD_REQUEST
+become `notFound()` and UNAUTHORIZED a sign-in redirect.
 
 ## Conventions that aren't obvious from the types
 
@@ -98,6 +101,9 @@ In a Server Component, skip HTTP with `createCaller(appRouter, ctx)`.
   error, code, durationMs }) => …)` runs once the call settles, on every transport
   (incl. AI tools). Awaited; throws are logged, not returned. It only sees calls
   that passed the `.use()`s before it — place it before auth to record rejections.
+- **Client results are JSON-typed.** `createClient` results are `Jsonify<Out>`
+  (a `Date` arrives as a `string`); `createCaller` keeps real types
+  (`Caller<R>`). Don't cast client results back to `Date` — parse them.
 - **Streams stop with their consumer.** A `.stream()` handler gets `signal`,
   aborted when the client disconnects, cancels, unsubscribes, or aborts its own
   `{ signal }`. Pass it to `pubsub.subscribe(topic, { signal })` or long work
