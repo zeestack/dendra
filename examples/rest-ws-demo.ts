@@ -50,10 +50,8 @@ const appRouter = {
   // Streaming subscription used over the WebSocket transport.
   ticker: route
     .input(s.object({ room: s.string() }))
-    .stream(async function* ({ input, ctx }) {
-      for await (const ev of ctx.pubsub.subscribe(`ticker:${input.room}`, {
-        signal: ctx.signal,
-      })) {
+    .stream(async function* ({ input, ctx, signal }) {
+      for await (const ev of ctx.pubsub.subscribe(`ticker:${input.room}`, { signal })) {
         yield ev as { tick: number };
       }
     }),
