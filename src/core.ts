@@ -382,7 +382,29 @@ class Builder<Ctx, In, DOut = never, Rd extends boolean = false> {
         fn({ input, ctx, signal: signal ?? new AbortController().signal }),
     } as Branded<Proc<Ctx, In, Out, "stream">, Rd>;
   }
+  /**
+   * Background procedure: validates, runs the middlewares, then enqueues `job`
+   * and returns `{ jobId }` at once. The job runs later with its own ctx, so
+   * use `map` to carry what it needs from this call (tenant, user id).
+   */
+  background(job: Enqueuer<In>): Branded<Proc<Ctx, In, { jobId: string }, "unary">, Rd>;
+  background<J>(
+    job: Enqueuer<J>,
+    map: (o: { input: In; ctx: Ctx }) => J | Promise<J>,
+  ): Branded<Proc<Ctx, In, { jobId: string }, "unary">, Rd>;
+  background(
+    job: Enqueuer<unknown>,
+    map?: (o: { input: In; ctx: Ctx }) => unknown,
+  ): Branded<Proc<Ctx, In, { jobId: string }, "unary">, Rd> {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return (this as Builder<Ctx, In, any, Rd>).handler(async ({ input, ctx }) =>
+      job.enqueue(map ? await map({ input, ctx }) : input),
+    );
+  }
 }
+
+/** Anything with an `enqueue` (a `Job` from `createJobs`). */
+type Enqueuer<I> = { enqueue: (input: I) => Promise<{ jobId: string }> };
 
 /** Bind a context type, then define procedures off `route`. */
 export function initDendra<Ctx = Record<string, never>>() {

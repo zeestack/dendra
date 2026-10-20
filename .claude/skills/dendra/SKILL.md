@@ -36,6 +36,10 @@ let inference do the rest — never hand-write client types or `.d.ts`.
    - Streaming / real-time: `.stream(async function* ({ ctx, signal }) { yield … })`.
      Pass `signal` to `ctx.pubsub.subscribe(topic, { signal })` so the stream stops
      when the client goes away. Clients abort with `api.x(input, { signal })`.
+   - Long-running work: a job, `jobs.define(name, { input, run, key, retries })`
+     on `createJobs({ store, pubsub, context })`; `.background(job, map?)` makes a
+     procedure enqueue it and return `{ jobId }`; `job.watch(jobId, { signal })`
+     in a `.stream()` sends status. Jobs get `context()`, not the request ctx.
    - Typed output (and OpenAPI response): `.output(schema)`.
    - Expose to an LLM/MCP as a tool: `.ai({ description: "…" })` (opt-in).
    - Keep the object `satisfies RouterRecord` — unless it contains a class
