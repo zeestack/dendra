@@ -49,8 +49,8 @@ export const appRouter = {
       .input(s.object({ title: s.string(), body: s.string() }))
       .ai({ description: "Create a note" })      // ← also an LLM/MCP tool
       .handler(({ input, ctx }) => ctx.db.notes.insert(input)),
-    watch: route.stream(async function* ({ ctx }) { // streaming = async generator
-      for await (const ev of ctx.pubsub.subscribe("notes")) yield ev;
+    watch: route.stream(async function* ({ ctx, signal }) { // streaming = async generator
+      for await (const ev of ctx.pubsub.subscribe("notes", { signal })) yield ev;
     }),
   },
 } satisfies RouterRecord;
@@ -74,6 +74,7 @@ import { createClient } from "dendra";
 import type { AppRouter } from "@/server/router";
 export const api = createClient<AppRouter>("", { prefix: "/rpc/" });
 // api.add({ a, b }) → Promise<number>; for await (const ev of api.notes.watch()) …
+// Every call takes an optional 2nd arg: { signal } to abort, { batch: false }.
 ```
 
 In a Server Component, skip HTTP with `createCaller(appRouter, ctx)`.
@@ -97,6 +98,10 @@ In a Server Component, skip HTTP with `createCaller(appRouter, ctx)`.
   error, code, durationMs }) => …)` runs once the call settles, on every transport
   (incl. AI tools). Awaited; throws are logged, not returned. It only sees calls
   that passed the `.use()`s before it — place it before auth to record rejections.
+- **Streams stop with their consumer.** A `.stream()` handler gets `signal`,
+  aborted when the client disconnects, cancels, unsubscribes, or aborts its own
+  `{ signal }`. Pass it to `pubsub.subscribe(topic, { signal })` or long work
+  won't stop. Batched calls (`batch: true`) stream back as each settles.
 - **`.ai()` is opt-in.** Only `.ai()`-marked procedures are exposed as tools.
 - **Other runtimes:** `toFetchHandler` (Hono/Bun/Deno/Workers), `toNodeHandler`
   (`node:http`), `toRestHandler` (plain REST), `toOpenApiDocument` (3.1 spec).

@@ -132,7 +132,11 @@ import type { AppRouter } from "@/server/router";
 const api = createClient<AppRouter>("");
 const sum = await api.add({ a: 40, b: 2 });            // number, inferred
 for await (const t of api.chat({ prompt: "hi" })) ...  // streaming, inferred
+api.chat({ prompt: "hi" }, { signal });                // abort a call or a stream
 ```
+
+Calls are real Promises (`.catch`, `.finally`, `Promise.race` all work) and stay
+lazy: nothing is sent until you await or iterate one.
 
 In a Server Component, skip HTTP entirely with `createCaller(appRouter, ctx)`.
 
@@ -433,13 +437,18 @@ agents with no parallel tool layer, kept to one source of truth, and able to bot
   see [Files in and out](#files-in-and-out).
 - **Real-time** — a subscription is a streaming procedure fed by a `PubSub`
   interface: `createInMemoryPubSub()` for dev, `createRedisPubSub(client)` for
-  multi-instance fan-out.
+  multi-instance fan-out. Stream handlers get a `signal` that aborts when the
+  client goes away (disconnect, cancel, unsubscribe) — pass it to
+  `subscribe(topic, { signal })`.
 - **External MCP tools** — `createMcpToolSource(client)` + `mergeToolsets(...)`
   blend remote tools into your agent loop.
 - **WebSocket** — `attachWs` / `connectWs` multiplex unary calls + subscriptions
   over one socket, same router.
 - **Request batching** — `createClient(url, { batch: true })` collects unary calls
-  made in the same tick into one HTTP round-trip (streaming stays direct).
+  made in the same tick into one HTTP round-trip (`__batch?p=a,b`, so logs and
+  mocks see the names). Results stream back as each call settles, so a slow call
+  never holds up a quick one; `{ batch: false }` sends a call alone, and
+  streaming stays direct.
 - **Standard Schema** — Zod (3 and 4), Valibot, ArkType — each type-checked in
   the test suite — or the built-in `s.*` validators:
   `string/number/integer/boolean/literal/enum/union/null/nullable/array/record/object/file`,

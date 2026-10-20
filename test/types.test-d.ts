@@ -6,6 +6,7 @@ import {
   file,
   urlFor,
   s,
+  type CallOptions,
   type RouterRecord,
 } from "../src/index.ts";
 
@@ -31,7 +32,16 @@ const router = {
 const c = createCaller(router, { db: "x" });
 
 // Unary: input + output inferred from the schema and handler.
-expectTypeOf(c.add).toEqualTypeOf<(input: { a: number; b: number }) => Promise<number>>();
+expectTypeOf(c.add).toEqualTypeOf<
+  (input: { a: number; b: number }, opts?: CallOptions) => Promise<number>
+>();
+expectTypeOf(c.add).parameter(1).toEqualTypeOf<CallOptions | undefined>();
+
+// Stream handlers get an AbortSignal that fires when the consumer goes away.
+route.stream(async function* ({ signal }) {
+  expectTypeOf(signal).toEqualTypeOf<AbortSignal>();
+  yield 1;
+});
 
 // Streaming: returns an AsyncIterable of the yielded element type.
 expectTypeOf(c.stream).returns.toEqualTypeOf<AsyncIterable<string>>();
@@ -79,7 +89,9 @@ const deep = {
   a: { b: { c: route.input(s.object({ x: s.number() })).handler(({ input }) => input.x) } },
 };
 const dc = createCaller(deep, { db: "x" });
-expectTypeOf(dc.a.b.c).toEqualTypeOf<(input: { x: number }) => Promise<number>>();
+expectTypeOf(dc.a.b.c).toEqualTypeOf<
+  (input: { x: number }, opts?: CallOptions) => Promise<number>
+>();
 
 // --- new combinators infer precise input types ------------------------------
 const combRouter = {

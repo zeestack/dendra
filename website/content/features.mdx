@@ -24,6 +24,16 @@ delivered as NDJSON over HTTP. Pair it with a pub/sub (`createInMemoryPubSub` or
 `createRedisPubSub`) for live subscriptions. On the client, `for await (…)` over
 the same typed method.
 
+```ts
+watch: route.stream(async function* ({ ctx, signal }) {
+  // `signal` aborts when the client disconnects, cancels or unsubscribes
+  for await (const ev of ctx.pubsub.subscribe("notes", { signal })) yield ev
+})
+
+const ac = new AbortController()
+for await (const ev of api.watch(undefined, { signal: ac.signal })) { /* … */ }
+```
+
 ## WebSocket transport
 
 `toNodeHandler` and a WS server expose the same procedures over WebSocket — the
@@ -122,7 +132,10 @@ const appRouter = { users: new UsersController(db) /* … */ }
 ## Request batching
 
 The typed client can batch concurrent unary calls into one HTTP request —
-transparent to your code.
+transparent to your code. `createClient(url, { batch: true })` sends same-tick
+calls to `__batch?p=a,b` (so logs and network mocks still see procedure names),
+and each result streams back as soon as it settles — a slow call never holds up
+a quick one. Pass `{ batch: false }` to send a call on its own.
 
 ## Agent helpers
 

@@ -85,12 +85,10 @@ const appRouter = {
 
     watch: route
       .input(s.object({ room: s.string() }))
-      .stream(async function* ({ input, ctx }) {
-        // ctx.signal aborts when the client disconnects — the subscription
+      .stream(async function* ({ input, ctx, signal }) {
+        // `signal` aborts when the client disconnects — the subscription
         // tears down instead of leaking.
-        for await (const ev of ctx.pubsub.subscribe(`counter:${input.room}`, {
-          signal: ctx.signal,
-        })) {
+        for await (const ev of ctx.pubsub.subscribe(`counter:${input.room}`, { signal })) {
           yield ev as { delta: number };
         }
       }),

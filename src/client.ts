@@ -1,11 +1,11 @@
 // The client is a `Proxy` typed as the server's router — no generated files.
 // Property access records a dotted path; calling it fires a request. The return
-// value is a lazy object that is BOTH a thenable (so `await client.foo(x)` works
+// value is a lazy object that is BOTH a Promise (so `await client.foo(x)` works
 // for unary) AND an async-iterable (so `for await (...of client.bar(x))` works
 // for streaming). TypeScript, via the `Client<R>` type, guides the caller to the
 // right usage; the runtime object happens to support both.
 
-import type { Client } from "./caller.ts";
+import { abortable, type CallOptions, type Client } from "./caller.ts";
 import type { ReadBrand } from "./core.ts";
 import { DendraClientError } from "./errors.ts";
 
@@ -16,7 +16,10 @@ export interface ClientOptions {
   prefix?: string;
   /**
    * Automatically batch unary calls made in the same tick into one HTTP request
-   * (POST <prefix>__batch). Streaming calls always go direct. Off by default.
+   * (POST <prefix>__batch?p=a,b). Results stream back as each call settles, so a
+   * slow call doesn't hold back the rest. Streaming calls and uploads always go
+   * direct; pass `{ batch: false }` as a call's options to send it alone. Off by
+   * default.
    */
   batch?: boolean;
 }
@@ -25,6 +28,11 @@ export interface ClientOptions {
 // send a custom header cross-site without a CORS preflight, so the server uses
 // it as CSRF proof on multipart uploads.
 const jsonHeaders = { "content-type": "application/json", "x-dendra": "1" };
+
+interface BatchReply {
+  result?: unknown;
+  error?: { code?: string; message?: string; details?: unknown };
+}
 
 interface BatchCall {
   path: string;
@@ -48,31 +56,49 @@ export function createClient<R extends object>(
     const calls = queue;
     queue = [];
     scheduled = false;
+    // Each call settles once, so the fallbacks below only reach calls the
+    // response never answered.
+    const settle = (c: BatchCall | undefined, r: BatchReply | undefined) => {
+      if (!c || !r) return;
+      if (r.error) c.reject(new DendraClientError(r.error));
+      else c.resolve(r.result);
+    };
     try {
-      const res = await doFetch(base + prefix + "__batch", {
+      // `?p=` names the procedures, so logs, rate limits and network mocks
+      // can still tell batched calls apart.
+      const names = calls.map((c) => encodeURIComponent(c.path)).join(",");
+      const res = await doFetch(base + prefix + "__batch?p=" + names, {
         method: "POST",
-        headers: { ...jsonHeaders, ...(opts.headers ?? {}) },
+        headers: { ...jsonHeaders, accept: "application/x-ndjson", ...(opts.headers ?? {}) },
         body: JSON.stringify(calls.map((c) => ({ path: c.path, input: c.input ?? null }))),
       });
-      const data = (await res.json()) as Array<{
-        result?: unknown;
-        error?: { code?: string; message?: string; details?: unknown };
-      }>;
-      calls.forEach((c, i) => {
-        const r = data[i];
-        if (r && r.error) c.reject(new DendraClientError(r.error));
-        else c.resolve(r ? r.result : undefined);
-      });
+      if (res.body && res.headers.get("content-type")?.startsWith("application/x-ndjson")) {
+        // One line per call, in the order they settle on the server.
+        for await (const line of readNdjson(res.body)) {
+          const r = line as BatchReply & { i: number };
+          settle(calls[r.i], r);
+        }
+      } else {
+        // An older server answers with the whole array; a failed request (e.g.
+        // createContext threw) with a single error envelope.
+        const data = (await res.json()) as BatchReply[] | BatchReply;
+        if (Array.isArray(data)) calls.forEach((c, i) => settle(c, data[i]));
+        else for (const c of calls) settle(c, data);
+      }
     } catch (e) {
       for (const c of calls) c.reject(e);
     }
+    const missing = { code: "INTERNAL", message: "The batch response had no result for this call" };
+    for (const c of calls) c.reject(new DendraClientError(missing));
   };
   const enqueue = (path: string, input: unknown) =>
     new Promise<unknown>((resolve, reject) => {
       queue.push({ path, input, resolve, reject });
       if (!scheduled) {
         scheduled = true;
-        queueMicrotask(flush);
+        // A macrotask, not a microtask: `await call` reaches `.then` a microtask
+        // late, so a microtask flush would split one tick across two batches.
+        setTimeout(flush, 0);
       }
     });
   // -----------------------------------------------------------------------
@@ -92,12 +118,14 @@ export function createClient<R extends object>(
       apply(_t, _this, args: unknown[]) {
         const dotted = path.join(".");
         const url = base + prefix + dotted;
+        const call = (args[1] ?? {}) as CallOptions;
         // Uploads go direct: a batch is one JSON body, which can't carry files.
         const batchUnary =
-          opts.batch && !hasBlob(args[0])
+          opts.batch && call.batch !== false && !hasBlob(args[0])
             ? (input: unknown) => enqueue(dotted, input)
             : undefined;
-        return lazyCall(doFetch, url, args[0], opts.headers, batchUnary);
+        const { signal } = call;
+        return lazyCall(doFetch, url, args[0], opts.headers, batchUnary, signal);
       },
     });
 
@@ -153,9 +181,11 @@ function lazyCall(
   input: unknown,
   headers?: Record<string, string>,
   batchUnary?: (input: unknown) => Promise<unknown>,
+  signal?: AbortSignal,
 ) {
-  const start = () =>
-    doFetch(
+  const start = () => {
+    signal?.throwIfAborted();
+    return doFetch(
       url,
       hasBlob(input)
         ? {
@@ -163,26 +193,27 @@ function lazyCall(
             method: "POST",
             headers: { "x-dendra": "1", ...(headers ?? {}) },
             body: toFormData(input as Record<string, unknown>),
+            signal,
           }
         : {
             method: "POST",
             headers: { ...jsonHeaders, ...(headers ?? {}) },
             body: JSON.stringify(input ?? null),
+            signal,
           },
     );
+  };
 
-  return {
+  return new Call(
     // Unary path: awaiting the call reads a single JSON envelope — or joins the
     // batch when batching is enabled.
-    then<TResult1 = unknown, TResult2 = never>(
-      onFulfilled?:
-        | ((value: unknown) => TResult1 | PromiseLike<TResult1>)
-        | null,
-      onRejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
-    ): Promise<TResult1 | TResult2> {
-      const result = batchUnary
-        ? batchUnary(input)
-        : start().then(async (res) => {
+    async () => {
+      // A batched call can't be pulled out of the batch, so an abort just stops
+      // waiting for it; a direct call's fetch is aborted too.
+      signal?.throwIfAborted();
+      if (batchUnary) return abortable(batchUnary(input), signal);
+      return abortable(
+        start().then(async (res) => {
             // A file response is the raw bytes, flagged by X-Dendra (not the
             // content type — a downloaded file can itself be JSON).
             if (res.ok && res.headers.get("x-dendra") === "file") return res.blob();
@@ -190,20 +221,22 @@ function lazyCall(
               result?: unknown;
               error?: { code?: string; message?: string; details?: unknown };
             };
-            if (data.error) throw new DendraClientError(data.error);
-            return data.result;
-          });
-      return result.then(onFulfilled, onRejected);
+          if (data.error) throw new DendraClientError(data.error);
+          return data.result;
+        }),
+        signal,
+      );
     },
     // Streaming path: iterating the call reads NDJSON frames. Breaking out of
-    // the `for await` runs the `finally`, which cancels the body — closing the
-    // connection so the server can tear the subscription down.
-    async *[Symbol.asyncIterator]() {
+    // the `for await` (or aborting the signal) cancels the body — closing the
+    // connection so the server can tear the subscription down. An abort then
+    // ends the loop by throwing the signal's reason.
+    async function* () {
       const res = await start();
       const body = res.body;
       if (!body) return;
       try {
-        for await (const obj of readNdjson(body)) {
+        for await (const obj of readNdjson(body, signal)) {
           if (
             obj &&
             typeof obj === "object" &&
@@ -215,17 +248,75 @@ function lazyCall(
           }
           yield obj;
         }
+        signal?.throwIfAborted();
       } finally {
         await body.cancel().catch(() => {});
       }
     },
-  };
+  );
+}
+
+// A call is a real Promise (so `.catch`, `.finally`, `Promise.race` and
+// `instanceof Promise` all work) that is ALSO async-iterable. It stays lazy:
+// nothing is sent until the first `.then` (which `await`, `.catch` and
+// `.finally` all go through) or until it's iterated — so iterating a stream
+// never fires the unary request too.
+class Call extends Promise<unknown> {
+  // Derived promises (`.then(...)` results) are plain Promises, not Calls.
+  static get [Symbol.species]() {
+    return Promise;
+  }
+  #run?: () => Promise<unknown>;
+  #settle?: [(v: unknown) => void, (e: unknown) => void];
+  #iterate: () => AsyncIterator<unknown>;
+
+  constructor(run: () => Promise<unknown>, iterate: () => AsyncIterator<unknown>) {
+    let settle!: [(v: unknown) => void, (e: unknown) => void];
+    super((resolve, reject) => {
+      settle = [resolve, reject];
+    });
+    this.#run = run;
+    this.#settle = settle;
+    this.#iterate = iterate;
+  }
+
+  override then<TResult1 = unknown, TResult2 = never>(
+    onFulfilled?: ((value: unknown) => TResult1 | PromiseLike<TResult1>) | null,
+    onRejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+  ): Promise<TResult1 | TResult2> {
+    const run = this.#run;
+    if (run) {
+      const [resolve, reject] = this.#settle!;
+      this.#run = this.#settle = undefined;
+      run().then(resolve, reject);
+    }
+    return super.then(onFulfilled, onRejected);
+  }
+
+  [Symbol.asyncIterator](): AsyncIterator<unknown> {
+    return this.#iterate();
+  }
 }
 
 async function* readNdjson(
   body: ReadableStream<Uint8Array>,
+  signal?: AbortSignal,
 ): AsyncIterable<unknown> {
   const reader = body.getReader();
+  // Cancelling ends a pending read with `done`, whatever the fetch did.
+  const onAbort = () => void reader.cancel(signal?.reason).catch(() => {});
+  signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    yield* readLines(reader);
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+    reader.releaseLock();
+  }
+}
+
+async function* readLines(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+): AsyncIterable<unknown> {
   const dec = new TextDecoder();
   let buf = "";
   for (;;) {

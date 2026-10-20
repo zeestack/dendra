@@ -33,7 +33,9 @@ let inference do the rest — never hand-write client types or `.d.ts`.
      return `file(body, { type, filename, inline? })` for downloads (client gets a
      `Blob`); `urlFor(api.x.get, input)` for `<img src>` (needs `.get()`).
      File-input procedures can't be `.ai()`.
-   - Streaming / real-time: `.stream(async function* ({ ctx }) { yield … })`.
+   - Streaming / real-time: `.stream(async function* ({ ctx, signal }) { yield … })`.
+     Pass `signal` to `ctx.pubsub.subscribe(topic, { signal })` so the stream stops
+     when the client goes away. Clients abort with `api.x(input, { signal })`.
    - Typed output (and OpenAPI response): `.output(schema)`.
    - Expose to an LLM/MCP as a tool: `.ai({ description: "…" })` (opt-in).
    - Keep the object `satisfies RouterRecord` — unless it contains a class
