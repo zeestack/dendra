@@ -1,9 +1,10 @@
 // `createCaller` = "RPC with no HTTP". It walks the router and returns a typed
 // facade whose methods invoke procedures in-process. This is what a Next Server
 // Component calls for zero-round-trip data loading, and what the AI tool
-// executor uses to run a tool. The `Client<R>` type below is the single mapped
+// executor uses to run a tool. The `Procedures` type below is the single mapped
 // type that makes the whole framework typesafe with no codegen: it reads the
-// router's shape and projects each procedure to a typed function.
+// router's shape and projects each procedure to a typed function — `Caller<R>`
+// with the handler's own types, `Client<R>` with what survives JSON.
 
 import type { Proc, ReadBrand } from "./core.ts";
 import { invokeStream, invokeUnary } from "./core.ts";
@@ -23,24 +24,104 @@ export interface CallOptions {
 // Recursion uses `object` (not the index-signature `RouterRecord`) so a class
 // instance used as a sub-router — which has no index signature — still maps. A
 // Proc is matched first; any other object recurses; primitives become `never`.
-export type Client<R> = {
+// `Wire` = results went through JSON, so their types are `Jsonify`d.
+type Procedures<R, Wire extends boolean> = {
   // Match the ctx slot with `any` so the conditional fires regardless of the
   // concrete context type (ctx is contravariant in `handler`).
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [K in keyof R]: R[K] extends Proc<any, infer In, infer Out, infer Kind>
     ? (Kind extends "stream"
-        ? (input: In, opts?: CallOptions) => AsyncIterable<Out>
-        : (input: In, opts?: CallOptions) => Promise<Out extends FileResult ? Blob : Out>) &
+        ? (input: In, opts?: CallOptions) => AsyncIterable<Result<Out, Wire>>
+        : (input: In, opts?: CallOptions) => Promise<
+            Out extends FileResult ? Blob : Result<Out, Wire>
+          >) &
         (R[K] extends ReadBrand ? ReadBrand : unknown)
     : R[K] extends object
-      ? Client<R[K]>
+      ? Procedures<R[K], Wire>
       : never;
 };
+
+type Result<Out, Wire extends boolean> = Wire extends true ? Jsonify<Out> : Out;
+
+/**
+ * The typed client over a wire (`createClient`, `createWsClient`): results are
+ * typed as what arrives after JSON — a `Date` is a `string`, see `Jsonify`.
+ */
+export type Client<R> = Procedures<R, true>;
+
+/** The in-process caller (`createCaller`): results keep the handler's own types. */
+export type Caller<R> = Procedures<R, false>;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Fn = (...args: any[]) => unknown;
+// Values JSON.stringify leaves out of objects (and turns into null in arrays).
+type Dropped = undefined | symbol | Fn;
+
+/**
+ * The type a value has after `JSON.stringify` → `JSON.parse`. `toJSON` wins
+ * (a `Date` becomes a `string`); `undefined`, function and symbol props are
+ * dropped (`T | undefined` props become optional); in arrays they become
+ * `null`; `Map`/`Set` become `{}`; class instances lose their methods.
+ */
+export type Jsonify<T> =
+  // `any` stays `any`, `unknown` stays `unknown`.
+  0 extends 1 & T
+    ? T
+    : unknown extends T
+      ? unknown
+      : JsonValue<T>;
+
+type JsonValue<T> = T extends { toJSON(...args: never[]): infer J }
+  ? Jsonify<J>
+  : T extends string | number | boolean | null
+    ? T
+    : T extends Dropped | void
+      ? undefined
+      : T extends bigint // JSON.stringify throws on these
+        ? never
+        : T extends ReadonlyMap<unknown, unknown> | ReadonlySet<unknown>
+          ? {}
+          : T extends readonly unknown[]
+            ? { [I in keyof T]: JsonElement<T[I]> }
+            : T extends object
+              ? JsonObject<T>
+              : never;
+
+// Distributes, so `string | undefined` elements become `string | null`.
+type JsonElement<E> = E extends Dropped ? null : Jsonify<E>;
+
+// Keys whose value can be left out: optional, or possibly undefined/a function.
+type MaybeKeys<T> = {
+  [K in keyof T]-?: string extends K
+    ? never
+    : number extends K
+      ? never
+      : {} extends Pick<T, K>
+        ? K
+        : [Extract<T[K], Dropped>] extends [never]
+          ? never
+          : K;
+}[keyof T];
+
+// Keys whose value is only ever dropped (undefined, a function, a symbol).
+type GoneKeys<T> = {
+  [K in keyof T]-?: [Exclude<T[K], Dropped>] extends [never] ? K : never;
+}[keyof T];
+
+type JsonObject<T> = Flatten<
+  {
+    [K in Exclude<keyof T, MaybeKeys<T> | GoneKeys<T> | symbol>]: Jsonify<T[K]>;
+  } & {
+    [K in Exclude<MaybeKeys<T>, GoneKeys<T> | symbol>]?: Jsonify<Exclude<T[K], Dropped>>;
+  }
+>;
+
+type Flatten<T> = { [K in keyof T]: T[K] } & {};
 
 export function createCaller<R extends object>(
   router: R,
   ctx: unknown = {},
-): Client<R> {
+): Caller<R> {
   const wrap = (node: unknown, path: string): unknown => {
     if (isProc(node)) {
       const site = { path, transport: "caller" as const };
@@ -65,7 +146,7 @@ export function createCaller<R extends object>(
     }
     return out;
   };
-  return wrap(router, "") as Client<R>;
+  return wrap(router, "") as Caller<R>;
 }
 
 /**
