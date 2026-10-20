@@ -42,7 +42,17 @@ client is unchanged.
 ## In-process caller
 
 In a Server Component, skip HTTP entirely: `createCaller(appRouter, ctx)` runs
-the procedure in-process with no round-trip and no serialization.
+the procedure in-process with no round-trip and no serialization — so a `Date`
+stays a `Date`. Over HTTP or WebSocket, client results are typed as what
+survives JSON (`Jsonify<T>`): the same `Date` is typed `string`.
+
+`dendra/next` turns errors into pages in a Server Component:
+
+```ts
+import { orPage } from 'dendra/next'
+// NOT_FOUND / BAD_REQUEST → notFound(); UNAUTHORIZED → redirect('/sign-in')
+const note = await orPage(caller.notes.get({ id }), { signIn: '/sign-in' })
+```
 
 ## Middleware & auth
 
@@ -140,8 +150,9 @@ a quick one. Pass `{ batch: false }` to send a call on its own.
 ## Agent helpers
 
 Opt-in peer-dep subpaths: `dendra/anthropic` (`runAgent` — the model↔tool loop),
-`dendra/react` (`useAssistant` — the chat thread + streaming), and
-`dendra/memory` (persistent recall). Use them, or bring your own loop/UI — the
+`dendra/react` (`useAssistant` — the chat thread + streaming),
+`dendra/memory` (persistent recall), and `dendra/next` (`orPage` — errors as
+Next pages). Use them, or bring your own loop/UI — the
 core tool-shaping primitives are enough on their own.
 
 ## Standard Schema

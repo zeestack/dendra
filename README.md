@@ -84,7 +84,8 @@ npm i dendra
 ```
 
 The core is zero-dependency. The optional helpers pull their own peers only if you
-use them: `npm i @anthropic-ai/sdk` for `dendra/anthropic`, `react` for `dendra/react`.
+use them: `npm i @anthropic-ai/sdk` for `dendra/anthropic`, `react` for `dendra/react`,
+`next` for `dendra/next`.
 
 **Define** once:
 
@@ -136,9 +137,19 @@ api.chat({ prompt: "hi" }, { signal });                // abort a call or a stre
 ```
 
 Calls are real Promises (`.catch`, `.finally`, `Promise.race` all work) and stay
-lazy: nothing is sent until you await or iterate one.
+lazy: nothing is sent until you await or iterate one. Results are typed as what
+survives JSON (`Jsonify<T>`): a handler returning a `Date` gives the client a
+`string`, and `undefined` props come back optional.
 
-In a Server Component, skip HTTP entirely with `createCaller(appRouter, ctx)`.
+In a Server Component, skip HTTP entirely with `createCaller(appRouter, ctx)` —
+no serialization, so results keep their real types (a `Date` stays a `Date`;
+the type is `Caller<AppRouter>`). `dendra/next` turns errors into pages:
+
+```ts
+import { orPage } from "dendra/next";
+// NOT_FOUND / BAD_REQUEST → notFound(); UNAUTHORIZED → redirect("/sign-in")
+const note = await orPage(caller.notes.get({ id }), { signIn: "/sign-in" });
+```
 
 ## The AI / MCP story
 

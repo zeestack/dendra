@@ -17,7 +17,7 @@ export type {
 export { createCaller } from "./caller.ts";
 export { file } from "./files.ts";
 export type { FileOptions, FileResult, FileBody } from "./files.ts";
-export type { CallOptions, Client } from "./caller.ts";
+export type { CallOptions, Caller, Client, Jsonify } from "./caller.ts";
 
 export { toFetchHandler, toNodeHandler, toRestHandler } from "./server.ts";
 export type { ServerOptions } from "./server.ts";
