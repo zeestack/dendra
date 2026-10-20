@@ -1,6 +1,6 @@
 // The client is a `Proxy` typed as the server's router — no generated files.
 // Property access records a dotted path; calling it fires a request. The return
-// value is a lazy object that is BOTH a thenable (so `await client.foo(x)` works
+// value is a lazy object that is BOTH a Promise (so `await client.foo(x)` works
 // for unary) AND an async-iterable (so `for await (...of client.bar(x))` works
 // for streaming). TypeScript, via the `Client<R>` type, guides the caller to the
 // right usage; the runtime object happens to support both.
@@ -171,16 +171,11 @@ function lazyCall(
           },
     );
 
-  return {
+  return new Call(
     // Unary path: awaiting the call reads a single JSON envelope — or joins the
     // batch when batching is enabled.
-    then<TResult1 = unknown, TResult2 = never>(
-      onFulfilled?:
-        | ((value: unknown) => TResult1 | PromiseLike<TResult1>)
-        | null,
-      onRejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
-    ): Promise<TResult1 | TResult2> {
-      const result = batchUnary
+    () =>
+      batchUnary
         ? batchUnary(input)
         : start().then(async (res) => {
             // A file response is the raw bytes, flagged by X-Dendra (not the
@@ -192,13 +187,11 @@ function lazyCall(
             };
             if (data.error) throw new DendraClientError(data.error);
             return data.result;
-          });
-      return result.then(onFulfilled, onRejected);
-    },
+          }),
     // Streaming path: iterating the call reads NDJSON frames. Breaking out of
     // the `for await` runs the `finally`, which cancels the body — closing the
     // connection so the server can tear the subscription down.
-    async *[Symbol.asyncIterator]() {
+    async function* () {
       const res = await start();
       const body = res.body;
       if (!body) return;
@@ -219,7 +212,49 @@ function lazyCall(
         await body.cancel().catch(() => {});
       }
     },
-  };
+  );
+}
+
+// A call is a real Promise (so `.catch`, `.finally`, `Promise.race` and
+// `instanceof Promise` all work) that is ALSO async-iterable. It stays lazy:
+// nothing is sent until the first `.then` (which `await`, `.catch` and
+// `.finally` all go through) or until it's iterated — so iterating a stream
+// never fires the unary request too.
+class Call extends Promise<unknown> {
+  // Derived promises (`.then(...)` results) are plain Promises, not Calls.
+  static get [Symbol.species]() {
+    return Promise;
+  }
+  #run?: () => Promise<unknown>;
+  #settle?: [(v: unknown) => void, (e: unknown) => void];
+  #iterate: () => AsyncIterator<unknown>;
+
+  constructor(run: () => Promise<unknown>, iterate: () => AsyncIterator<unknown>) {
+    let settle!: [(v: unknown) => void, (e: unknown) => void];
+    super((resolve, reject) => {
+      settle = [resolve, reject];
+    });
+    this.#run = run;
+    this.#settle = settle;
+    this.#iterate = iterate;
+  }
+
+  override then<TResult1 = unknown, TResult2 = never>(
+    onFulfilled?: ((value: unknown) => TResult1 | PromiseLike<TResult1>) | null,
+    onRejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
+  ): Promise<TResult1 | TResult2> {
+    const run = this.#run;
+    if (run) {
+      const [resolve, reject] = this.#settle!;
+      this.#run = this.#settle = undefined;
+      run().then(resolve, reject);
+    }
+    return super.then(onFulfilled, onRejected);
+  }
+
+  [Symbol.asyncIterator](): AsyncIterator<unknown> {
+    return this.#iterate();
+  }
 }
 
 async function* readNdjson(
