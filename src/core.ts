@@ -7,9 +7,11 @@
 import type {
   InferOutput,
   JSONSchema,
+  StandardIssue,
   StandardSchemaV1,
 } from "./schema.ts";
 import { DendraError, type ErrorCode } from "./errors.ts";
+import { objectShapeOf } from "./object-shape.ts";
 import { fileFields, fileMeta, isFileResult } from "./files.ts";
 
 export type ProcedureKind = "unary" | "stream";
@@ -150,6 +152,89 @@ function assertAiCompatible<Ctx, In>(s: State<Ctx, In>): void {
   );
 }
 
+// Chained `.input()`: the first schema can be anything; after that, both sides
+// must be objects. The earlier schema wins a shared key, matching the runtime —
+// a guard's checked value is never swapped out from under the handler.
+type ChainableInput<In> = [In] extends [void]
+  ? unknown
+  : In extends Record<string, unknown>
+    ? Record<string, unknown>
+    : never;
+type ChainedInput<In, O> = [In] extends [void]
+  ? O
+  : { [K in keyof (In & Omit<O, keyof In>)]: (In & Omit<O, keyof In>)[K] };
+
+// `b`'s keys added after `a`'s, never replacing one `a` already has.
+function withoutOverride<T>(a: Record<string, T>, b: Record<string, T>): Record<string, T> {
+  const out = { ...a };
+  for (const k of Object.keys(b)) if (!(k in out)) out[k] = b[k];
+  return out;
+}
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+// Merge a new input schema into the existing one. Two built-in `s.object`s
+// become one object (so `.strict()` checks the combined keys); anything else
+// runs both schemas on the raw input, reports all issues together, and merges
+// the outputs. The JSON schema combines whatever the parts publish.
+function extendInput(
+  prev: StandardSchemaV1,
+  prevJson: JSONSchema | undefined,
+  next: StandardSchemaV1,
+  nextJson: JSONSchema | undefined,
+): { inputSchema: StandardSchemaV1; inputJsonSchema?: JSONSchema } {
+  const a = objectShapeOf(prev);
+  const b = objectShapeOf(next);
+  if (a && b) {
+    const shape = withoutOverride(a.shape, b.shape);
+    const mode = [a.mode, b.mode].includes("strict")
+      ? "strict"
+      : [a.mode, b.mode].includes("passthrough")
+        ? "passthrough"
+        : "strip";
+    const merged = a.build(shape, mode);
+    return { inputSchema: merged, inputJsonSchema: merged.jsonSchema };
+  }
+  const inputSchema: StandardSchemaV1 = {
+    "~standard": {
+      version: 1,
+      vendor: "dendra",
+      async validate(raw) {
+        const results = [
+          await prev["~standard"].validate(raw),
+          await next["~standard"].validate(raw),
+        ];
+        const issues: StandardIssue[] = [];
+        const values: Record<string, unknown>[] = [];
+        for (const r of results) {
+          if (r.issues !== undefined) issues.push(...r.issues);
+          else if (isPlainObject(r.value)) values.push(r.value);
+          else issues.push({ message: "Chained input must be an object" });
+        }
+        if (issues.length) return { issues };
+        return { value: withoutOverride(values[0], values[1]) };
+      },
+    },
+  };
+  return { inputSchema, inputJsonSchema: mergeJsonSchemas(prevJson, nextJson) };
+}
+
+function mergeJsonSchemas(
+  a: JSONSchema | undefined,
+  b: JSONSchema | undefined,
+): JSONSchema | undefined {
+  const parts = [a, b].filter((p): p is JSONSchema => p !== undefined);
+  if (parts.length === 0) return undefined;
+  let properties: Record<string, JSONSchema> = {};
+  const required = new Set<string>();
+  for (const p of parts) {
+    properties = withoutOverride(properties, p.properties ?? {});
+    for (const k of p.required ?? []) required.add(k);
+  }
+  return { type: "object", properties, required: [...required] };
+}
+
 class Builder<Ctx, In, DOut = never, Rd extends boolean = false> {
   readonly state: State<Ctx, In>;
   constructor(state: State<Ctx, In>) {
@@ -219,13 +304,20 @@ class Builder<Ctx, In, DOut = never, Rd extends boolean = false> {
       ],
     });
   }
-  /** Attach an input schema. Any Standard Schema works (Zod/Valibot/built-in). */
-  input<S extends StandardSchemaV1>(schema: S) {
+  /**
+   * Attach an input schema. Any Standard Schema works (Zod/Valibot/built-in).
+   * Calling it again EXTENDS the input (both must be objects): every schema
+   * validates the call, and a `.use()` sees the input declared above it — so a
+   * shared guard can declare `{ workspaceId }` once, typed and validated.
+   */
+  input<S extends StandardSchemaV1<unknown, ChainableInput<In>>>(
+    schema: S,
+  ): Builder<Ctx, ChainedInput<In, InferOutput<S>>, DOut, Rd> {
     const jsonSchema = (schema as { jsonSchema?: JSONSchema }).jsonSchema;
-    return this.next<InferOutput<S>>({
-      inputSchema: schema as StandardSchemaV1<unknown, InferOutput<S>>,
-      inputJsonSchema: jsonSchema,
-    });
+    const s = this.state.inputSchema
+      ? extendInput(this.state.inputSchema, this.state.inputJsonSchema, schema, jsonSchema)
+      : { inputSchema: schema, inputJsonSchema: jsonSchema };
+    return this.next(s as Partial<State<Ctx, ChainedInput<In, InferOutput<S>>>>);
   }
   /**
    * Declare the response shape. Feeds OpenAPI AND constrains the handler's

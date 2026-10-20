@@ -260,6 +260,36 @@ tool runs through the same dispatch path, a procedure behind `.use(auth)` is
 authorization-guarded for the model too — it inherits the user's permissions, it
 can't bypass them.
 
+### Input a middleware needs (tenant guards)
+
+A `.use()` sees the input declared **above** it, already validated. So a guard
+declares the fields it checks once, and later `.input()` calls **extend** that
+input rather than replacing it:
+
+```ts
+const inWorkspace = authed
+  .input(s.object({ workspaceId: s.integer() }))
+  .use(({ ctx, input }) => {                       // input: { workspaceId: number }
+    if (!ctx.memberships.has(input.workspaceId)) throw new DendraError("FORBIDDEN", "Not a member");
+    return { workspaceId: input.workspaceId };
+  });
+
+export const appRouter = {
+  rename: inWorkspace
+    .input(s.object({ title: s.string() }))        // input: { workspaceId; title }
+    .handler(({ ctx, input }) => db.rename(ctx.workspaceId, input.title)),
+} satisfies RouterRecord;
+```
+
+- Every schema in the chain validates the call, and all issues come back in one
+  400. Chained schemas must produce objects; libraries can be mixed.
+- If two schemas declare the same key, the **earlier** one wins, so the handler
+  sees exactly the value the guard checked.
+- OpenAPI and tool schemas show one combined object. Two built-in `s.object`s
+  merge into one, so `.strict()` checks the combined keys. Other libraries don't
+  publish a JSON schema today, so only `s.*` parts appear there — and don't make
+  a non-`s.*` base schema strict, since it would reject the later fields.
+
 ### After-hooks (`.after()`) — audit, usage, metrics
 
 `.use()` runs before the handler; `.after()` runs once the call **settles** and

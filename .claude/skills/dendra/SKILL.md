@@ -70,6 +70,21 @@ const authed = route.use(({ ctx }) => {
 A tool behind `.use(auth)` is auth-guarded for the model too — it inherits the
 user's permissions.
 
+A guard that needs input (e.g. a tenant id) declares it before `.use()`; later
+`.input()` calls extend it rather than replace it:
+
+```ts
+const inWorkspace = authed
+  .input(s.object({ workspaceId: s.integer() }))
+  .use(({ ctx, input }) => {            // input typed + validated
+    if (!ctx.memberships.has(input.workspaceId)) throw new DendraError("FORBIDDEN", "No");
+    return { workspaceId: input.workspaceId };
+  });
+inWorkspace.input(s.object({ title: s.string() }))   // input: { workspaceId; title }
+```
+
+Chained schemas must be objects; the earlier one wins a shared key.
+
 Audit / usage: `.after(({ ctx, path, transport, ok, code, durationMs }) => …)`
 runs once a call settles, on every transport. It only sees calls that passed the
 `.use()`s before it — put it before auth to also record rejections. Log file
