@@ -6,6 +6,8 @@
 // so richer constraints here mean richer OpenAPI specs AND more accurate model
 // tool calls.
 
+import { registerObjectShape, type UnknownKeyMode } from "./object-shape.ts";
+
 /** The spec lets a path segment be a bare key or `{ key }` (Zod, Valibot, … use both). */
 export interface StandardPathSegment {
   readonly key: PropertyKey;
@@ -458,8 +460,6 @@ type ObjectOutput<Sh> = Simplify<
   }
 >;
 
-type UnknownKeyMode = "strip" | "strict" | "passthrough";
-
 export interface ObjectSchema<T> extends Schema<T> {
   /** Reject unknown keys instead of silently stripping them. */
   strict(): ObjectSchema<T>;
@@ -524,12 +524,16 @@ function objectSchema<Sh extends Record<string, Schema<unknown>>>(
       return objectSchema(shape, mode, d);
     },
   };
-  return {
-    ...self,
-    strict: () => objectSchema(shape, "strict", description),
-    passthrough: () => objectSchema(shape, "passthrough", description),
-    describe: (d) => objectSchema(shape, mode, d),
-  };
+  // Registered so chained `.input()` calls can merge two objects into one.
+  return registerObjectShape(
+    {
+      ...self,
+      strict: () => objectSchema(shape, "strict", description),
+      passthrough: () => objectSchema(shape, "passthrough", description),
+      describe: (d: string) => objectSchema(shape, mode, d),
+    },
+    { shape, mode, build: objectSchema },
+  );
 }
 
 export function object<Sh extends Record<string, Schema<unknown>>>(

@@ -90,6 +90,10 @@ become `notFound()` and UNAUTHORIZED a sign-in redirect.
   const authed = route.use(({ ctx }) => { if (!ctx.user) throw new DendraError("UNAUTHORIZED","…"); return { user: ctx.user }; });
   ```
   A tool behind `.use(auth)` is auth-guarded for the model too.
+- **Guards that need input** declare it first: `route.input(s.object({
+  workspaceId: s.integer() })).use(({ input }) => …)` — `input` is typed and
+  validated. A later `.input()` *extends* it (objects only; the earlier schema
+  wins a shared key). Don't re-parse raw input in a guard or repeat the field.
 - **Reads are `.get()`.** Only `.get()` procedures (path optional) answer GET;
   others get 405. POST must be JSON (415 otherwise). The client handles this.
 - **Files:** `s.file({ types, maxBytes })` in the input (handler gets a `File`;
