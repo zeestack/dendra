@@ -11,7 +11,12 @@
     "noEmit": true,
     "skipLibCheck": true,
     "verbatimModuleSyntax": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    // `next` has no exports map, so NodeNext can't see `next/navigation`; Next
+    // itself needs that exact specifier (it aliases it in Server Components).
+    "paths": {
+      "next/navigation": ["./node_modules/next/navigation.d.ts"]
+    }
   },
   "include": ["src", "examples", "test"],
   "exclude": ["node_modules", "examples/nextjs-app", "dist"]
