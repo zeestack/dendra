@@ -92,12 +92,14 @@ export function createWsSession(
         }
         const ac = new AbortController();
         subs.set(msg.id, ac);
+        // `ctx.signal` predates the handler's own `signal`; both abort together.
         const subCtx = { ...ctx, signal: ac.signal };
         void (async () => {
           try {
             for await (const value of invokeStream(proc, msg.input, subCtx, {
               path: msg.path,
               transport: "ws",
+              signal: ac.signal,
             })) {
               if (ac.signal.aborted) break;
               out({ id: msg.id, type: "next", value });

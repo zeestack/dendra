@@ -35,6 +35,8 @@ export interface CallSite {
   transport?: Transport;
   /** Part of a request batch (which, like WS and tools, can't carry files). */
   batch?: boolean;
+  /** Fires when the caller goes away (client disconnect, abort, unsubscribe). */
+  signal?: AbortSignal;
 }
 
 // File results are raw HTTP responses; transports that speak JSON frames can't
@@ -97,7 +99,11 @@ export interface Proc<
   readonly outputJsonSchema?: JSONSchema;
   readonly middlewares?: ReadonlyArray<AnyMiddleware>;
   readonly afterHooks?: ReadonlyArray<AfterEntry>;
-  readonly handler: (input: In, ctx: Ctx) => Promise<Out> | AsyncIterable<Out>;
+  readonly handler: (
+    input: In,
+    ctx: Ctx,
+    signal?: AbortSignal,
+  ) => Promise<Out> | AsyncIterable<Out>;
   // Phantom carrier so inference can recover In/Out even when erased elsewhere.
   readonly _types?: { in: In; out: Out };
 }
@@ -258,9 +264,13 @@ class Builder<Ctx, In, DOut = never, Rd extends boolean = false> {
       handler: async (input: In, ctx: Ctx) => fn({ input, ctx }),
     } as Branded<Proc<Ctx, In, [DOut] extends [never] ? Awaited<Out> : DOut, "unary">, Rd>;
   }
-  /** Streaming procedure: returns an async iterable of elements. */
+  /**
+   * Streaming procedure: returns an async iterable of elements. `signal` aborts
+   * when the consumer goes away — pass it to `pubsub.subscribe` (or check it)
+   * so a long-lived subscription stops as soon as the client does.
+   */
   stream<Out>(
-    fn: (o: { input: In; ctx: Ctx }) => AsyncIterable<Out>,
+    fn: (o: { input: In; ctx: Ctx; signal: AbortSignal }) => AsyncIterable<Out>,
   ): Branded<Proc<Ctx, In, Out, "stream">, Rd> {
     const s = this.state;
     assertAiCompatible(s);
@@ -276,7 +286,8 @@ class Builder<Ctx, In, DOut = never, Rd extends boolean = false> {
       outputJsonSchema: s.outputJsonSchema,
       middlewares: s.middlewares,
       afterHooks: s.afterHooks,
-      handler: (input: In, ctx: Ctx) => fn({ input, ctx }),
+      handler: (input: In, ctx: Ctx, signal?: AbortSignal) =>
+        fn({ input, ctx, signal: signal ?? new AbortController().signal }),
     } as Branded<Proc<Ctx, In, Out, "stream">, Rd>;
   }
 }
@@ -407,7 +418,8 @@ export async function invokeUnary(
 
 /**
  * Run a streaming procedure: validate, run middleware, yield, then after-hooks
- * once the stream ends (a consumer stopping early counts as success).
+ * once the stream ends (a consumer stopping early counts as success). The
+ * handler's signal aborts when `site.signal` does, or when the consumer stops.
  */
 export async function* invokeStream(
   proc: AnyProc,
@@ -419,13 +431,19 @@ export async function* invokeStream(
   const started = Date.now();
   const seen: unknown[] = [];
   let failure: { error: unknown } | undefined;
+  const ac = new AbortController();
+  const stop = () => ac.abort(site.signal?.reason);
+  if (site.signal?.aborted) stop();
+  else site.signal?.addEventListener("abort", stop, { once: true });
   try {
     const ctx2 = await runMiddleware(proc, input, ctx, seen);
-    yield* proc.handler(input, ctx2) as AsyncIterable<unknown>;
+    yield* proc.handler(input, ctx2, ac.signal) as AsyncIterable<unknown>;
   } catch (error) {
     failure = { error };
     throw error;
   } finally {
+    site.signal?.removeEventListener("abort", stop);
+    ac.abort();
     await runAfterHooks(
       proc,
       site,

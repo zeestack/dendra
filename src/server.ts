@@ -6,7 +6,7 @@
 // that happen after headers are already sent.
 
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { AnyProc, HttpMethod, RouterRecord } from "./core.ts";
+import type { AnyProc, CallSite, HttpMethod, RouterRecord } from "./core.ts";
 import { invokeStream, invokeUnary, resolveProc } from "./core.ts";
 import type { JSONSchema } from "./schema.ts";
 import { DendraError } from "./errors.ts";
@@ -195,7 +195,7 @@ export function toFetchHandler<Ctx>(
     const site = { path: dotted, transport: "rpc" as const };
     try {
       if (proc.kind === "stream") {
-        return ndjsonResponse(invokeStream(proc, raw, ctx, site));
+        return streamResponse(proc, raw, ctx, site, req);
       }
       const result = await invokeUnary(proc, raw, ctx, site);
       if (isFileResult(result)) return fileResponse(result, req);
@@ -213,11 +213,14 @@ export function toNodeHandler<Ctx>(
   const handler = toFetchHandler(router, opts);
   return async (req: IncomingMessage, res: ServerResponse) => {
     const method = req.method ?? "GET";
-    // Tie an AbortSignal to the socket closing, so a client that disconnects
-    // (or cancels a stream) aborts the request — handlers read `req.signal`
-    // (via createContext) to stop subscriptions and long work.
+    // Tie an AbortSignal to the client going away, so a disconnect (or a
+    // cancelled stream) aborts the request and stops subscriptions. Listen on
+    // `res`, not `req`: since Node 16 `req` "close" fires once the body has been
+    // read, while the response may still be streaming.
     const controller = new AbortController();
-    req.on("close", () => controller.abort());
+    res.on("close", () => {
+      if (!res.writableFinished) controller.abort();
+    });
     const request = new Request("http://localhost" + (req.url ?? "/"), {
       method,
       headers: req.headers as Record<string, string>,
@@ -391,7 +394,7 @@ export function toRestHandler<Ctx>(
     const site = { path: matched.name, transport: "rest" as const };
     try {
       if (matched.proc.kind === "stream") {
-        return ndjsonResponse(invokeStream(matched.proc, input, ctx, site));
+        return streamResponse(matched.proc, input, ctx, site, req);
       }
       const result = await invokeUnary(matched.proc, input, ctx, site);
       if (isFileResult(result)) return fileResponse(result, req);
@@ -465,14 +468,42 @@ function errorToResponse(e: unknown): Response {
   return jsonResponse({ error: errorBody(e) }, status);
 }
 
-function ndjsonResponse(iterable: AsyncIterable<unknown>): Response {
+// A stream ends when the request is aborted (the runtime noticed the client
+// leave) or the response body is cancelled (the reader stopped) — whichever
+// comes first aborts the handler's signal.
+function streamResponse(
+  proc: AnyProc,
+  raw: unknown,
+  ctx: unknown,
+  site: CallSite,
+  req: Request,
+): Response {
+  const ac = new AbortController();
+  const stop = () => ac.abort();
+  if (req.signal.aborted) stop();
+  else req.signal.addEventListener("abort", stop, { once: true });
+  const frames = invokeStream(proc, raw, ctx, { ...site, signal: ac.signal });
+  return ndjsonResponse(frames, () => {
+    req.signal.removeEventListener("abort", stop);
+    stop();
+  });
+}
+
+// Pull-based, so a slow reader applies backpressure to the generator. On
+// cancel, `onCancel` aborts the handler (waking a subscription that's waiting
+// on its signal) and `return()` ends the generator, running its `finally`.
+function ndjsonResponse(iterable: AsyncIterable<unknown>, onCancel: () => void): Response {
+  const it = iterable[Symbol.asyncIterator]();
+  let cancelled = false;
   const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
+    async pull(controller) {
       try {
-        for await (const chunk of iterable) {
-          controller.enqueue(enc.encode(JSON.stringify(chunk) + "\n"));
-        }
+        const { done, value } = await it.next();
+        if (cancelled) return;
+        if (done) controller.close();
+        else controller.enqueue(enc.encode(JSON.stringify(value) + "\n"));
       } catch (e) {
+        if (cancelled) return;
         const err =
           e instanceof DendraError
             ? { code: e.code, message: e.message }
@@ -481,9 +512,13 @@ function ndjsonResponse(iterable: AsyncIterable<unknown>): Response {
                 message: e instanceof Error ? e.message : "stream error",
               };
         controller.enqueue(enc.encode(JSON.stringify({ $error: err }) + "\n"));
-      } finally {
         controller.close();
       }
+    },
+    async cancel() {
+      cancelled = true;
+      onCancel();
+      await it.return?.();
     },
   });
   return new Response(stream, {

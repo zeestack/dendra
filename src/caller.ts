@@ -9,6 +9,12 @@ import type { Proc, ReadBrand } from "./core.ts";
 import { invokeStream, invokeUnary } from "./core.ts";
 import { isFileResult, toBlob, type FileResult } from "./files.ts";
 
+/** Per-call options, the optional second argument of every procedure call. */
+export interface CallOptions {
+  /** Abort the call: a pending result rejects, and a stream ends, with the reason. */
+  signal?: AbortSignal;
+}
+
 // Recursion uses `object` (not the index-signature `RouterRecord`) so a class
 // instance used as a sub-router — which has no index signature — still maps. A
 // Proc is matched first; any other object recurses; primitives become `never`.
@@ -18,8 +24,8 @@ export type Client<R> = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [K in keyof R]: R[K] extends Proc<any, infer In, infer Out, infer Kind>
     ? (Kind extends "stream"
-        ? (input: In) => AsyncIterable<Out>
-        : (input: In) => Promise<Out extends FileResult ? Blob : Out>) &
+        ? (input: In, opts?: CallOptions) => AsyncIterable<Out>
+        : (input: In, opts?: CallOptions) => Promise<Out extends FileResult ? Blob : Out>) &
         (R[K] extends ReadBrand ? ReadBrand : unknown)
     : R[K] extends object
       ? Client<R[K]>
@@ -34,11 +40,17 @@ export function createCaller<R extends object>(
     if (isProc(node)) {
       const site = { path, transport: "caller" as const };
       if (node.kind === "stream") {
-        return (input: unknown) => invokeStream(node, input, ctx, site);
+        return async function* (input: unknown, opts?: CallOptions) {
+          const signal = opts?.signal;
+          yield* invokeStream(node, input, ctx, { ...site, signal });
+          // The handler stopped because of the abort: say so, like the client.
+          signal?.throwIfAborted();
+        };
       }
       // A file comes back as a Blob, matching what the HTTP client returns.
-      return async (input: unknown) => {
-        const out = await invokeUnary(node, input, ctx, site);
+      return async (input: unknown, opts?: CallOptions) => {
+        opts?.signal?.throwIfAborted();
+        const out = await abortable(invokeUnary(node, input, ctx, site), opts?.signal);
         return isFileResult(out) ? toBlob(out) : out;
       };
     }
@@ -49,6 +61,21 @@ export function createCaller<R extends object>(
     return out;
   };
   return wrap(router, "") as Client<R>;
+}
+
+/**
+ * Settle with `p`, or reject with the signal's reason if it aborts first. The
+ * work itself isn't stopped (unary handlers take no signal) — the caller just
+ * stops waiting for it.
+ */
+export function abortable<T>(p: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return p;
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    if (signal.aborted) return onAbort();
+    signal.addEventListener("abort", onAbort, { once: true });
+    p.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
 }
 
 function isProc(

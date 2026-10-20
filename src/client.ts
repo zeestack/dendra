@@ -5,7 +5,7 @@
 // for streaming). TypeScript, via the `Client<R>` type, guides the caller to the
 // right usage; the runtime object happens to support both.
 
-import type { Client } from "./caller.ts";
+import { abortable, type CallOptions, type Client } from "./caller.ts";
 import type { ReadBrand } from "./core.ts";
 import { DendraClientError } from "./errors.ts";
 
@@ -97,7 +97,8 @@ export function createClient<R extends object>(
           opts.batch && !hasBlob(args[0])
             ? (input: unknown) => enqueue(dotted, input)
             : undefined;
-        return lazyCall(doFetch, url, args[0], opts.headers, batchUnary);
+        const { signal } = (args[1] ?? {}) as CallOptions;
+        return lazyCall(doFetch, url, args[0], opts.headers, batchUnary, signal);
       },
     });
 
@@ -153,9 +154,11 @@ function lazyCall(
   input: unknown,
   headers?: Record<string, string>,
   batchUnary?: (input: unknown) => Promise<unknown>,
+  signal?: AbortSignal,
 ) {
-  const start = () =>
-    doFetch(
+  const start = () => {
+    signal?.throwIfAborted();
+    return doFetch(
       url,
       hasBlob(input)
         ? {
@@ -163,21 +166,27 @@ function lazyCall(
             method: "POST",
             headers: { "x-dendra": "1", ...(headers ?? {}) },
             body: toFormData(input as Record<string, unknown>),
+            signal,
           }
         : {
             method: "POST",
             headers: { ...jsonHeaders, ...(headers ?? {}) },
             body: JSON.stringify(input ?? null),
+            signal,
           },
     );
+  };
 
   return new Call(
     // Unary path: awaiting the call reads a single JSON envelope — or joins the
     // batch when batching is enabled.
-    () =>
-      batchUnary
-        ? batchUnary(input)
-        : start().then(async (res) => {
+    async () => {
+      // A batched call can't be pulled out of the batch, so an abort just stops
+      // waiting for it; a direct call's fetch is aborted too.
+      signal?.throwIfAborted();
+      if (batchUnary) return abortable(batchUnary(input), signal);
+      return abortable(
+        start().then(async (res) => {
             // A file response is the raw bytes, flagged by X-Dendra (not the
             // content type — a downloaded file can itself be JSON).
             if (res.ok && res.headers.get("x-dendra") === "file") return res.blob();
@@ -185,18 +194,22 @@ function lazyCall(
               result?: unknown;
               error?: { code?: string; message?: string; details?: unknown };
             };
-            if (data.error) throw new DendraClientError(data.error);
-            return data.result;
-          }),
+          if (data.error) throw new DendraClientError(data.error);
+          return data.result;
+        }),
+        signal,
+      );
+    },
     // Streaming path: iterating the call reads NDJSON frames. Breaking out of
-    // the `for await` runs the `finally`, which cancels the body — closing the
-    // connection so the server can tear the subscription down.
+    // the `for await` (or aborting the signal) cancels the body — closing the
+    // connection so the server can tear the subscription down. An abort then
+    // ends the loop by throwing the signal's reason.
     async function* () {
       const res = await start();
       const body = res.body;
       if (!body) return;
       try {
-        for await (const obj of readNdjson(body)) {
+        for await (const obj of readNdjson(body, signal)) {
           if (
             obj &&
             typeof obj === "object" &&
@@ -208,6 +221,7 @@ function lazyCall(
           }
           yield obj;
         }
+        signal?.throwIfAborted();
       } finally {
         await body.cancel().catch(() => {});
       }
@@ -259,8 +273,23 @@ class Call extends Promise<unknown> {
 
 async function* readNdjson(
   body: ReadableStream<Uint8Array>,
+  signal?: AbortSignal,
 ): AsyncIterable<unknown> {
   const reader = body.getReader();
+  // Cancelling ends a pending read with `done`, whatever the fetch did.
+  const onAbort = () => void reader.cancel(signal?.reason).catch(() => {});
+  signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    yield* readLines(reader);
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+    reader.releaseLock();
+  }
+}
+
+async function* readLines(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+): AsyncIterable<unknown> {
   const dec = new TextDecoder();
   let buf = "";
   for (;;) {

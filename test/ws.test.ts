@@ -40,3 +40,41 @@ describe("WebSocket transport (loopback)", () => {
     expect(out).toEqual([0, 1, 2]);
   });
 });
+
+describe("WebSocket subscriptions stop their handler", () => {
+  function waitingRouter(state: { aborted: boolean }) {
+    return {
+      watch: route.stream(async function* ({ signal }) {
+        yield "ready";
+        await new Promise<void>((r) => signal.addEventListener("abort", () => r()));
+        state.aborted = true;
+      }),
+    } satisfies RouterRecord;
+  }
+
+  function loopback(r: object) {
+    const client = createWsClient<ReturnType<typeof waitingRouter>>((d) =>
+      queueMicrotask(() => session.handleMessage(d)),
+    );
+    const session = createWsSession(r, (d) => queueMicrotask(() => client.receive(d)), {});
+    return { client, session };
+  }
+
+  it("on unsubscribe (breaking out of the loop)", async () => {
+    const state = { aborted: false };
+    const { client } = loopback(waitingRouter(state));
+    for await (const _ of client.api.watch()) break;
+    await new Promise((r) => setTimeout(r, 10));
+    expect(state.aborted).toBe(true);
+  });
+
+  it("when the socket closes", async () => {
+    const state = { aborted: false };
+    const { client, session } = loopback(waitingRouter(state));
+    const it = client.api.watch()[Symbol.asyncIterator]();
+    await it.next();
+    session.handleClose();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(state.aborted).toBe(true);
+  });
+});
