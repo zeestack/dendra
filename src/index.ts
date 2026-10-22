@@ -82,8 +82,8 @@ export type {
   McpToolSourceOptions,
 } from "./mcp.ts";
 
-export { createInMemoryPubSub } from "./pubsub.ts";
-export type { PubSub } from "./pubsub.ts";
+export { createInMemoryPubSub, createPubSub } from "./pubsub.ts";
+export type { PubSub, PubSubTransport } from "./pubsub.ts";
 export { createRedisPubSub } from "./redis-pubsub.ts";
 export type { RedisPubSubClient } from "./redis-pubsub.ts";
 export { createPgPubSub } from "./pg-pubsub.ts";
