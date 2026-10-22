@@ -9,7 +9,8 @@
 // Each process holds ONE listening connection (taken from the pool on the first
 // subscribe, or by `listen()`), LISTENs on one channel, and fans messages out
 // locally by topic. If that connection drops it reconnects with backoff;
-// messages sent while it was down are lost, as with any pub/sub.
+// messages sent while it was down are lost, as with any pub/sub. One process's
+// messages arrive in the order it published them.
 //
 // Every message travels as `{ "topic": …, "message": … }` JSON on that channel,
 // so a trigger publishes with:
@@ -78,6 +79,7 @@ export function createPgPubSub(pool: PgPool, opts: PgPubSubOptions = {}): PgPubS
   let starting: Promise<void> | null = null;
   let closed = false;
   let cancelWait: (() => void) | null = null;
+  let queue: Promise<void> = Promise.resolve();
 
   const wait = (ms: number) =>
     new Promise<void>((resolve) => {
@@ -154,7 +156,9 @@ export function createPgPubSub(pool: PgPool, opts: PgPubSubOptions = {}): PgPubS
           `[dendra] pg pubsub: message for '${topic}' is ${bytes} bytes; NOTIFY allows ${MAX_PAYLOAD_BYTES}. Publish an id and load the rest.`,
         );
       }
-      const sent = pool.query("SELECT pg_notify($1, $2)", [channel, payload]).then(() => {});
+      // One at a time: pooled queries race, and order matters (running → succeeded).
+      const sent = queue.then(() => pool.query("SELECT pg_notify($1, $2)", [channel, payload])).then(() => {});
+      queue = sent.catch(() => {});
       sent.catch(report);
       return sent;
     },

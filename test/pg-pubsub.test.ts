@@ -195,6 +195,18 @@ describe.skipIf(!url)("createPgPubSub (Postgres)", async () => {
     await Promise.all([one.close(), two.close()]);
   });
 
+  it("keeps one publisher's messages in order", async () => {
+    const ps = createPgPubSub(newPool(), { channel: "dendra_order" }); // apart from the reconnect test's LISTEN count
+    const sent = Array.from({ length: 20 }, (_, i) => i);
+    const sub = take(ps, "order", sent.length);
+    await ps.listen();
+    for (const i of sent) void ps.publish("order", i); // not awaited, like a handler
+    await sub.done;
+
+    expect(sub.out).toEqual(sent);
+    await ps.close();
+  });
+
   it("reconnects after the server kills the listening connection", async () => {
     const pool = newPool();
     const ps = createPgPubSub(pool, { backoff: { initialMs: 10 }, onError: () => {} });
