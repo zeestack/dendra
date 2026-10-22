@@ -114,6 +114,11 @@ become `notFound()` and UNAUTHORIZED a sign-in redirect.
   won't stop. Multi-instance pub/sub: `createRedisPubSub(client)` or
   `createPgPubSub(pool)` (LISTEN/NOTIFY; messages under 8000 bytes — publish
   ids). Batched calls (`batch: true`) stream back as each settles.
+- **Long work goes in a job,** not `after()`: `jobs.define(name, { input, run, key,
+  retries })`, then `route.….background(job, map?)` returns `{ jobId }` and
+  `job.watch(jobId, { signal })` streams status. A job's ctx comes from
+  `createJobs({ context })`, never the request — pass tenant/user ids via `map`.
+  Call `jobs.start()` in processes that run jobs.
 - **`.ai()` is opt-in.** Only `.ai()`-marked procedures are exposed as tools.
 - **Other runtimes:** `toFetchHandler` (Hono/Bun/Deno/Workers), `toNodeHandler`
   (`node:http`), `toRestHandler` (plain REST), `toOpenApiDocument` (3.1 spec).

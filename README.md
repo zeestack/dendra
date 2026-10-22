@@ -378,6 +378,69 @@ can open one to your server with the user's cookies. dendra receives an
 already-open socket (`attachWs`), so check the upgrade request's `Origin`
 against your allowed origins before you accept it.
 
+## Background jobs
+
+Long work (an AI call, an export) shouldn't hang off a request or vanish in a
+deploy. Define a **job**, enqueue it from a procedure, and stream its status:
+
+```ts
+import { createJobs, createPgJobStore } from "dendra";
+
+const store = createPgJobStore(pool);     // or createInMemoryJobStore() in dev
+export const jobs = createJobs({
+  store,
+  pubsub,                                 // status events go out here
+  context: () => ({ db }),                // the ctx jobs run with — never the request's
+});
+
+export const summarize = jobs.define("summarize", {
+  input: s.object({ docId: s.string(), workspaceId: s.integer() }),
+  key: (input) => input.docId,            // one queued-or-running job per doc
+  retries: 3,                             // backoff 1 s, 2 s, 4 s … (capped at 60 s)
+  concurrency: 2,                         // per process
+  run: async ({ input, ctx, job }) => {
+    await job.progress({ step: "reading" });
+    return ctx.db.summaries.create(input, { signal: job.signal });
+  },
+});
+
+jobs.start(); // in each process that should run jobs (await jobs.stop() on shutdown)
+
+const appRouter = {
+  summarize: inWorkspace                  // the guard from the section above
+    .input(s.object({ docId: s.string() }))
+    .background(summarize, ({ input, ctx }) => ({ docId: input.docId, workspaceId: ctx.workspaceId })),
+  // → { jobId }, right away, after validation and the guards.
+
+  job: inWorkspace
+    .input(s.object({ jobId: s.string() }))
+    .use(async ({ input, ctx }) => {
+      const job = await store.get(input.jobId); // the full record, input included
+      if ((job?.input as { workspaceId?: number })?.workspaceId !== ctx.workspaceId)
+        throw new DendraError("NOT_FOUND", "No such job");
+    })
+    .stream(({ input, signal }) => summarize.watch(input.jobId, { signal })),
+  // → the job's state now, then each change, ending at "succeeded" or "failed".
+};
+```
+
+- **Named, not path-bound.** A queued job finds its handler by name, so renaming a
+  route doesn't orphan it.
+- **Own ctx.** After a crash another process runs the job, so it gets `context()`,
+  not the request's ctx. Pass what it needs (workspace, user id) through `map`.
+- **`watch` doesn't check access.** Job ids are random UUIDs, but guard the
+  procedure anyway, as above: `store.get(id)` returns the job's input to check.
+- **Survives crashes.** A worker holds a lease on a running job and renews it; if
+  the process dies, the lease runs out and another worker retries. `stop()`
+  aborts `job.signal` and requeues running jobs without using an attempt.
+- **Snapshots:** `{ id, name, status, attempt, maxAttempts, progress, result, error }`,
+  where `status` is `"queued" | "running" | "succeeded" | "failed"` and `error` is
+  `{ code, message }`. A retrying job is `"queued"` with the last error.
+- **Postgres store:** `await store.setup()` creates `dendra_jobs` (or copy
+  `store.schema` into a migration). Workers claim with `FOR UPDATE SKIP LOCKED`,
+  so any number of processes share the queue. Finished rows stay until you
+  delete them.
+
 ## Class-based controllers (NestJS-style, no decorators)
 
 Prefer classes for grouping and dependency injection? A controller is just a
@@ -476,6 +539,9 @@ agents with no parallel tool layer, kept to one source of truth, and able to bot
   `.get()` with no path marks an RPC read — the only procedures that answer GET.
 - **Files** — `s.file()` uploads, `file()` downloads, `urlFor()` for `<img src>`;
   see [Files in and out](#files-in-and-out).
+- **Background jobs** — `jobs.define()` + `.background()` → `{ jobId }`, with
+  retries, a per-key lock, and status over the pub/sub; see
+  [Background jobs](#background-jobs).
 - **Real-time** — a subscription is a streaming procedure fed by a `PubSub`
   interface: `createInMemoryPubSub()` for dev, `createRedisPubSub(client)` or
   `createPgPubSub(pool)` (Postgres LISTEN/NOTIFY, see below) for multi-instance

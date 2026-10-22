@@ -94,6 +94,23 @@ export type {
   PgListenClient,
   PgNotification,
 } from "./pg-pubsub.ts";
+export { createJobs, createInMemoryJobStore } from "./jobs.ts";
+export type {
+  Jobs,
+  JobsOptions,
+  Job,
+  JobOptions,
+  JobHandle,
+  JobSnapshot,
+  JobStatus,
+  JobError,
+  JobStore,
+  JobRecord,
+  NewJob,
+  JobSettlement,
+} from "./jobs.ts";
+export { createPgJobStore } from "./pg-job-store.ts";
+export type { PgJobStore, PgQueryable } from "./pg-job-store.ts";
 
 export { DendraError, DendraClientError } from "./errors.ts";
 export type { ErrorCode } from "./errors.ts";
