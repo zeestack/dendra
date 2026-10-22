@@ -76,7 +76,7 @@ Each item links the issue with the evidence.
 - [ ] ⭐ **Postgres pub/sub** ([#6](https://github.com/zeestack/dendra/issues/6)) — promoted from Field requests.
   question-tool's `src/lib/pg-pubsub.ts` (one LISTEN connection per process, reconnect, `{ topic, message }`
   on one channel, triggers can publish) is a tested starting point.
-- [ ] ⭐ **Background jobs** ([#7](https://github.com/zeestack/dendra/issues/7)) — promoted from Field requests:
+- [x] ⭐ **Background jobs** ([#7](https://github.com/zeestack/dendra/issues/7)) — promoted from Field requests:
   `.background()` → `{ jobId }`, retries with backoff, one running job per key, a concurrency cap per job name,
   status published on the pub/sub; in-process and Postgres stores.
 - [ ] **Job status on the client** — a hook that follows a job over the subscription instead of polling
@@ -265,7 +265,7 @@ has to step outside dendra to stay safe.
   the handler runs. _Overlaps MCP annotations + the 1.0 security review._
 
 ### Should have
-- [ ] **Background jobs** _(scheduled for 0.9, [#7](https://github.com/zeestack/dendra/issues/7))_ — `.background(handler)` → `{ jobId }` with status /
+- [x] **Background jobs** _(0.9, [#7](https://github.com/zeestack/dendra/issues/7))_ — `.background(handler)` → `{ jobId }` with status /
   progress / result / error, one-running-job-per-key, a pluggable store (Postgres),
   a progress subscription, and Next.js `after()`.
 - [ ] **Postgres pub/sub** _(scheduled for 0.9, [#6](https://github.com/zeestack/dendra/issues/6))_ — `createPostgresPubSub(pool)` over `LISTEN/NOTIFY`,
