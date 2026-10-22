@@ -121,7 +121,7 @@ function toRequest(req: WsUpgradeRequest): Request {
   return new Request(`http://${host}${req.url ?? "/"}`, { method: "GET", headers });
 }
 
-export function attachWsServer<Ctx extends Record<string, unknown>>(
+export function attachWsServer<Ctx extends object>(
   wss: WsServerLike,
   router: object,
   opts: WsServerOptions<Ctx>,
@@ -214,7 +214,7 @@ export function attachWsServer<Ctx extends Record<string, unknown>>(
       if (ws.bufferedAmount > maxBufferedBytes) return ws.close(1013, "Try Again Later");
       ws.send(d);
     };
-    const session = createWsSession(router, send, ctx, { maxSubscriptions });
+    const session = createWsSession(router, send, ctx as Record<string, unknown>, { maxSubscriptions });
     ws.on("message", (data) => {
       if (checkSize && byteLength(data) > maxPayload) return ws.close(1009, "Message Too Big");
       session.handleMessage(String(data));

@@ -99,7 +99,8 @@ metadata, never file contents.
 CSRF: the server only takes POST as JSON (or dendra multipart with `X-Dendra: 1`)
 and GET for `.get()` reads. Hand-written `fetch` calls must send
 `Content-Type: application/json`. Don't enable `allowFormPosts` without a CSRF
-token check, and check `Origin` before `attachWs`.
+token check. Serve WebSockets with `attachWsServer` (it checks `Origin`);
+check it yourself only if you use bare `attachWs`.
 
 ## AI / MCP
 

@@ -1,11 +1,15 @@
 // Proof for the two added features:
 //   1. REST front-end + OpenAPI document (same router, resource-style URLs)
 //   2. WebSocket transport (unary + multiplexed subscriptions over one socket)
+//   3. A real socket server with attachWsServer (Origin check, context per connection)
 // Run with: node examples/rest-ws-demo.ts
 
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import WebSocket, { WebSocketServer } from "ws";
 import {
+  attachWsServer,
+  connectWs,
   initDendra,
   toRestHandler,
   toNodeHandler,
@@ -182,6 +186,43 @@ session.handleClose();
 
 console.log("   room A ticks =>", roomA);
 console.log("   room B ticks =>", roomB);
+
+// ---------------------------------------------------------------------------
+// Part 4: the same router behind a real socket server. attachWsServer accepts
+// the upgrade only on its path, refuses a foreign Origin before the socket
+// opens, and builds the context once per connection.
+// ---------------------------------------------------------------------------
+line("4. attachWsServer — Origin check + context per connection, real sockets");
+
+const wss = new WebSocketServer({ noServer: true, maxPayload: 1_000_000 });
+const live = attachWsServer<Ctx>(wss, appRouter, {
+  path: "/rpc/ws",
+  allowedOrigins: ["http://app.local"],
+  createContext: () => ({ pubsub }),
+});
+const wsHttp = createServer();
+wsHttp.on("upgrade", (req, socket, head) => {
+  if (!live.handleUpgrade(req, socket, head)) socket.destroy();
+});
+await new Promise<void>((r) => wsHttp.listen(0, "127.0.0.1", r));
+const wsUrl = `ws://127.0.0.1:${(wsHttp.address() as AddressInfo).port}/rpc/ws`;
+
+const foreign = new WebSocket(wsUrl, { headers: { origin: "https://evil.example" } });
+const refused = await new Promise<number>((r) =>
+  foreign.once("unexpected-response", (_req, res) => r(res.statusCode ?? 0)),
+);
+console.log("   foreign Origin =>", refused);
+if (refused !== 403) throw new Error("expected 403 for a foreign Origin");
+
+const socket = new WebSocket(wsUrl, { headers: { origin: "http://app.local" } });
+await new Promise((r) => socket.once("open", r));
+const remote = connectWs<AppRouter>(socket as never);
+const sum = await remote.add({ a: 20, b: 22 });
+console.log("   real socket add({a:20,b:22}) =>", sum);
+if (sum !== 42) throw new Error("expected 42");
+
+await live.close();
+await new Promise<void>((r) => wsHttp.close(() => r()));
 
 line("All checks passed ✓");
 

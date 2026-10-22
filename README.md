@@ -374,9 +374,72 @@ off unless you pass `allowFormPosts: true` — then CSRF protection is your job
 CORS-with-credentials for untrusted origins.
 
 **WebSockets are the exception:** browsers apply no CORS to them, and any site
-can open one to your server with the user's cookies. dendra receives an
-already-open socket (`attachWs`), so check the upgrade request's `Origin`
-against your allowed origins before you accept it.
+can open one to your server with the user's cookies. Serve them with
+`attachWsServer`, which requires `allowedOrigins` and refuses a foreign or
+missing `Origin` with 403 before the socket opens. If you use the lower-level
+`attachWs` on a socket you accepted yourself, that check is yours.
+
+### WebSockets with Next.js
+
+Next.js route handlers can't accept WebSocket upgrades, so run one small Node
+server in front of Next that hands upgrades on your path to dendra and
+everything else (pages, API, dev hot reload) to Next:
+
+```ts
+// server.ts — run with `node server.ts` instead of `next start`
+import http from "node:http";
+import next from "next";
+import { WebSocketServer } from "ws";
+import { attachWsServer, DendraError } from "dendra";
+import { appRouter } from "./server/router";
+
+const app = next({ dev: process.env.NODE_ENV !== "production" });
+await app.prepare();
+const handle = app.getRequestHandler();
+const nextUpgrade = app.getUpgradeHandler();
+
+const wss = new WebSocketServer({ noServer: true, maxPayload: 1_000_000 });
+const live = attachWsServer(wss, appRouter, {
+  path: "/rpc/ws",
+  allowedOrigins: ["https://app.example.com"],
+  createContext: async (req) => {
+    const user = await getSession(req.headers);
+    if (!user) throw new DendraError("UNAUTHORIZED", "Sign in required");
+    return { user };
+  },
+  revalidate: { everyMs: 5 * 60_000, check: (ctx) => sessionStillValid(ctx.user) },
+  onClose: (ctx) => presence.leave(ctx.user.id),
+});
+
+const server = http.createServer((req, res) => handle(req, res));
+server.on("upgrade", (req, socket, head) => {
+  if (!live.handleUpgrade(req, socket, head)) nextUpgrade(req, socket, head);
+});
+server.listen(3000);
+
+process.on("SIGTERM", async () => {
+  await live.close(); // refuse new sockets (503), close open ones with 1001
+  server.close();
+});
+```
+
+Sign someone out everywhere with `live.closeWhere((ctx) => ctx.user.id === id)`.
+
+| Option | Default | |
+|---|---|---|
+| `maxPayload` | 1 MB | Startup throws if the `ws` server allows more |
+| `heartbeatMs` | 30 s | A socket that misses a pong is dropped (`0` disables) |
+| `maxBufferedBytes` | 1 MB | Unsent backlog before a slow client is closed |
+| `maxSubscriptions` | 100 | Per connection; more get `TOO_MANY_REQUESTS` |
+| `closeGraceMs` | 1 s | Wait for the close handshake, then terminate |
+| `allowMissingOrigin` | `false` | Only for non-browser clients without cookie auth |
+
+| Close code | Meaning |
+|---|---|
+| `1001` | Server shutting down (`close()`) |
+| `1009` | Message over `maxPayload` |
+| `1013` | Client too slow to read |
+| `4401` | `revalidate` said no, or `closeWhere` (default) — sign in again |
 
 ## Background jobs
 
@@ -558,8 +621,9 @@ agents with no parallel tool layer, kept to one source of truth, and able to bot
   can be large; `publish` throws on oversize messages before sending.
 - **External MCP tools** — `createMcpToolSource(client)` + `mergeToolsets(...)`
   blend remote tools into your agent loop.
-- **WebSocket** — `attachWs` / `connectWs` multiplex unary calls + subscriptions
-  over one socket, same router.
+- **WebSocket** — `attachWsServer` accepts sockets with an Origin check, a
+  per-connection context and resource limits; `connectWs` multiplexes unary calls
+  + subscriptions over one socket, same router.
 - **Request batching** — `createClient(url, { batch: true })` collects unary calls
   made in the same tick into one HTTP round-trip (`__batch?p=a,b`, so logs and
   mocks see the names). Results stream back as each call settles, so a slow call
