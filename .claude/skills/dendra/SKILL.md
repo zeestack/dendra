@@ -36,6 +36,8 @@ let inference do the rest — never hand-write client types or `.d.ts`.
    - Streaming / real-time: `.stream(async function* ({ ctx, signal }) { yield … })`.
      Pass `signal` to `ctx.pubsub.subscribe(topic, { signal })` so the stream stops
      when the client goes away. Clients abort with `api.x(input, { signal })`.
+     Across processes, use `createRedisPubSub(client)` or `createPgPubSub(pool)`
+     (Postgres LISTEN/NOTIFY; payloads under 8000 bytes, so publish ids).
    - Long-running work: a job, `jobs.define(name, { input, run, key, retries })`
      on `createJobs({ store, pubsub, context })`; `.background(job, map?)` makes a
      procedure enqueue it and return `{ jobId }`; `job.watch(jobId, { signal })`

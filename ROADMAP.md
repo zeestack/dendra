@@ -73,7 +73,7 @@ Each item links the issue with the evidence.
   match what JSON delivers; the serializer (candidates below) can follow.
 
 ### 0.9 — "long-running work"
-- [ ] ⭐ **Postgres pub/sub** ([#6](https://github.com/zeestack/dendra/issues/6)) — promoted from Field requests.
+- [x] ⭐ **Postgres pub/sub** ([#6](https://github.com/zeestack/dendra/issues/6)) — promoted from Field requests.
   question-tool's `src/lib/pg-pubsub.ts` (one LISTEN connection per process, reconnect, `{ topic, message }`
   on one channel, triggers can publish) is a tested starting point.
 - [x] ⭐ **Background jobs** ([#7](https://github.com/zeestack/dendra/issues/7)) — promoted from Field requests:
@@ -268,7 +268,7 @@ has to step outside dendra to stay safe.
 - [x] **Background jobs** _(0.9, [#7](https://github.com/zeestack/dendra/issues/7))_ — `.background(handler)` → `{ jobId }` with status /
   progress / result / error, one-running-job-per-key, a pluggable store (Postgres),
   a progress subscription, and Next.js `after()`.
-- [ ] **Postgres pub/sub** _(scheduled for 0.9, [#6](https://github.com/zeestack/dendra/issues/6))_ — `createPostgresPubSub(pool)` over `LISTEN/NOTIFY`,
+- [x] **Postgres pub/sub** _(0.9, [#6](https://github.com/zeestack/dendra/issues/6))_ — `createPgPubSub(pool)` over `LISTEN/NOTIFY`,
   same interface as the Redis adapter.
 - [ ] **Idempotency** — `.idempotent({ key, ttl })` returns the first result for repeats.
 

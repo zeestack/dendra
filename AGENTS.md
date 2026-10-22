@@ -111,7 +111,9 @@ become `notFound()` and UNAUTHORIZED a sign-in redirect.
 - **Streams stop with their consumer.** A `.stream()` handler gets `signal`,
   aborted when the client disconnects, cancels, unsubscribes, or aborts its own
   `{ signal }`. Pass it to `pubsub.subscribe(topic, { signal })` or long work
-  won't stop. Batched calls (`batch: true`) stream back as each settles.
+  won't stop. Multi-instance pub/sub: `createRedisPubSub(client)` or
+  `createPgPubSub(pool)` (LISTEN/NOTIFY; messages under 8000 bytes — publish
+  ids). Batched calls (`batch: true`) stream back as each settles.
 - **Long work goes in a job,** not `after()`: `jobs.define(name, { input, run, key,
   retries })`, then `route.….background(job, map?)` returns `{ jobId }` and
   `job.watch(jobId, { signal })` streams status. A job's ctx comes from
