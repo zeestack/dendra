@@ -49,8 +49,10 @@ export function createWsSession(
   router: object,
   send: (data: string) => void,
   ctx: Record<string, unknown> = {},
+  opts: { maxSubscriptions?: number } = {},
 ): WsSession {
   const root = router as RouterRecord;
+  const maxSubscriptions = opts.maxSubscriptions ?? Infinity;
   const subs = new Map<number, AbortController>();
   const out = (m: ServerMsg) => send(JSON.stringify(m));
 
@@ -87,6 +89,14 @@ export function createWsSession(
             id: msg.id,
             type: "error",
             error: { code: "NOT_FOUND", message: `Subscription '${msg.path}' not found` },
+          });
+          return;
+        }
+        if (subs.size >= maxSubscriptions) {
+          out({
+            id: msg.id,
+            type: "error",
+            error: { code: "TOO_MANY_REQUESTS", message: "Too many subscriptions on this connection" },
           });
           return;
         }
