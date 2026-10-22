@@ -545,7 +545,8 @@ agents with no parallel tool layer, kept to one source of truth, and able to bot
 - **Real-time** — a subscription is a streaming procedure fed by a `PubSub`
   interface: `createInMemoryPubSub()` for dev, `createRedisPubSub(client)` or
   `createPgPubSub(pool)` (Postgres LISTEN/NOTIFY, see below) for multi-instance
-  fan-out. Stream handlers get a `signal` that aborts when the
+  fan-out. Another broker (NATS, …) is a `createPubSub({ publish, subscribe,
+  unsubscribe })` transport away. Stream handlers get a `signal` that aborts when the
   client goes away (disconnect, cancel, unsubscribe) — pass it to
   `subscribe(topic, { signal })`.
 - **Postgres pub/sub** — `createPgPubSub(new pg.Pool(…))` holds one LISTEN

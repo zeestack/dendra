@@ -15,7 +15,7 @@
 // It implements the same `PubSub` interface as the in-memory one, so procedures
 // (publish on mutate, subscribe in a streaming handler) don't change.
 
-import type { PubSub } from "./pubsub.ts";
+import { createPubSub, type PubSub } from "./pubsub.ts";
 
 export interface RedisPubSubClient {
   publish(channel: string, message: string): unknown;
@@ -24,74 +24,19 @@ export interface RedisPubSubClient {
 }
 
 export function createRedisPubSub(client: RedisPubSubClient): PubSub {
-  // Local fan-out per channel, with a single redis subscription per channel
-  // (ref-counted) so N local subscribers share one upstream subscription.
-  const topics = new Map<string, Set<(m: unknown) => void>>();
-
-  return {
-    publish(topic, message) {
-      void client.publish(topic, JSON.stringify(message));
-    },
-
-    subscribe(topic, opts) {
-      const queue: unknown[] = [];
-      let wake: (() => void) | null = null;
-      const push = (m: unknown) => {
-        queue.push(m);
-        wake?.();
-        wake = null;
-      };
-
-      let listeners = topics.get(topic);
-      if (!listeners) {
-        listeners = new Set();
-        topics.set(topic, listeners);
-        // One upstream subscription per channel; parse + fan out locally.
-        void client.subscribe(topic, (raw) => {
-          let msg: unknown;
-          try {
-            msg = JSON.parse(raw);
-          } catch {
-            msg = raw;
-          }
-          for (const l of topics.get(topic) ?? []) l(msg);
-        });
-      }
-      listeners.add(push);
-
-      const signal = opts?.signal;
-      signal?.addEventListener("abort", () => {
-        wake?.();
-        wake = null;
-      });
-
-      const cleanup = () => {
-        const set = topics.get(topic);
-        if (!set) return;
-        set.delete(push);
-        if (set.size === 0) {
-          topics.delete(topic);
-          void client.unsubscribe(topic);
+  // Redis carries strings: JSON on the way out, parse (raw if not JSON) on the way in.
+  return createPubSub({
+    publish: (topic, message) => client.publish(topic, JSON.stringify(message)),
+    subscribe: (topic, onMessage) =>
+      client.subscribe(topic, (raw) => {
+        let msg: unknown;
+        try {
+          msg = JSON.parse(raw);
+        } catch {
+          msg = raw;
         }
-      };
-
-      return {
-        async *[Symbol.asyncIterator]() {
-          try {
-            while (!signal?.aborted) {
-              if (queue.length) {
-                yield queue.shift();
-                continue;
-              }
-              await new Promise<void>((resolve) => {
-                wake = resolve;
-              });
-            }
-          } finally {
-            cleanup();
-          }
-        },
-      };
-    },
-  };
+        onMessage(msg);
+      }),
+    unsubscribe: (topic) => client.unsubscribe(topic),
+  });
 }
