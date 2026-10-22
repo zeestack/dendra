@@ -111,6 +111,15 @@ function refuse(socket: WsUpgradeSocket, status: number): void {
   socket.destroy();
 }
 
+// Undefined for a URL that doesn't parse: not ours, and never a throw into the app's listener.
+function pathnameOf(url = "/"): string | undefined {
+  try {
+    return new URL(url, "http://localhost").pathname;
+  } catch {
+    return undefined;
+  }
+}
+
 function toRequest(req: WsUpgradeRequest): Request {
   const headers = new Headers();
   for (const [k, v] of Object.entries(req.headers)) {
@@ -211,12 +220,12 @@ export function attachWsServer<Ctx extends object>(
     });
     const send = (d: string) => {
       if (ws.readyState !== OPEN) return; // a call that settled after the socket closed
-      if (ws.bufferedAmount > maxBufferedBytes) return ws.close(1013, "Try Again Later");
+      if (ws.bufferedAmount > maxBufferedBytes) return closeSocket(ws, 1013, "Try Again Later");
       ws.send(d);
     };
     const session = createWsSession(router, send, ctx as Record<string, unknown>, { maxSubscriptions });
     ws.on("message", (data) => {
-      if (checkSize && byteLength(data) > maxPayload) return ws.close(1009, "Message Too Big");
+      if (checkSize && byteLength(data) > maxPayload) return closeSocket(ws, 1009, "Message Too Big");
       session.handleMessage(String(data));
     });
     ws.on("close", (code, reason) => {
@@ -252,6 +261,10 @@ export function attachWsServer<Ctx extends object>(
       if (closing) return refuse(socket, 503);
       if (socket.destroyed) return; // the client gave up while we were checking
       wss.handleUpgrade(req, socket, head, (ws) => accept(ws, ctx));
+    } catch (e) {
+      // e.g. an `allowedOrigins` function that throws: refuse, never leave the socket hanging
+      onError(e);
+      refuse(socket, 500);
     } finally {
       socket.off("error", onSocketError);
     }
@@ -259,7 +272,7 @@ export function attachWsServer<Ctx extends object>(
 
   return {
     handleUpgrade(req, socket, head) {
-      if (new URL(req.url ?? "/", "http://localhost").pathname !== opts.path) return false;
+      if (pathnameOf(req.url) !== opts.path) return false;
       void upgrade(req, socket, head);
       return true;
     },

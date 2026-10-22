@@ -506,3 +506,36 @@ describe("attachWsServer: shutdown", () => {
     expect(check).toHaveBeenCalledTimes(calls);
   });
 });
+
+describe("attachWsServer: review fixes", () => {
+  it("leaves a request with a malformed URL alone instead of throwing", async () => {
+    const { handle } = await start();
+    const socket = { write: vi.fn(), destroy: vi.fn(), on: vi.fn(), off: vi.fn() };
+    expect(handle.handleUpgrade({ url: "http://[", headers: {} }, socket, Buffer.alloc(0))).toBe(false);
+    expect(socket.destroy).not.toHaveBeenCalled();
+  });
+
+  it("refuses with 500 and reports it when the allowedOrigins function throws", async () => {
+    const boom = new Error("bad allowlist");
+    const onError = vi.fn();
+    const { connect } = await start({
+      allowedOrigins: () => {
+        throw boom;
+      },
+      onError,
+    });
+    expect(await connect()).toEqual({ status: 500 });
+    expect(onError).toHaveBeenCalledWith(boom);
+  });
+
+  it("forces a backlogged client closed after closeGraceMs even if it never reads", async () => {
+    const onClose = vi.fn();
+    const { connect, handle } = await start({ maxBufferedBytes: 10_000, closeGraceMs: 50, heartbeatMs: 0, onClose });
+    const { ws } = await connect();
+    (ws as unknown as { _socket: { pause(): void } })._socket.pause();
+    ws!.send(JSON.stringify({ id: 1, type: "subscribe", path: "flood" }));
+    await tick(400);
+    expect(handle.size).toBe(0);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+});

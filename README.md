@@ -382,8 +382,11 @@ missing `Origin` with 403 before the socket opens. If you use the lower-level
 ### WebSockets with Next.js
 
 Next.js route handlers can't accept WebSocket upgrades, so run one small Node
-server in front of Next that hands upgrades on your path to dendra and
-everything else (pages, API, dev hot reload) to Next:
+server in front of Next. Next attaches its own `upgrade` listener on the first
+request (that's how dev hot reload works), and it closes any upgrade whose path
+matches one of your routes. So give the socket a path **outside** your Next
+routes (`/ws`, not under an `app/rpc/[...path]` handler), and leave other
+upgrades to Next's own listener:
 
 ```ts
 // server.ts — run with `node server.ts` instead of `next start`
@@ -396,11 +399,10 @@ import { appRouter } from "./server/router";
 const app = next({ dev: process.env.NODE_ENV !== "production" });
 await app.prepare();
 const handle = app.getRequestHandler();
-const nextUpgrade = app.getUpgradeHandler();
 
 const wss = new WebSocketServer({ noServer: true, maxPayload: 1_000_000 });
 const live = attachWsServer(wss, appRouter, {
-  path: "/rpc/ws",
+  path: "/ws", // outside every Next route
   allowedOrigins: ["https://app.example.com"],
   createContext: async (req) => {
     const user = await getSession(req.headers);
@@ -412,9 +414,8 @@ const live = attachWsServer(wss, appRouter, {
 });
 
 const server = http.createServer((req, res) => handle(req, res));
-server.on("upgrade", (req, socket, head) => {
-  if (!live.handleUpgrade(req, socket, head)) nextUpgrade(req, socket, head);
-});
+// Other paths return false and are left to Next's own upgrade listener.
+server.on("upgrade", (req, socket, head) => live.handleUpgrade(req, socket, head));
 server.listen(3000);
 
 process.on("SIGTERM", async () => {
