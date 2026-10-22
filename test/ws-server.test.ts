@@ -412,3 +412,97 @@ describe("attachWsServer: revalidate, closeWhere, onClose", () => {
     expect(aborted).toBe(true);
   });
 });
+
+describe("attachWsServer: shutdown", () => {
+  // A client that never reads, so it never answers the close handshake.
+  const deaf = (ws: WebSocket) => (ws as unknown as { _socket: { pause(): void } })._socket.pause();
+
+  it("close() refuses new upgrades with 503", async () => {
+    const { connect, handle } = await start();
+    await handle.close();
+    expect(await connect()).toEqual({ status: 503 });
+  });
+
+  it("close() refuses an upgrade whose createContext was still running", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const { connect, handle } = await start({
+      createContext: async () => {
+        await gate;
+        return {};
+      },
+    });
+    const pending = connect();
+    await tick(20);
+    await handle.close();
+    release();
+    expect(await pending).toEqual({ status: 503 });
+  });
+
+  it("close() sends 1001 and resolves after every onClose settled", async () => {
+    let saved = false;
+    const { connect, handle } = await start({
+      onClose: async () => {
+        await tick(50);
+        saved = true;
+      },
+    });
+    const { ws } = await connect();
+    const done = closed(ws!);
+    await handle.close();
+    expect(saved).toBe(true);
+    expect((await done).code).toBe(1001);
+  });
+
+  it("close() terminates clients that ignore the close handshake after closeGraceMs", async () => {
+    const onClose = vi.fn();
+    const { connect, handle } = await start({ closeGraceMs: 50, onClose });
+    const { ws } = await connect();
+    deaf(ws!);
+    const t0 = Date.now();
+    await handle.close();
+    expect(Date.now() - t0).toBeLessThan(500);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("closeWhere terminates a client that ignores the close handshake after closeGraceMs", async () => {
+    const onClose = vi.fn();
+    const { connect, handle } = await start({ closeGraceMs: 50, onClose });
+    const { ws } = await connect();
+    deaf(ws!);
+    handle.closeWhere(() => true);
+    await tick(300);
+    expect(handle.size).toBe(0);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("onClose runs once when closeWhere races close()", async () => {
+    const onClose = vi.fn();
+    const { connect, handle } = await start({ onClose });
+    await connect();
+    await connect();
+    handle.closeWhere(() => true);
+    await handle.close();
+    expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it("close() is idempotent", async () => {
+    const onClose = vi.fn();
+    const { connect, handle } = await start({ onClose });
+    await connect();
+    await Promise.all([handle.close(), handle.close()]);
+    await handle.close();
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("close() stops the heartbeat and revalidate timers", async () => {
+    const check = vi.fn(() => true);
+    const { connect, handle } = await start({ heartbeatMs: 20, revalidate: { everyMs: 20, check } });
+    await connect();
+    await tick(60);
+    await handle.close();
+    const calls = check.mock.calls.length;
+    await tick(200);
+    expect(check).toHaveBeenCalledTimes(calls);
+  });
+});

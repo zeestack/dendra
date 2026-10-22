@@ -133,6 +133,7 @@ export function attachWsServer<Ctx extends Record<string, unknown>>(
   const maxPayload = opts.maxPayload ?? 1_000_000;
   const maxBufferedBytes = opts.maxBufferedBytes ?? 1_000_000;
   const heartbeatMs = opts.heartbeatMs ?? 30_000;
+  const closeGraceMs = opts.closeGraceMs ?? 1_000;
 
   // `ws` buffers a whole message before we see it, up to its own limit (100 MiB
   // by default), so a larger limit there defeats ours. Fail at startup.
@@ -148,8 +149,19 @@ export function attachWsServer<Ctx extends Record<string, unknown>>(
   const byteLength = (data: unknown) =>
     typeof data === "string" ? encoder.encode(data).length : ((data as { byteLength?: number }).byteLength ?? 0);
 
-  const live = new Map<WsServerSocket, { ctx: Ctx; alive: boolean; checking: boolean }>();
+  type Conn = { ctx: Ctx; alive: boolean; checking: boolean; settled: Promise<void> };
+  const live = new Map<WsServerSocket, Conn>();
   let closing = false;
+  let closed: Promise<void> | undefined;
+
+  // Close politely, then force it: a client that never answers the close
+  // handshake must not hold a connection (or a shutdown) open.
+  function closeSocket(ws: WsServerSocket, code: number, reason: string): void {
+    ws.close(code, reason);
+    const t = setTimeout(() => ws.terminate(), closeGraceMs);
+    (t as { unref?: () => void }).unref?.();
+    live.get(ws)?.settled.finally(() => clearTimeout(t));
+  }
 
   const heartbeat =
     heartbeatMs > 0
@@ -177,7 +189,7 @@ export function attachWsServer<Ctx extends Record<string, unknown>>(
             .then(() => reval.check(c.ctx))
             .then(
               (ok) => {
-                if (ok === false && live.has(ws)) ws.close(4401, "Unauthorized");
+                if (ok === false && live.has(ws)) closeSocket(ws, 4401, "Unauthorized");
               },
               onError,
             )
@@ -190,7 +202,8 @@ export function attachWsServer<Ctx extends Record<string, unknown>>(
   (recheck as { unref?: () => void } | undefined)?.unref?.();
 
   function accept(ws: WsServerSocket, ctx: Ctx): void {
-    const conn = { ctx, alive: true, checking: false };
+    let settle!: () => void;
+    const conn: Conn = { ctx, alive: true, checking: false, settled: new Promise((r) => (settle = r)) };
     live.set(ws, conn);
     ws.on("error", (e) => onError(e));
     ws.on("pong", () => {
@@ -207,14 +220,12 @@ export function attachWsServer<Ctx extends Record<string, unknown>>(
       session.handleMessage(String(data));
     });
     ws.on("close", (code, reason) => {
-      live.delete(ws);
+      if (!live.delete(ws)) return;
       session.handleClose();
-      if (!opts.onClose) return;
-      try {
-        void Promise.resolve(opts.onClose(ctx, { code, reason: String(reason ?? "") })).catch(onError);
-      } catch (e) {
-        onError(e);
-      }
+      Promise.resolve()
+        .then(() => opts.onClose?.(ctx, { code, reason: String(reason ?? "") }))
+        .catch(onError)
+        .finally(settle);
     });
   }
 
@@ -256,15 +267,21 @@ export function attachWsServer<Ctx extends Record<string, unknown>>(
       let n = 0;
       for (const [ws, c] of live) {
         if (!match(c.ctx)) continue;
-        ws.close(close.code ?? 4401, close.reason ?? "Unauthorized");
+        closeSocket(ws, close.code ?? 4401, close.reason ?? "Unauthorized");
         n++;
       }
       return n;
     },
-    async close() {
-      closing = true;
-      clearInterval(heartbeat);
-      clearInterval(recheck);
+    close() {
+      closed ??= (async () => {
+        closing = true;
+        clearInterval(heartbeat);
+        clearInterval(recheck);
+        const open = [...live];
+        for (const [ws] of open) closeSocket(ws, 1001, "Going Away");
+        await Promise.all(open.map(([, c]) => c.settled));
+      })();
+      return closed;
     },
     get size() {
       return live.size;
