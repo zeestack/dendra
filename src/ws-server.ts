@@ -101,6 +101,8 @@ const REASONS: Record<number, string> = {
   503: "Service Unavailable",
 };
 
+const OPEN = 1;
+
 function refuse(socket: WsUpgradeSocket, status: number): void {
   if (socket.destroyed) return;
   socket.write(
@@ -128,14 +130,59 @@ export function attachWsServer<Ctx extends Record<string, unknown>>(
   const originOk = typeof allowed === "function" ? allowed : (o: string) => allowed.includes(o);
   const onError = opts.onError ?? ((e: unknown) => console.error("[dendra] ws:", e));
   const maxSubscriptions = opts.maxSubscriptions ?? 100;
+  const maxPayload = opts.maxPayload ?? 1_000_000;
+  const maxBufferedBytes = opts.maxBufferedBytes ?? 1_000_000;
+  const heartbeatMs = opts.heartbeatMs ?? 30_000;
 
-  const live = new Map<WsServerSocket, { ctx: Ctx }>();
+  // `ws` buffers a whole message before we see it, up to its own limit (100 MiB
+  // by default), so a larger limit there defeats ours. Fail at startup.
+  const serverMax = wss.options?.maxPayload;
+  if (serverMax !== undefined && serverMax > maxPayload) {
+    throw new Error(
+      `[dendra] ws: the ws server accepts messages up to ${serverMax} bytes; pass { maxPayload: ${maxPayload} } to new WebSocketServer(...)`,
+    );
+  }
+  // Without `options` we can't tell what the server enforces, so check ourselves.
+  const checkSize = !wss.options;
+  const encoder = new TextEncoder();
+  const byteLength = (data: unknown) =>
+    typeof data === "string" ? encoder.encode(data).length : ((data as { byteLength?: number }).byteLength ?? 0);
+
+  const live = new Map<WsServerSocket, { ctx: Ctx; alive: boolean }>();
   let closing = false;
 
+  const heartbeat =
+    heartbeatMs > 0
+      ? setInterval(() => {
+          for (const [ws, c] of live) {
+            if (!c.alive) {
+              ws.terminate();
+              continue;
+            }
+            c.alive = false;
+            ws.ping();
+          }
+        }, heartbeatMs)
+      : undefined;
+  (heartbeat as { unref?: () => void } | undefined)?.unref?.();
+
   function accept(ws: WsServerSocket, ctx: Ctx): void {
-    live.set(ws, { ctx });
-    const session = createWsSession(router, (d) => ws.send(d), ctx, { maxSubscriptions });
-    ws.on("message", (data) => session.handleMessage(String(data)));
+    const conn = { ctx, alive: true };
+    live.set(ws, conn);
+    ws.on("error", (e) => onError(e));
+    ws.on("pong", () => {
+      conn.alive = true;
+    });
+    const send = (d: string) => {
+      if (ws.readyState !== OPEN) return; // a call that settled after the socket closed
+      if (ws.bufferedAmount > maxBufferedBytes) return ws.close(1013, "Try Again Later");
+      ws.send(d);
+    };
+    const session = createWsSession(router, send, ctx, { maxSubscriptions });
+    ws.on("message", (data) => {
+      if (checkSize && byteLength(data) > maxPayload) return ws.close(1009, "Message Too Big");
+      session.handleMessage(String(data));
+    });
     ws.on("close", () => {
       live.delete(ws);
       session.handleClose();
@@ -181,6 +228,7 @@ export function attachWsServer<Ctx extends Record<string, unknown>>(
     },
     async close() {
       closing = true;
+      clearInterval(heartbeat);
     },
     get size() {
       return live.size;

@@ -11,12 +11,18 @@ import {
   type WsServerHandle,
   type WsServerLike,
   type WsServerOptions,
+  type WsServerSocket,
 } from "../src/index.ts";
 
 type Ctx = { user?: string | null };
 const { route } = initDendra<Ctx>();
+let releaseSlow: () => void = () => {};
 const router = {
   whoami: route.handler(({ ctx }) => ctx.user ?? null),
+  slow: route.handler(() => new Promise<string>((r) => (releaseSlow = () => r("late")))),
+  flood: route.stream(async function* () {
+    for (let i = 0; i < 50; i++) yield "x".repeat(100_000);
+  }),
   ticks: route.stream(async function* ({ signal }) {
     yield "on";
     await new Promise<void>((r) => signal.addEventListener("abort", () => r()));
@@ -195,3 +201,105 @@ describe("attachWsServer: upgrade gate", () => {
   });
 });
 
+
+// Wraps a real ws server so a test can reach each accepted server-side socket.
+function capturing(wss: WebSocketServer, keepOptions = true) {
+  const sockets: WsServerSocket[] = [];
+  const like: WsServerLike = {
+    handleUpgrade: (req, socket, head, cb) =>
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        sockets.push(ws as unknown as WsServerSocket);
+        cb(ws as unknown as WsServerSocket);
+      }),
+    ...(keepOptions ? { options: wss.options } : {}),
+  };
+  return { like, sockets };
+}
+
+describe("attachWsServer: limits and heartbeat", () => {
+  it("throws at startup when the ws server allows bigger messages than maxPayload", () => {
+    expect(() =>
+      attachWsServer(new WebSocketServer({ noServer: true }), router, { path: PATH, allowedOrigins: [ORIGIN] }),
+    ).toThrow(/maxPayload/);
+    expect(() =>
+      attachWsServer(new WebSocketServer({ noServer: true, maxPayload: 1_000_000 }), router, {
+        path: PATH,
+        allowedOrigins: [ORIGIN],
+      }),
+    ).not.toThrow();
+  });
+
+  it("closes with 1009 on a message over maxPayload", async () => {
+    const { connect } = await start({ maxPayload: 1000 }, new WebSocketServer({ noServer: true, maxPayload: 1000 }));
+    const { ws } = await connect();
+    const done = closed(ws!);
+    ws!.send("a".repeat(2000));
+    expect((await done).code).toBe(1009);
+  });
+
+  it("checks message size itself when the server exposes no options", async () => {
+    const { like } = capturing(new WebSocketServer({ noServer: true, maxPayload: 1_000_000 }), false);
+    const { connect } = await start({ maxPayload: 1000 }, like);
+    const { ws } = await connect();
+    const done = closed(ws!);
+    ws!.send("é".repeat(1000)); // 1000 characters, 2000 bytes
+    expect((await done).code).toBe(1009);
+  });
+
+  it("closes with 1013 when the unsent backlog passes maxBufferedBytes", async () => {
+    const { connect } = await start({ maxBufferedBytes: 10_000 });
+    const { ws } = await connect();
+    const done = closed(ws!);
+    (ws as unknown as { _socket: { pause(): void; resume(): void } })._socket.pause();
+    ws!.send(JSON.stringify({ id: 1, type: "subscribe", path: "flood" }));
+    await tick(100);
+    (ws as unknown as { _socket: { resume(): void } })._socket.resume();
+    expect((await done).code).toBe(1013);
+  });
+
+  it("drops a reply whose call finishes after the socket closed", async () => {
+    const { like, sockets } = capturing(new WebSocketServer({ noServer: true, maxPayload: 1_000_000 }));
+    const onError = vi.fn();
+    const { connect } = await start({ onError }, like);
+    const { ws } = await connect();
+    ws!.send(JSON.stringify({ id: 1, type: "call", path: "slow" }));
+    await tick(20);
+    const send = vi.spyOn(sockets[0], "send");
+    const done = closed(ws!);
+    ws!.close();
+    await done;
+    await tick(20);
+    releaseSlow();
+    await tick(20);
+    expect(send).not.toHaveBeenCalled();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it("terminates a socket that stops answering pings", async () => {
+    const { connect, handle } = await start({ heartbeatMs: 50 });
+    const { ws } = await connect(PATH, { origin: ORIGIN }, { autoPong: false });
+    const done = closed(ws!);
+    await Promise.race([done, tick(400)]);
+    expect(ws!.readyState).toBe(WebSocket.CLOSED);
+    await tick(20); // the server's own close event lands just after the client's
+    expect(handle.size).toBe(0);
+  });
+
+  it("keeps a socket that answers pings", async () => {
+    const { connect, handle } = await start({ heartbeatMs: 50 });
+    const { ws } = await connect();
+    await tick(300);
+    expect(ws!.readyState).toBe(WebSocket.OPEN);
+    expect(handle.size).toBe(1);
+  });
+
+  it("reports a socket error after open instead of crashing", async () => {
+    const { like, sockets } = capturing(new WebSocketServer({ noServer: true, maxPayload: 1_000_000 }));
+    const onError = vi.fn();
+    const { connect } = await start({ onError }, like);
+    await connect();
+    const boom = new Error("ECONNRESET");
+    (sockets[0] as unknown as { emit(e: string, err: Error): void }).emit("error", boom);
+    expect(onError).toHaveBeenCalledWith(boom);
+  });
+});
