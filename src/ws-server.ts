@@ -148,7 +148,7 @@ export function attachWsServer<Ctx extends Record<string, unknown>>(
   const byteLength = (data: unknown) =>
     typeof data === "string" ? encoder.encode(data).length : ((data as { byteLength?: number }).byteLength ?? 0);
 
-  const live = new Map<WsServerSocket, { ctx: Ctx; alive: boolean }>();
+  const live = new Map<WsServerSocket, { ctx: Ctx; alive: boolean; checking: boolean }>();
   let closing = false;
 
   const heartbeat =
@@ -166,8 +166,31 @@ export function attachWsServer<Ctx extends Record<string, unknown>>(
       : undefined;
   (heartbeat as { unref?: () => void } | undefined)?.unref?.();
 
+  // Only `false` closes: a throw is the auth backend blipping, not a revoked session.
+  const reval = opts.revalidate;
+  const recheck = reval
+    ? setInterval(() => {
+        for (const [ws, c] of live) {
+          if (c.checking) continue;
+          c.checking = true;
+          Promise.resolve()
+            .then(() => reval.check(c.ctx))
+            .then(
+              (ok) => {
+                if (ok === false && live.has(ws)) ws.close(4401, "Unauthorized");
+              },
+              onError,
+            )
+            .finally(() => {
+              c.checking = false;
+            });
+        }
+      }, reval.everyMs)
+    : undefined;
+  (recheck as { unref?: () => void } | undefined)?.unref?.();
+
   function accept(ws: WsServerSocket, ctx: Ctx): void {
-    const conn = { ctx, alive: true };
+    const conn = { ctx, alive: true, checking: false };
     live.set(ws, conn);
     ws.on("error", (e) => onError(e));
     ws.on("pong", () => {
@@ -183,9 +206,15 @@ export function attachWsServer<Ctx extends Record<string, unknown>>(
       if (checkSize && byteLength(data) > maxPayload) return ws.close(1009, "Message Too Big");
       session.handleMessage(String(data));
     });
-    ws.on("close", () => {
+    ws.on("close", (code, reason) => {
       live.delete(ws);
       session.handleClose();
+      if (!opts.onClose) return;
+      try {
+        void Promise.resolve(opts.onClose(ctx, { code, reason: String(reason ?? "") })).catch(onError);
+      } catch (e) {
+        onError(e);
+      }
     });
   }
 
@@ -223,12 +252,19 @@ export function attachWsServer<Ctx extends Record<string, unknown>>(
       void upgrade(req, socket, head);
       return true;
     },
-    closeWhere() {
-      return 0;
+    closeWhere(match, close = {}) {
+      let n = 0;
+      for (const [ws, c] of live) {
+        if (!match(c.ctx)) continue;
+        ws.close(close.code ?? 4401, close.reason ?? "Unauthorized");
+        n++;
+      }
+      return n;
     },
     async close() {
       closing = true;
       clearInterval(heartbeat);
+      clearInterval(recheck);
     },
     get size() {
       return live.size;

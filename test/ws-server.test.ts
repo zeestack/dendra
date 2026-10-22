@@ -303,3 +303,112 @@ describe("attachWsServer: limits and heartbeat", () => {
     expect(onError).toHaveBeenCalledWith(boom);
   });
 });
+
+describe("attachWsServer: revalidate, closeWhere, onClose", () => {
+  const as = (user: string) => ({ origin: ORIGIN, "x-user": user });
+  const userCtx = { createContext: (req: Request) => ({ user: req.headers.get("x-user") }) };
+
+  it("closes with 4401 when revalidate returns false", async () => {
+    const { connect } = await start({
+      ...userCtx,
+      revalidate: { everyMs: 50, check: (ctx) => ctx.user !== "bob" },
+    });
+    const ada = (await connect(PATH, as("ada"))).ws!;
+    const bob = (await connect(PATH, as("bob"))).ws!;
+    expect(await closed(bob)).toEqual({ code: 4401, reason: "Unauthorized" });
+    expect(ada.readyState).toBe(WebSocket.OPEN);
+  });
+
+  it("keeps the connection when revalidate throws, and reports it", async () => {
+    const onError = vi.fn();
+    const { connect } = await start({
+      onError,
+      revalidate: {
+        everyMs: 50,
+        check: () => {
+          throw new Error("auth backend down");
+        },
+      },
+    });
+    const { ws } = await connect();
+    await tick(300);
+    expect(ws!.readyState).toBe(WebSocket.OPEN);
+    expect(onError).toHaveBeenCalled();
+  });
+
+  it("runs one check per connection at a time", async () => {
+    const check = vi.fn(() => new Promise<boolean>(() => {}));
+    const { connect } = await start({ revalidate: { everyMs: 20, check } });
+    await connect();
+    await connect();
+    await tick(200);
+    expect(check).toHaveBeenCalledTimes(2);
+  });
+
+  it("closeWhere closes matching connections and returns the count", async () => {
+    const { connect, handle } = await start(userCtx);
+    const a1 = (await connect(PATH, as("ada"))).ws!;
+    const a2 = (await connect(PATH, as("ada"))).ws!;
+    const b = (await connect(PATH, as("bob"))).ws!;
+    const done = [closed(a1), closed(a2)];
+    expect(handle.closeWhere((c) => c.user === "ada")).toBe(2);
+    expect(await Promise.all(done)).toEqual([
+      { code: 4401, reason: "Unauthorized" },
+      { code: 4401, reason: "Unauthorized" },
+    ]);
+    const moved = closed(b);
+    expect(handle.closeWhere((c) => c.user === "bob", { code: 4000, reason: "Moved" })).toBe(1);
+    expect(await moved).toEqual({ code: 4000, reason: "Moved" });
+  });
+
+  it("runs onClose once per connection with the close code and reason", async () => {
+    const onClose = vi.fn();
+    const { connect } = await start({ ...userCtx, onClose });
+    const { ws } = await connect(PATH, as("ada"));
+    ws!.close(4000, "bye");
+    await tick(50);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledWith({ user: "ada" }, { code: 4000, reason: "bye" });
+  });
+
+  it("reports an onClose rejection", async () => {
+    const onError = vi.fn();
+    const boom = new Error("save failed");
+    const { connect } = await start({ onError, onClose: async () => Promise.reject(boom) });
+    const { ws } = await connect();
+    ws!.close();
+    await tick(50);
+    expect(onError).toHaveBeenCalledWith(boom);
+  });
+
+  it("aborts the connection's subscriptions on close", async () => {
+    let aborted = false;
+    const { route: r } = initDendra<Ctx>();
+    const watching = {
+      watch: r.stream(async function* ({ signal }) {
+        yield "on";
+        await new Promise<void>((res) => signal.addEventListener("abort", () => res()));
+        aborted = true;
+      }),
+    } satisfies RouterRecord;
+    const wss = new WebSocketServer({ noServer: true, maxPayload: 1_000_000 });
+    const handle = attachWsServer<Ctx>(wss, watching, { path: PATH, allowedOrigins: [ORIGIN] });
+    const server = http.createServer();
+    server.on("upgrade", (req, socket, head) => handle.handleUpgrade(req, socket, head));
+    await new Promise<void>((res) => server.listen(0, "127.0.0.1", res));
+    cleanups.push(async () => {
+      await handle.close();
+      server.closeAllConnections();
+      await new Promise<void>((res) => server.close(() => res()));
+    });
+    const ws = new WebSocket(`ws://127.0.0.1:${(server.address() as AddressInfo).port}${PATH}`, {
+      headers: { origin: ORIGIN },
+    });
+    await new Promise((res) => ws.once("open", res));
+    ws.send(JSON.stringify({ id: 1, type: "subscribe", path: "watch" }));
+    await new Promise((res) => ws.once("message", res));
+    ws.terminate();
+    await tick(50);
+    expect(aborted).toBe(true);
+  });
+});
