@@ -5,6 +5,73 @@ description: 'dendra release notes: what changed in each version, including brea
 
 # Release notes
 
+## 0.9.0 — real-time and long-running work
+
+This release also carries everything planned for 0.8, which was never published
+on its own. Upgrading from 0.7.x: read **Breaking** below; it's types plus one
+change to chained `.input()`.
+
+**New**
+
+- **Background jobs** — `createJobs({ store, pubsub, context })`,
+  `jobs.define(name, { input, run, key, retries, backoff, concurrency })`, and
+  `route.….background(job, map?)`, which validates, runs the guards, enqueues and
+  returns `{ jobId }`. Retries with backoff, one queued-or-running job per key, a
+  per-name concurrency cap, leases so a crashed worker's job is retried, and
+  `job.watch(jobId, { signal })` to stream status: each state once, in order,
+  with a `version` that goes up on every change. Stores:
+  `createInMemoryJobStore()` and `createPgJobStore(pool)`.
+- **Postgres pub/sub** — `createPgPubSub(pool)` over `LISTEN/NOTIFY`: one
+  listening connection per process, reconnect with backoff, one process's
+  messages arrive in order, SQL triggers can publish with `pg_notify`. Messages
+  must be under 8000 bytes.
+- **Pluggable pub/sub** — `createPubSub(transport)` holds the shared subscription
+  logic; in-memory, Redis and Postgres are transports over it, and another broker
+  is one `PubSubTransport` away.
+- **`attachWsServer`** — WebSocket server with safe defaults: required Origin
+  allowlist, `createContext(Request)` once per connection before the socket
+  opens, 1 MB messages, 1 MB unsent backlog, 100 subscriptions per connection,
+  30 s heartbeat, `revalidate`, `closeWhere`, and a clean `close()` for shutdown.
+- **`createWsConnection`** — a browser connection that reconnects (0.5 s doubling
+  to 10 s, with jitter), retries at once when the browser comes back online,
+  reports its status, stops on 4401 (signed out) until `reconnect()`, and
+  resubscribes open subscriptions.
+- **Typed, validated input in middleware** — `.input()` before `.use()` types and
+  validates the guard's `input`.
+- **Cancellation** — every call takes `{ signal }`; stream handlers get a `signal`
+  that aborts when the client disconnects, cancels or unsubscribes.
+- **Batching that doesn't stall** — batch results stream back as each call
+  settles; the URL names the calls (`__batch?p=a,b`); `{ batch: false }` sends a
+  call alone. Old clients and servers still work with new ones.
+- **`dendra/next`** — `orPage(call, { signIn })` turns `NOT_FOUND` into
+  `notFound()` and `UNAUTHORIZED` into a sign-in redirect in Server Components.
+- `createWsSession(router, send, ctx, { maxSubscriptions })`.
+
+**Fixed**
+
+- Client calls are real Promises (`.catch`, `.finally`, `instanceof Promise`),
+  still lazy and still iterable for streams.
+- `toNodeHandler` aborted every request as soon as its body was read.
+- A batch the server rejects as a whole now rejects every call in it; they used
+  to resolve to `undefined`.
+- Cancelling a pub/sub subscription that was never read leaked its listener (and
+  its Redis subscription).
+
+**Breaking**
+
+- **Types only:** `createClient` and `createWsClient` results are typed as what
+  survives JSON (`Jsonify<Out>`): a `Date` is typed `string`, `undefined` and
+  function properties are dropped. `createCaller` keeps the handler's real types,
+  now as `Caller<R>`; `Client<R>` is the over-the-wire type.
+- **Chained `.input()`:** a later `.input()` now extends the earlier one instead of
+  replacing it (objects only; the earlier schema wins a shared key), and both
+  validate the call.
+
+**Upgrading:** parse date strings from client results instead of casting them to
+`Date`; type `createCaller` results as `Caller<R>`; check any procedure that calls
+`.input()` twice. If you hand-rolled a WebSocket server or a reconnecting browser
+socket, `attachWsServer` and `createWsConnection` replace them.
+
 ## 0.7.1 — docs
 
 - The npm package's homepage is now the docs site, and the README's links work on

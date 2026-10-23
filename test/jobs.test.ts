@@ -50,6 +50,40 @@ function setup(store: JobStore = createInMemoryJobStore(), ctx: unknown = { db: 
 }
 
 describe("createJobs", () => {
+  it("watch shows each change once, in order, when the job moves while watch reads the store", async () => {
+    // A store whose first read is slow, so the job is claimed (and that change
+    // published) between watch subscribing and watch reading the store.
+    const inner = createInMemoryJobStore();
+    let releaseRead!: () => void;
+    const readGate = new Promise<void>((r) => (releaseRead = r));
+    let slowReads = 1;
+    const store: JobStore = {
+      ...inner,
+      async get(id) {
+        if (slowReads-- > 0) await readGate;
+        return inner.get(id);
+      },
+    };
+    const { jobs } = setup(store);
+    let finish!: () => void;
+    const job = jobs.define("gated", {
+      run: () => new Promise<void>((r) => (finish = r)),
+    });
+    const { jobId } = await job.enqueue(undefined);
+    const seen = collect(job.watch(jobId));
+    jobs.start();
+    await until(async () => (await inner.get(jobId))?.status === "running");
+    await sleep(20); // the "running" event is now waiting in watch's subscription
+    releaseRead();
+    await sleep(20);
+    finish();
+    const snaps = await seen;
+    expect(snaps.map((x) => x.status)).toEqual(["running", "succeeded"]);
+    const versions = snaps.map((x) => x.version);
+    expect(versions).toEqual([...versions].sort((a, b) => a - b));
+    expect(new Set(versions).size).toBe(versions.length);
+  });
+
   it("runs a job with the worker ctx and streams its status", async () => {
     const { jobs } = setup();
     const add = jobs.define("add", {
@@ -302,6 +336,18 @@ describe.each(stores)("JobStore contract (%s)", (_name, make) => {
     runAt: extra.runAt ?? Date.now() - 1000,
   });
 
+  it("raises the version on every visible change, not on a lease renewal", async () => {
+    store = await make();
+    await store.add(job("v"));
+    expect((await store.get("v"))?.version).toBe(1);
+    expect((await store.claim(["j"], "t", 1000))?.version).toBe(2);
+    expect(await store.progress("v", "t", { step: 1 })).toBe(3);
+    expect(await store.extend("v", "t", 1000)).toBe(true);
+    expect((await store.get("v"))?.version).toBe(3);
+    expect(await store.progress("v", "other-token", { step: 2 })).toBeNull();
+    expect((await store.settle("v", "t", { status: "succeeded", result: 1 }))?.version).toBe(4);
+  });
+
   it("dedupes active jobs by name and key", async () => {
     store = await make();
     expect(await store.add(job("a", { key: "k" }))).toEqual({ id: "a", created: true });
@@ -337,14 +383,14 @@ describe.each(stores)("JobStore contract (%s)", (_name, make) => {
     store = await make();
     await store.add(job("a"));
     await store.claim(["j"], "old", 20);
-    expect(await store.progress("a", "wrong", { p: 1 })).toBe(false);
+    expect(await store.progress("a", "wrong", { p: 1 })).toBeNull();
     expect(await store.extend("a", "old", 20)).toBe(true);
     await sleep(60);
 
     const again = await store.claim(["j"], "new", 1000);
     expect(again).toMatchObject({ id: "a", attempt: 2 });
     expect(await store.settle("a", "old", { status: "succeeded", result: "stale" })).toBeNull();
-    expect(await store.progress("a", "new", { p: 2 })).toBe(true);
+    expect(await store.progress("a", "new", { p: 2 })).toEqual(expect.any(Number));
     expect(await store.settle("a", "new", { status: "succeeded", result: { ok: true } })).toMatchObject({
       status: "succeeded",
       result: { ok: true },

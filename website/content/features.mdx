@@ -1,6 +1,6 @@
 ---
 title: Features
-description: 'dendra features: REST + OpenAPI 3.1, streaming, WebSockets, middleware and after-hooks, file uploads and downloads, CSRF protection, and Standard Schema validation.'
+description: 'dendra features: REST + OpenAPI 3.1, streaming, WebSockets, background jobs, middleware and after-hooks, file uploads and downloads, CSRF protection, and Standard Schema validation.'
 ---
 
 # Also in the box
@@ -20,8 +20,9 @@ RPC-only read.
 ## Streaming & real-time
 
 `route.stream(async function* () { … })` — streaming is just an async generator,
-delivered as NDJSON over HTTP. Pair it with a pub/sub (`createInMemoryPubSub` or
-`createRedisPubSub`) for live subscriptions. On the client, `for await (…)` over
+delivered as NDJSON over HTTP. Pair it with a pub/sub (`createInMemoryPubSub`,
+`createRedisPubSub`, or `createPgPubSub` on Postgres `LISTEN/NOTIFY`) for live
+subscriptions. On the client, `for await (…)` over
 the same typed method.
 
 ```ts
@@ -36,8 +37,53 @@ for await (const ev of api.watch(undefined, { signal: ac.signal })) { /* … */ 
 
 ## WebSocket transport
 
-`toNodeHandler` and a WS server expose the same procedures over WebSocket — the
-client is unchanged.
+The same procedures run over one WebSocket: calls and subscriptions multiplexed.
+
+**Server.** `attachWsServer(wss, router, opts)` takes your `ws` server and accepts
+upgrades on one path. It requires an Origin allowlist and builds the context once
+per connection, both before the socket opens, and sets limits: 1 MB messages, 1 MB
+of unsent data, 100 subscriptions per connection, a 30 s heartbeat.
+`revalidate` re-checks long-lived sessions, `closeWhere` signs people out, and
+`close()` shuts down cleanly.
+
+```ts
+const wss = new WebSocketServer({ noServer: true, maxPayload: 1_000_000 })
+const live = attachWsServer(wss, appRouter, {
+  path: '/ws',
+  allowedOrigins: ['https://app.example.com'],
+  createContext: async (req) => ({ user: await getSession(req.headers) }),
+})
+server.on('upgrade', (req, socket, head) => live.handleUpgrade(req, socket, head))
+```
+
+**Browser.** `createWsConnection(url)` reconnects on its own with backoff,
+retries when the browser comes back online, and resubscribes open subscriptions,
+so a `for await` loop survives a dropped connection:
+
+```ts
+const conn = createWsConnection<AppRouter>(`wss://${location.host}/ws`)
+conn.onStatus((s) => setBanner(s)) // connecting | connected | reconnecting | stopped | closed
+for await (const ev of conn.api.notes.watch()) render(ev)
+```
+
+Next.js can't accept WebSocket upgrades itself; the README has a recipe for a
+small Node server in front of Next.
+
+## Background jobs
+
+Long work (an AI call, an export) runs off the request and survives a deploy:
+
+```ts
+const jobs = createJobs({ store: createPgJobStore(pool), pubsub, context: () => ({ db }) })
+const summarize = jobs.define('summarize', { input: s.object({ docId: s.string() }), run, retries: 3 })
+
+start: authed.input(s.object({ docId: s.string() })).background(summarize)  // → { jobId }
+watch: authed.input(s.object({ jobId: s.string() }))  // check the job is theirs: see the README
+  .stream(({ input, signal }) => summarize.watch(input.jobId, { signal }))
+```
+
+Retries with backoff, one running job per key, a concurrency cap per job name,
+and status streamed over the pub/sub. Stores: in-memory and Postgres.
 
 ## In-process caller
 
@@ -121,8 +167,9 @@ File responses always send `X-Content-Type-Options: nosniff`, sanitize the
 filename, and never render HTML/SVG/XML inline unless you set
 `allowUnsafeInline`.
 
-**WebSockets bypass CORS:** check the upgrade request's `Origin` against your
-allowed origins before handing the socket to `attachWs`.
+**WebSockets bypass CORS:** any site can open one with the user's cookies.
+`attachWsServer` refuses a foreign or missing `Origin` with 403 before the socket
+opens; if you use bare `attachWs`, that check is yours.
 
 ## Class controllers (NestJS-style, no decorators)
 

@@ -30,6 +30,7 @@ type Row = {
   input: unknown;
   status: JobRecord["status"];
   attempt: number;
+  version: number;
   max_attempts: number;
   progress: unknown;
   result: unknown;
@@ -44,6 +45,7 @@ const toRecord = (r: Row): JobRecord => ({
   input: r.input,
   status: r.status,
   attempt: r.attempt,
+  version: r.version,
   maxAttempts: r.max_attempts,
   progress: r.progress,
   result: r.result,
@@ -69,6 +71,7 @@ export function createPgJobStore(pool: PgQueryable, opts: { table?: string } = {
       input jsonb,
       status text NOT NULL,
       attempt integer NOT NULL DEFAULT 0,
+      version integer NOT NULL DEFAULT 1,
       max_attempts integer NOT NULL,
       progress jsonb,
       result jsonb,
@@ -119,7 +122,7 @@ export function createPgJobStore(pool: PgQueryable, opts: { table?: string } = {
     claim(names, token, leaseMs) {
       return one(
         `UPDATE ${t}
-         SET status = 'running', attempt = attempt + 1, token = $2,
+         SET status = 'running', attempt = attempt + 1, version = version + 1, token = $2,
              locked_until = now() + $3 * interval '1 millisecond', updated_at = now()
          WHERE id = (
            SELECT id FROM ${t}
@@ -145,16 +148,16 @@ export function createPgJobStore(pool: PgQueryable, opts: { table?: string } = {
 
     async progress(id, token, progress) {
       const { rows } = await pool.query(
-        `UPDATE ${t} SET progress = $3::jsonb, updated_at = now()
-         WHERE id = $1 AND token = $2 AND status = 'running' RETURNING id`,
+        `UPDATE ${t} SET progress = $3::jsonb, version = version + 1, updated_at = now()
+         WHERE id = $1 AND token = $2 AND status = 'running' RETURNING version`,
         [id, token, json(progress)],
       );
-      return rows.length > 0;
+      return rows.length ? (rows[0] as { version: number }).version : null;
     },
 
     settle(id, token, outcome) {
       const owned = `WHERE id = $1 AND token = $2 AND status = 'running' RETURNING *`;
-      const cleared = `token = NULL, locked_until = NULL, updated_at = now()`;
+      const cleared = `token = NULL, locked_until = NULL, version = version + 1, updated_at = now()`;
       if (outcome.status === "succeeded") {
         return one(
           `UPDATE ${t} SET status = 'succeeded', result = $3::jsonb, error = NULL, ${cleared} ${owned}`,

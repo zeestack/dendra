@@ -143,7 +143,8 @@ export function createWsSession(
 export interface WsClient<R> {
   api: Client<R>;
   receive(raw: string): void;
-  close(): void;
+  /** Ends open subscriptions and rejects pending calls; with `err`, both fail with it instead. */
+  close(err?: unknown): void;
 }
 
 interface AsyncQueue {
@@ -270,11 +271,11 @@ export function createWsClient<R extends object>(
         streams.delete(msg.id);
       }
     },
-    close() {
-      for (const q of streams.values()) q.end();
+    close(err) {
+      for (const q of streams.values()) err ? q.error(err) : q.end();
       streams.clear();
       for (const p of pending.values()) {
-        p.reject(new DendraClientError({ code: "INTERNAL", message: "connection closed" }));
+        p.reject(err ?? new DendraClientError({ code: "INTERNAL", message: "connection closed" }));
       }
       pending.clear();
     },

@@ -39,6 +39,13 @@ export type {
   WhatwgSocket,
 } from "./ws.ts";
 export { attachWsServer } from "./ws-server.ts";
+export { createWsConnection } from "./ws-connection.ts";
+export type {
+  WsConnection,
+  WsConnectionOptions,
+  WsBrowserSocket,
+  WsStatus,
+} from "./ws-connection.ts";
 export type {
   WsServerOptions,
   WsServerHandle,
