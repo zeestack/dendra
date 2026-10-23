@@ -13,7 +13,7 @@ npm run dev          # http://localhost:3100
 npm run ws           # (optional, separate terminal) WebSocket server on :4000
 ```
 
-`dendra` is consumed from npm (`"dendra": "^0.1.1"`) exactly as your own app
+`dendra` is consumed from npm (`"dendra": "^0.9.0"`) exactly as your own app
 would — no path aliases or `transpilePackages`.
 
 ## Demo all features in one place
