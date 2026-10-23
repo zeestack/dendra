@@ -39,7 +39,7 @@ describe.skipIf(!url)("jobs on Postgres (store + pub/sub)", async () => {
     const worker = await process_();
 
     const { jobId } = await web.add.enqueue({ a: 2, b: 3 });
-    const seen: { status: string; result?: unknown }[] = [];
+    const seen: { status: string; version: number; result?: unknown }[] = [];
     const watching = (async () => {
       for await (const snap of web.add.watch(jobId)) seen.push(snap);
     })();
