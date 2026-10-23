@@ -36,8 +36,9 @@ export const appRouter = {
       .input(s.object({ title: s.string(), body: s.string() }))
       .ai({ description: 'Create a note' })
       .handler(({ input, ctx }) => ctx.db.notes.insert(input)),
-    watch: route.stream(async function* ({ ctx }) {
-      for await (const ev of ctx.pubsub.subscribe('notes')) yield ev
+    // `signal` aborts when the client goes away; pass it on so the subscription stops
+    watch: route.stream(async function* ({ ctx, signal }) {
+      for await (const ev of ctx.pubsub.subscribe('notes', { signal })) yield ev
     })
   }
 } satisfies RouterRecord
