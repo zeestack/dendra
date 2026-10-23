@@ -22,7 +22,9 @@ because they all derive from the same definition.
 | In-process caller | `createCaller(appRouter, ctx)` |
 | REST + OpenAPI 3.1 | `toRestHandler`, `toOpenApiDocument` |
 | RPC over HTTP | `toNextHandler`, `toFetchHandler`, `toNodeHandler` |
-| Streaming (NDJSON) & WebSocket | `route.stream(...)` + the adapters |
+| Streaming (NDJSON) | `route.stream(...)` + the adapters |
+| WebSocket | `attachWsServer` (server), `createWsConnection` (browser) |
+| Background jobs | `createJobs` + `.background(job)`, in-memory or Postgres store |
 | LLM tool | `.ai()` + `toToolset` / `createToolExecutor` |
 | MCP server | `mcpToolDefinitions` / `createMcpBridge` |
 
