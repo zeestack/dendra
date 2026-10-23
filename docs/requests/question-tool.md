@@ -99,11 +99,15 @@ Overlaps "Security review of the AI/MCP exposure path (tool auth, annotations, c
 
 ### 5. Background jobs
 
+> **Shipped in dendra 0.9.0:** `createJobs`, `jobs.define`, `.background(job, map?)` → `{ jobId }`, retries with backoff, one queued-or-running job per key, `job.watch` over the pub/sub, and a Postgres store (`createPgJobStore`). It doesn't use Next's `after()`: work runs in a job worker so it survives a deploy.
+
 **Need:** runs, briefs, drafts and covers all follow "start, return an id, keep working after the response, poll for status, survive a refresh, fail stale jobs after a restart, never start two from a double click". The app hand-rolls all of it.
 
 **Ask:** `.background(handler)` returning `{ jobId }`, with built-in `status` / `progress` / `result` / `error`, an idempotency key per parent ("one running job per draft"), a pluggable store (Postgres adapter), and a subscription for progress. In Next.js it should use `after()`.
 
 ### 6. Postgres pub/sub
+
+> **Shipped in dendra 0.9.0** as `createPgPubSub(pool)`: one listening connection per process, reconnect with backoff, per-publisher order, triggers can publish.
 
 **Need:** live run progress, board updates and editor presence, without adding Redis to a Postgres-only stack.
 

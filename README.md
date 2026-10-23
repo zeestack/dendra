@@ -426,6 +426,25 @@ process.on("SIGTERM", async () => {
 
 Sign someone out everywhere with `live.closeWhere((ctx) => ctx.user.id === id)`.
 
+In the browser, `createWsConnection` keeps the socket up: it reconnects with
+backoff (0.5 s doubling to 10 s, with jitter), retries as soon as the browser is
+back online, and resubscribes open subscriptions, so a `for await` loop survives a
+dropped connection. Anything published while it was down is missed, so refetch
+when the status turns `connected` again.
+
+```ts
+import { createWsConnection } from "dendra";
+import type { AppRouter } from "@/server/router";
+
+const conn = createWsConnection<AppRouter>(`wss://${location.host}/ws`);
+conn.onStatus((status) => setBanner(status)); // connecting | connected | reconnecting | stopped | closed
+for await (const ev of conn.api.notes.watch()) render(ev);
+```
+
+A close with code `4401` (signed out) stops it with status `stopped`; call
+`conn.reconnect()` after signing in again. Calls made while disconnected fail at
+once with code `UNAVAILABLE` rather than being replayed later.
+
 | Option | Default | |
 |---|---|---|
 | `maxPayload` | 1 MB | Startup throws if the `ws` server allows more |
@@ -623,8 +642,9 @@ agents with no parallel tool layer, kept to one source of truth, and able to bot
 - **External MCP tools** — `createMcpToolSource(client)` + `mergeToolsets(...)`
   blend remote tools into your agent loop.
 - **WebSocket** — `attachWsServer` accepts sockets with an Origin check, a
-  per-connection context and resource limits; `connectWs` multiplexes unary calls
-  + subscriptions over one socket, same router.
+  per-connection context and resource limits; `createWsConnection` keeps the
+  browser side connected and resubscribes; calls and subscriptions share one
+  socket, same router.
 - **Request batching** — `createClient(url, { batch: true })` collects unary calls
   made in the same tick into one HTTP round-trip (`__batch?p=a,b`, so logs and
   mocks see the names). Results stream back as each call settles, so a slow call
@@ -694,8 +714,8 @@ git push --follow-tags
 
 ## Status
 
-**Pre-1.0 (v0.7.1) — experimental, but broad.** Implemented and tested
-(143 tests, runtime + type-level): builder/router/dispatch, a batteries-included
+**Pre-1.0 (v0.9.0) — experimental, but broad.** Implemented and tested
+(over 260 tests, runtime + type-level, plus Postgres integration tests in CI): builder/router/dispatch, a batteries-included
 Standard Schema validator set (literals, enums, unions, nullable, record, and
 fluent string/number/array constraints), Next/Fetch/Node adapters, REST +
 OpenAPI, inferred client (unary + streaming), NDJSON streaming with cancellation,
@@ -704,13 +724,13 @@ in-memory, Redis **and** Postgres pub/sub, class controllers, AI tools, MCP (std
 HTTP, consume external MCP servers), a unified **context layer**
 (`createContextManager` — memory recall + lazy tool loading under one token
 budget), and optional `dendra/anthropic` + `dendra/react` helpers. Also after-hooks
-(`.after()`) and files in and out (`s.file()`, `file()`, `urlFor`).
+(`.after()`), files in and out (`s.file()`, `file()`, `urlFor`), background jobs,
+and a WebSocket server and browser connection with safe defaults.
 
-> **Breaking in 0.7.0 (security):** the RPC handler now answers GET only for
-> procedures declared `.get()` (`405` otherwise), and POST only with
-> `Content-Type: application/json` or a dendra multipart upload (`415`
-> otherwise). dendra's client is unaffected; hand-written `fetch`/`curl` calls
-> need the JSON header, and GET-able procedures need `.get()`.
+> **Breaking in 0.9.0 (types, and chained `.input()`):** client results are typed
+> as what survives JSON (a `Date` is a `string`; `createCaller` keeps real types as
+> `Caller<R>`), and a second `.input()` extends the first instead of replacing it.
+> See the [release notes](https://products.techfoundry.io/dendra/releases).
 
 Published on npm as [`dendra`](https://www.npmjs.com/package/dendra). Docs:
 [products.techfoundry.io/dendra](https://products.techfoundry.io/dendra/) —

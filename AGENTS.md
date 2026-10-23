@@ -125,6 +125,9 @@ become `notFound()` and UNAUTHORIZED a sign-in redirect.
   1_000_000 }`; call `handleUpgrade` from your HTTP server's `upgrade` event
   (it returns `false` for other paths). `closeWhere(ctx => …)` on sign-out,
   `await close()` on shutdown. Don't hand-roll upgrade or Origin handling.
+  In the browser use `createWsConnection<AppRouter>(url)`: it reconnects and
+  resubscribes; refetch on `onStatus("connected")`, and `reconnect()` after
+  sign-in when a 4401 close stopped it. Don't hand-roll a reconnect loop.
   Next.js can't accept upgrades: put a Node server in front (README recipe).
 - **Other runtimes:** `toFetchHandler` (Hono/Bun/Deno/Workers), `toNodeHandler`
   (`node:http`), `toRestHandler` (plain REST), `toOpenApiDocument` (3.1 spec).

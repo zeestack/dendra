@@ -53,7 +53,7 @@ specific MCP server. You define a procedure once and it becomes every surface.
 | Schemas (Standard Schema + built-ins) | `s.*` | `schema.ts` |
 | Real-time pub/sub | `createPubSub` (core) + `createInMemoryPubSub`, `createRedisPubSub`, `createPgPubSub` | `pubsub.ts`, `redis-pubsub.ts`, `pg-pubsub.ts` |
 | Background jobs | `createJobs`, `.background()`, `createInMemoryJobStore`, `createPgJobStore` | `jobs.ts`, `pg-job-store.ts` |
-| WebSocket transport | `attachWsServer`, `attachWs` / `connectWs` | `ws-server.ts`, `ws.ts` |
+| WebSocket transport | `attachWsServer`, `createWsConnection`, `attachWs` / `connectWs` | `ws-server.ts`, `ws-connection.ts`, `ws.ts` |
 | Procedures → LLM tools | `.ai()`, `toToolset`, `createToolExecutor` | `tools.ts` |
 | **Your app AS an MCP server** | `mcpToolDefinitions`, `createMcpBridge` | `mcp.ts` |
 | **Consume OTHER MCP servers** | `createMcpToolSource`, `mergeToolsets`, `toToolSource` | `tools.ts`, `mcp.ts` |

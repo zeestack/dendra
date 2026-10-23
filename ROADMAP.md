@@ -33,7 +33,7 @@ optional convenience, not the moat.
 
 ---
 
-## Shipped — 0.4.0 – 0.7.0
+## Shipped — 0.4.0 – 0.9.0
 
 - **0.4.0** — batteries-included `s.*`: `literal`, `enum`, `union`, `null`,
   `nullable`, `integer`, `record`; chainable constraints (`.min/.max/.email/.uuid/
@@ -50,6 +50,10 @@ optional convenience, not the moat.
   be JSON — closing two CSRF holes in the RPC handler.
   Fixes: Zod 3/4, Valibot and ArkType schemas now type-check as `.input()`
   (Standard Schema path segments may be `{ key }`), checked by tests.
+- **0.9.0** — everything in 0.8 below (real Promises, typed middleware input,
+  cancellation, streaming batches, JSON-honest client types, `dendra/next`), plus
+  background jobs, Postgres pub/sub, pluggable pub/sub transports, `attachWsServer`
+  and `createWsConnection`.
 
 ---
 
@@ -61,15 +65,15 @@ fix the core, then long-running work, then Next.js polish, then the AI items bel
 Each item links the issue with the evidence.
 
 ### 0.8 — "core you can trust"
-- [ ] ⭐ **Unary calls return real Promises** ([#4](https://github.com/zeestack/dendra/issues/4)) — today a thenable
+- [x] ⭐ **Unary calls return real Promises** ([#4](https://github.com/zeestack/dendra/issues/4)) — today a thenable
   without `.catch` / `.finally`; apps wrap every call in `Promise.resolve(...)`.
-- [ ] ⭐ **Typed, validated input in middleware** ([#2](https://github.com/zeestack/dendra/issues/2)) — a builder's
+- [x] ⭐ **Typed, validated input in middleware** ([#2](https://github.com/zeestack/dendra/issues/2)) — a builder's
   `.input()` merges into every procedure, and `.use()` sees it typed; no more re-parsing raw input in guards.
-- [ ] ⭐ **Streams end cleanly** ([#5](https://github.com/zeestack/dendra/issues/5)) — `signal` on client calls;
+- [x] ⭐ **Streams end cleanly** ([#5](https://github.com/zeestack/dendra/issues/5)) — `signal` on client calls;
   `ReadableStream.cancel()` stops the server generator; `signal` passed to `.stream()` handlers.
-- [ ] **Batching that doesn't stall** ([#9](https://github.com/zeestack/dendra/issues/9)) — stream batch results as
+- [x] **Batching that doesn't stall** ([#9](https://github.com/zeestack/dendra/issues/9)) — stream batch results as
   each call settles, per-procedure opt-out (or batch only `.get()` reads by default), procedure names in the URL.
-- [ ] **Honest client result types** ([#3](https://github.com/zeestack/dendra/issues/3)) — `Jsonify<Out>` so types
+- [x] **Honest client result types** ([#3](https://github.com/zeestack/dendra/issues/3)) — `Jsonify<Out>` so types
   match what JSON delivers; the serializer (candidates below) can follow.
 
 ### 0.9 — "long-running work"
@@ -79,14 +83,14 @@ Each item links the issue with the evidence.
 - [x] ⭐ **Background jobs** ([#7](https://github.com/zeestack/dendra/issues/7)) — promoted from Field requests:
   `.background()` → `{ jobId }`, retries with backoff, one running job per key, a concurrency cap per job name,
   status published on the pub/sub; in-process and Postgres stores.
-- [ ] **Job status on the client** — a hook that follows a job over the subscription instead of polling
+- [ ] _(carried to 0.10)_ **Job status on the client** — a hook that follows a job over the subscription instead of polling
   (folds in `useProcedure` / `dendra/react-query`).
-- [ ] **`inspectRouter`** — moved up from Field requests: fail the build when a procedure lacks its tenant or role check.
-- [ ] **Safe-by-default AI** _(scheduled for 0.9, see Next)_ — moved up from Field requests (`.noAi()`, `.ai({ confirm: true })`): a security item.
+- [ ] _(carried to 0.10)_ **`inspectRouter`** — moved up from Field requests: fail the build when a procedure lacks its tenant or role check.
+- [ ] _(carried to 0.10)_ **Safe-by-default AI** — moved up from Field requests (`.noAi()`, `.ai({ confirm: true })`): a security item.
 
 - [x] **WebSocket server with safe defaults** ([#1](https://github.com/zeestack/dendra/issues/1)) — `attachWsServer`:
   Origin allowlist, `createContext(Request)` per connection, size/backlog/subscription limits, heartbeats,
-  revalidation, `closeWhere`, clean shutdown. Browser-side reconnect follows separately.
+  revalidation, `closeWhere`, clean shutdown; `createWsConnection` reconnects and resubscribes in the browser.
 
 ### 0.10 — "Next.js first-class"
 - [ ] **`dendra/next`** ([#8](https://github.com/zeestack/dendra/issues/8)) — `createServerCaller` reading
