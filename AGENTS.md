@@ -120,6 +120,12 @@ become `notFound()` and UNAUTHORIZED a sign-in redirect.
   `createJobs({ context })`, never the request — pass tenant/user ids via `map`.
   Call `jobs.start()` in processes that run jobs.
 - **`.ai()` is opt-in.** Only `.ai()`-marked procedures are exposed as tools.
+- **WebSockets:** `attachWsServer(wss, router, { path, allowedOrigins,
+  createContext })` on a `ws` server made with `{ noServer: true, maxPayload:
+  1_000_000 }`; call `handleUpgrade` from your HTTP server's `upgrade` event
+  (it returns `false` for other paths). `closeWhere(ctx => …)` on sign-out,
+  `await close()` on shutdown. Don't hand-roll upgrade or Origin handling.
+  Next.js can't accept upgrades: put a Node server in front (README recipe).
 - **Other runtimes:** `toFetchHandler` (Hono/Bun/Deno/Workers), `toNodeHandler`
   (`node:http`), `toRestHandler` (plain REST), `toOpenApiDocument` (3.1 spec).
 - **Class controllers:** a class whose fields are procedures; put an *instance*

@@ -84,6 +84,10 @@ Each item links the issue with the evidence.
 - [ ] **`inspectRouter`** — moved up from Field requests: fail the build when a procedure lacks its tenant or role check.
 - [ ] **Safe-by-default AI** _(scheduled for 0.9, see Next)_ — moved up from Field requests (`.noAi()`, `.ai({ confirm: true })`): a security item.
 
+- [x] **WebSocket server with safe defaults** ([#1](https://github.com/zeestack/dendra/issues/1)) — `attachWsServer`:
+  Origin allowlist, `createContext(Request)` per connection, size/backlog/subscription limits, heartbeats,
+  revalidation, `closeWhere`, clean shutdown. Browser-side reconnect follows separately.
+
 ### 0.10 — "Next.js first-class"
 - [ ] **`dendra/next`** ([#8](https://github.com/zeestack/dendra/issues/8)) — `createServerCaller` reading
   `headers()`, and `orPage` (`NOT_FOUND` → `notFound()`, `UNAUTHORIZED` → sign-in redirect).

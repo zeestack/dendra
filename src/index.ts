@@ -38,6 +38,15 @@ export type {
   WsLikeSocket,
   WhatwgSocket,
 } from "./ws.ts";
+export { attachWsServer } from "./ws-server.ts";
+export type {
+  WsServerOptions,
+  WsServerHandle,
+  WsServerLike,
+  WsServerSocket,
+  WsUpgradeRequest,
+  WsUpgradeSocket,
+} from "./ws-server.ts";
 
 export { createClient, urlFor } from "./client.ts";
 export type { ClientOptions } from "./client.ts";

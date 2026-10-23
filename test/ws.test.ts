@@ -78,3 +78,35 @@ describe("WebSocket subscriptions stop their handler", () => {
     expect(state.aborted).toBe(true);
   });
 });
+
+describe("WebSocket subscription cap", () => {
+  it("refuses subscriptions over maxSubscriptions without starting them", async () => {
+    let started = 0;
+    const r = {
+      forever: route.stream(async function* ({ signal }) {
+        started++;
+        yield "on";
+        await new Promise<void>((res) => signal.addEventListener("abort", () => res()));
+      }),
+    } satisfies RouterRecord;
+    const sent: { id: number; type: string; error?: { code?: string } }[] = [];
+    const session = createWsSession(r, (d) => void sent.push(JSON.parse(d)), {}, { maxSubscriptions: 2 });
+    const sub = (id: number) => session.handleMessage(JSON.stringify({ id, type: "subscribe", path: "forever" }));
+    const tick = () => new Promise((res) => setTimeout(res, 5));
+
+    sub(1);
+    sub(2);
+    sub(3);
+    await tick();
+    expect(started).toBe(2);
+    expect(sent.filter((m) => m.id === 3)).toEqual([
+      expect.objectContaining({ id: 3, type: "error", error: expect.objectContaining({ code: "TOO_MANY_REQUESTS" }) }),
+    ]);
+
+    session.handleMessage(JSON.stringify({ id: 1, type: "unsubscribe" }));
+    sub(4);
+    await tick();
+    expect(started).toBe(3);
+    session.handleClose();
+  });
+});
