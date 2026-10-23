@@ -18,7 +18,8 @@ change to chained `.input()`.
   `route.….background(job, map?)`, which validates, runs the guards, enqueues and
   returns `{ jobId }`. Retries with backoff, one queued-or-running job per key, a
   per-name concurrency cap, leases so a crashed worker's job is retried, and
-  `job.watch(jobId, { signal })` to stream status. Stores:
+  `job.watch(jobId, { signal })` to stream status: each state once, in order,
+  with a `version` that goes up on every change. Stores:
   `createInMemoryJobStore()` and `createPgJobStore(pool)`.
 - **Postgres pub/sub** — `createPgPubSub(pool)` over `LISTEN/NOTIFY`: one
   listening connection per process, reconnect with backoff, one process's

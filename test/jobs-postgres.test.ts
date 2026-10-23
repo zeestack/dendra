@@ -43,10 +43,13 @@ describe.skipIf(!url)("jobs on Postgres (store + pub/sub)", async () => {
     const watching = (async () => {
       for await (const snap of web.add.watch(jobId)) seen.push(snap);
     })();
+    // Start the worker only once watch has read the job, so "queued" is seen.
+    while (seen.length === 0) await new Promise((r) => setTimeout(r, 5));
     worker.jobs.start();
     await watching;
 
     expect(seen.map((x) => x.status)).toEqual(["queued", "running", "succeeded"]);
+    expect(seen.map((x) => x.version)).toEqual([1, 2, 3]);
     expect(seen.at(-1)?.result).toBe(5);
 
     await worker.jobs.stop();

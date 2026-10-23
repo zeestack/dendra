@@ -39,6 +39,8 @@ export interface JobError {
 export type JobSnapshot<O = unknown> = {
   id: string;
   name: string;
+  /** Goes up with every change; a higher version is a newer state. */
+  version: number;
   attempt: number;
   maxAttempts: number;
   progress: unknown;
@@ -58,6 +60,8 @@ export interface JobRecord {
   status: JobStatus;
   /** Attempts started so far (a claim adds one). */
   attempt: number;
+  /** 1 when added; every visible change (claim, progress, settle) adds one. A lease renewal doesn't. */
+  version: number;
   maxAttempts: number;
   progress: unknown;
   result: unknown;
@@ -92,7 +96,8 @@ export interface JobStore {
   claim(names: string[], token: string, leaseMs: number): Promise<JobRecord | null>;
   /** Renew the lease. `false` when the job is no longer ours. */
   extend(id: string, token: string, leaseMs: number): Promise<boolean>;
-  progress(id: string, token: string, progress: unknown): Promise<boolean>;
+  /** The job's new version, or `null` when the job is no longer ours. */
+  progress(id: string, token: string, progress: unknown): Promise<number | null>;
   /** `null` when the job is no longer ours. */
   settle(id: string, token: string, outcome: JobSettlement): Promise<JobRecord | null>;
   get(id: string): Promise<JobRecord | null>;
@@ -120,6 +125,7 @@ export function createInMemoryJobStore(): JobStore {
         ...structuredClone(job),
         status: "queued",
         attempt: 0,
+        version: 1,
         progress: null,
         result: null,
         error: null,
@@ -139,7 +145,13 @@ export function createInMemoryJobStore(): JobStore {
         if (due && (!next || j.runAt < next.runAt)) next = j;
       }
       if (!next) return null;
-      Object.assign(next, { status: "running", attempt: next.attempt + 1, token, lockedUntil: now + leaseMs });
+      Object.assign(next, {
+        status: "running",
+        attempt: next.attempt + 1,
+        version: next.version + 1,
+        token,
+        lockedUntil: now + leaseMs,
+      });
       return view(next);
     },
 
@@ -151,8 +163,9 @@ export function createInMemoryJobStore(): JobStore {
 
     async progress(id, token, progress) {
       const j = owned(id, token);
-      if (j) j.progress = structuredClone(progress);
-      return !!j;
+      if (!j) return null;
+      j.progress = structuredClone(progress);
+      return ++j.version;
     },
 
     async settle(id, token, outcome) {
@@ -160,6 +173,7 @@ export function createInMemoryJobStore(): JobStore {
       if (!j) return null;
       j.token = null;
       j.lockedUntil = 0;
+      j.version++;
       if (outcome.status === "succeeded") {
         Object.assign(j, { status: "succeeded", result: structuredClone(outcome.result), error: null });
       } else if (outcome.status === "failed") {
@@ -253,6 +267,7 @@ function snapshot<O>(r: JobRecord): JobSnapshot<O> {
   return {
     id: r.id,
     name: r.name,
+    version: r.version,
     status: r.status,
     attempt: r.attempt,
     maxAttempts: r.maxAttempts,
@@ -333,7 +348,8 @@ export function createJobs<Ctx>(opts: JobsOptions<Ctx>): Jobs<Ctx> {
             attempt: rec.attempt,
             signal: ac.signal,
             progress: async (progress) => {
-              if (await store.progress(rec.id, token, progress)) publish({ ...rec, progress });
+              const version = await store.progress(rec.id, token, progress);
+              if (version !== null) publish({ ...rec, progress, version });
             },
           },
         });
@@ -406,17 +422,22 @@ export function createJobs<Ctx>(opts: JobsOptions<Ctx>): Jobs<Ctx> {
     const stop = () => ac.abort();
     if (wopts.signal?.aborted) return;
     wopts.signal?.addEventListener("abort", stop, { once: true });
-    // Subscribe before reading the store so no change falls in between.
+    // Subscribe before reading the store so no change falls in between. A change
+    // made while we read arrives both in the record and as an event; the version
+    // drops the event, and any older one, so each state shows once and in order.
     const events = pubsub.subscribe(statusTopic(id), { signal: ac.signal })[Symbol.asyncIterator]();
     try {
       const rec = await store.get(id);
       if (!rec) throw new DendraError("NOT_FOUND", `No job '${id}'`);
       yield snapshot(rec);
       if (isDone(rec.status)) return;
+      let seen = rec.version;
       for (;;) {
         const next = await events.next();
         if (next.done) return;
         const snap = next.value as JobSnapshot;
+        if (snap.version <= seen) continue;
+        seen = snap.version;
         yield snap;
         if (isDone(snap.status)) return;
       }

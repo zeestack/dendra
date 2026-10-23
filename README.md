@@ -511,6 +511,8 @@ const appRouter = {
   route doesn't orphan it.
 - **Own ctx.** After a crash another process runs the job, so it gets `context()`,
   not the request's ctx. Pass what it needs (workspace, user id) through `map`.
+- **`watch` shows each state once, in order.** Every snapshot carries a
+  `version` that goes up with each change, so a client can also drop stale ones.
 - **`watch` doesn't check access.** Job ids are random UUIDs, but guard the
   procedure anyway, as above: `store.get(id)` returns the job's input to check.
 - **Survives crashes.** A worker holds a lease on a running job and renews it; if
