@@ -86,8 +86,13 @@ const userId = principal?.userId ?? parseSession(cookie) ?? 'anonymous'
 Handlers only ever read `ctx.tenantId`, so an MCP connection for workspace A
 can't read or write workspace B. `npm test` proves it against the real `/api/mcp`
 and `/rpc` handlers: a note created over MCP for A is invisible to B over MCP
-and RPC, B can't delete it by id, a spoofed `x-tenant` header is ignored, and an
-unknown token gets a `401`.
+and RPC, B can't delete it by id, a spoofed `x-tenant` header is ignored, a
+token from the full OAuth login (register → authorize → token) is scoped to the
+workspace it was authorized on, and an unknown token gets a `401`.
+
+> Upgrading from the single `MCP_TOKEN` setting on the app? It no longer
+> protects the endpoint, so `/api/mcp` returns an error until you replace it
+> with `MCP_TOKENS=<tenant>:<user>:<token>`.
 
 > Browsers without a token fall back to the subdomain (`acme.localhost:3100`).
 > A real app also checks the user is a member of that workspace — in

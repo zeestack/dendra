@@ -136,8 +136,9 @@ export default function ConnectPage() {
         </ol>
         <p className={u.note} style={{ marginTop: 12 }}>
           The endpoint is open for local dev. Set{" "}
-          <span className={u.mono}>MCP_TOKEN</span> (bearer) or use the built-in
-          OAuth before exposing it beyond your machine.
+          <span className={u.mono}>MCP_TOKENS</span> (a bearer token per
+          workspace) or use the built-in OAuth before exposing it beyond your
+          machine.
         </p>
       </div>
     </main>

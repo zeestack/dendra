@@ -14,7 +14,7 @@
 import { mcpToolDefinitions, createToolExecutor } from "dendra";
 import { appRouter } from "@/server/router";
 import { createContext, type Ctx } from "@/server/context";
-import { bearerToken, tokensRequired } from "@/server/credentials";
+import { bearerToken, legacyConfigError, tokensRequired } from "@/server/credentials";
 import { baseUrl } from "@/server/oauth-store";
 
 export const runtime = "nodejs";
@@ -31,6 +31,13 @@ const toolDefs = mcpToolDefinitions(appRouter).map((t) => {
 type JsonRpc = { jsonrpc: "2.0"; id?: string | number; method?: string; params?: Record<string, unknown> };
 
 export async function POST(req: Request): Promise<Response> {
+  // Fail closed on the old single-token setting instead of serving MCP open.
+  const configError = legacyConfigError();
+  if (configError) {
+    console.error(`[mcp] ${configError}`);
+    return json({ jsonrpc: "2.0", id: null, error: { code: -32603, message: configError } }, 500);
+  }
+
   // When auth is configured, a missing or unknown token is a 401. In OAuth mode
   // the WWW-Authenticate points at the resource metadata so an MCP client (e.g.
   // claude.ai) can discover the auth server and start the flow.
