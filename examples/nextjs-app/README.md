@@ -93,7 +93,8 @@ starts the flow. Expose the app over public HTTPS (tunnel/deploy) and add
 > ⚠️ The `/oauth/authorize` here **auto-approves** as a fixed user — it's a
 > reference, not production auth. A real app plugs in its own login/consent/IdP.
 > Set `MCP_TOKENS=…` instead for a simpler static-bearer mode behind a private
-> tunnel. Each OAuth token is bound to the workspace it was authorized on (the
+> tunnel. (Upgrading from the old single `MCP_TOKEN` on the app? It's no longer
+> read; the endpoint returns an error until you replace it with `MCP_TOKENS`.) Each OAuth token is bound to the workspace it was authorized on (the
 > host's subdomain at `/oauth/authorize`).
 
 ## Multi-tenancy by subdomain

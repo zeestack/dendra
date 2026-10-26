@@ -24,9 +24,19 @@ function staticTokens(): Map<string, Principal> {
   return map;
 }
 
+/**
+ * The app used to take one MCP_TOKEN with no workspace. If that's still the only
+ * setting, refuse to serve MCP rather than run the endpoint unprotected. (The
+ * stdio server's MCP_TOKEN is a client setting in its own process; unaffected.)
+ */
+export function legacyConfigError(): string | null {
+  if (!process.env.MCP_TOKEN || process.env.MCP_TOKENS) return null;
+  return "MCP_TOKEN is no longer supported on the app: a token must name its workspace. Set MCP_TOKENS=<tenant>:<user>:<token> instead.";
+}
+
 /** True when the app is configured to require a token on the MCP endpoint. */
 export function tokensRequired(): boolean {
-  return process.env.MCP_OAUTH === "1" || staticTokens().size > 0;
+  return process.env.MCP_OAUTH === "1" || staticTokens().size > 0 || legacyConfigError() !== null;
 }
 
 export function bearerToken(req: Request): string | null {

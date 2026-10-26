@@ -2,6 +2,7 @@
 // write workspace B, even though the same handlers serve MCP and RPC. Drives the
 // real route handlers (app/api/mcp, app/rpc) in-process against a temp SQLite DB.
 
+import { createHash } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,13 +15,59 @@ type Route = (req: Request) => Promise<Response>;
 let mcpPost: Route;
 let rpcGet: Route;
 let rpcPost: Route;
-let oauth: typeof import("../server/oauth-store.ts").oauth;
+let register: Route;
+let authorize: (req: Request) => Response | Promise<Response>;
+let token: Route;
 
 beforeAll(async () => {
   mcpPost = (await import("../app/api/mcp/route.ts")).POST;
   ({ GET: rpcGet, POST: rpcPost } = await import("../app/rpc/[...path]/route.ts"));
-  ({ oauth } = await import("../server/oauth-store.ts"));
+  register = (await import("../app/oauth/register/route.ts")).POST;
+  authorize = (await import("../app/oauth/authorize/route.ts")).GET;
+  token = (await import("../app/oauth/token/route.ts")).POST;
 });
+
+// The whole demo OAuth flow (register → authorize on a tenant's host → token)
+// through the real routes, as an MCP client like claude.ai would run it.
+async function oauthLogin(host: string): Promise<string> {
+  const redirectUri = "http://127.0.0.1:9999/callback";
+  const reg = await register(
+    new Request(`http://${host}/oauth/register`, {
+      method: "POST",
+      headers: { host, "content-type": "application/json" },
+      body: JSON.stringify({ redirect_uris: [redirectUri] }),
+    }),
+  );
+  const { client_id } = (await reg.json()) as { client_id: string };
+
+  const verifier = "v".repeat(64);
+  const challenge = createHash("sha256").update(verifier).digest("base64url");
+  const url = new URL(`http://${host}/oauth/authorize`);
+  url.search = new URLSearchParams({
+    client_id,
+    redirect_uri: redirectUri,
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+    state: "s",
+  }).toString();
+  const auth = await authorize(new Request(url, { headers: { host } }));
+  expect(auth.status).toBe(302);
+  const code = new URL(auth.headers.get("location")!).searchParams.get("code")!;
+
+  const tok = await token(
+    new Request(`http://${host}/oauth/token`, {
+      method: "POST",
+      headers: { host, "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code,
+        code_verifier: verifier,
+        redirect_uri: redirectUri,
+      }).toString(),
+    }),
+  );
+  return ((await tok.json()) as { access_token: string }).access_token;
+}
 
 interface Note {
   id: string;
@@ -118,9 +165,15 @@ describe("tenant isolation across MCP and RPC", () => {
     expect(JSON.parse(created.text)).toMatchObject({ tenantId: "beta", userId: "bob" });
   });
 
-  it("scopes an OAuth token to the workspace it was issued for", async () => {
-    const { token } = oauth.issueToken("client_test", "carol", "beta");
-    expect((await mcpList(token)).map((n) => n.id)).not.toContain(acmeNote.id);
+  it("scopes an OAuth login to the workspace it was authorized on", async () => {
+    const betaToken = await oauthLogin("beta.localhost:3100");
+    expect((await mcpList(betaToken)).map((n) => n.id)).not.toContain(acmeNote.id);
+    // …even when the MCP request itself is sent to acme's host.
+    expect((await mcpList(betaToken, { host: "acme.localhost:3100" })).map((n) => n.id)).not.toContain(
+      acmeNote.id,
+    );
+    const acmeToken = await oauthLogin("acme.localhost:3100");
+    expect((await mcpList(acmeToken)).map((n) => n.id)).toContain(acmeNote.id);
   });
 
   it("rejects a missing or unknown token", async () => {
@@ -134,5 +187,21 @@ describe("tenant isolation across MCP and RPC", () => {
       }),
     );
     expect(res.status).toBe(401);
+  });
+
+  it("refuses to serve MCP on the old single MCP_TOKEN setting", async () => {
+    const saved = process.env.MCP_TOKENS;
+    delete process.env.MCP_TOKENS;
+    process.env.MCP_TOKEN = "old-secret";
+    try {
+      for (const t of [undefined, "old-secret"]) {
+        const res = await mcp(t, "tools/list");
+        expect(res.status).toBe(500);
+        expect(JSON.stringify(await res.json())).toContain("MCP_TOKENS");
+      }
+    } finally {
+      delete process.env.MCP_TOKEN;
+      process.env.MCP_TOKENS = saved;
+    }
   });
 });
