@@ -1,0 +1,114 @@
+---
+title: Examples
+description: 'Runnable dendra examples: a multi-tenant Next.js notes app with RPC, REST, streaming, AI tools, and MCP (stdio and remote OAuth) — with a cross-tenant isolation test — plus two single-file demos.'
+---
+
+# Examples
+
+Everything here lives in the repo under
+[`examples/`](https://github.com/zeestack/dendra/tree/main/examples) and runs
+against the published `dendra` package, the way your own app would.
+
+## Next.js notes app
+
+[`examples/nextjs-app`](https://github.com/zeestack/dendra/tree/main/examples/nextjs-app)
+is a multi-tenant notes app where the browser and Claude talk to the same
+`appRouter`: RPC, REST, OpenAPI, Server Components, live subscriptions, AI
+streaming, AI tools, a WebSocket server, and MCP in both directions.
+
+```bash
+git clone https://github.com/zeestack/dendra
+cd dendra/examples/nextjs-app
+npm install
+npm run dev          # http://localhost:3100
+npm run ws           # optional, separate terminal: WebSocket server on :4000
+```
+
+Open **http://localhost:3100/demo** for nine interactive cards, each a real call
+against the live router — create a note in one card and watch it arrive live in
+the subscription card.
+
+Where to look:
+
+| File | What it shows |
+| --- | --- |
+| `server/router.ts` | the single source of truth — every procedure |
+| `server/context.ts` | `createContext`: tenant, user, db, pub/sub, memory |
+| `server/credentials.ts` | bearer token → one workspace and user |
+| `app/rpc/[...path]/route.ts` | RPC mount for the typed client |
+| `app/api/[...rest]/route.ts` | REST mount for resource URLs |
+| `app/api/mcp/route.ts` | remote MCP endpoint (OAuth) for claude.ai |
+| `mcp-server.ts` | stdio MCP server for Claude Desktop / Code |
+| `app/page.tsx` | Server Component using `createCaller` |
+| `test/tenant-isolation.test.ts` | the cross-tenant contract test |
+
+See [Architecture → A real app](/architecture#a-real-app) for the diagram.
+
+### Expose it to Claude over MCP
+
+Every `.ai()` procedure is a tool. Give the app a service token per workspace and
+point the stdio server at one:
+
+```bash
+MCP_TOKENS=acme:claude:dev-acme-token npm run dev
+MCP_TOKEN=dev-acme-token node mcp-test.ts   # lists tools, creates + lists a note
+```
+
+For Claude Code:
+
+```bash
+claude mcp add dendra-notes \
+  --env APP_URL=http://localhost:3100 --env MCP_TOKEN=dev-acme-token \
+  -- node "$(pwd)/mcp-server.ts"
+```
+
+For claude.ai, run with `MCP_OAUTH=1`, expose the app over public HTTPS, and add
+`<url>/api/mcp` as a custom connector. The example ships a demo OAuth 2.1 server
+(PKCE + dynamic client registration) that auto-approves — swap in your own login
+and consent before you deploy it.
+
+### Workspace isolation
+
+The same handlers serve the browser, RPC, REST, and MCP, so the question is
+where `ctx.tenantId` comes from. In the example, a token is issued for exactly
+one workspace, and `createContext` takes the tenant and user from it — never
+from a header or host the caller controls:
+
+```ts
+// server/context.ts
+const token = bearerToken(req)
+const principal = token ? principalFromToken(token) : null
+if (token && !principal) throw new DendraError('UNAUTHORIZED', 'Invalid or expired token')
+const tenantId = principal?.tenantId ?? tenantFromHost(host)
+const userId = principal?.userId ?? parseSession(cookie) ?? 'anonymous'
+```
+
+Handlers only ever read `ctx.tenantId`, so an MCP connection for workspace A
+can't read or write workspace B. `npm test` proves it against the real `/api/mcp`
+and `/rpc` handlers: a note created over MCP for A is invisible to B over MCP
+and RPC, B can't delete it by id, a spoofed `x-tenant` header is ignored, and an
+unknown token gets a `401`.
+
+> Browsers without a token fall back to the subdomain (`acme.localhost:3100`).
+> A real app also checks the user is a member of that workspace — in
+> `createContext` or a `.use()` guard.
+
+## Single-file demos
+
+Run from the repo root after `npm install`:
+
+```bash
+npm run demo          # examples/demo.ts
+npm run demo:restws   # examples/rest-ws-demo.ts
+```
+
+- [`demo.ts`](https://github.com/zeestack/dendra/blob/main/examples/demo.ts) —
+  one router exercised through the in-process caller, a real HTTP server and
+  typed client (unary, validation error, streaming), the AI toolset and
+  executor, and a multi-user subscription over pub/sub.
+- [`rest-ws-demo.ts`](https://github.com/zeestack/dendra/blob/main/examples/rest-ws-demo.ts)
+  — the same router as REST + an OpenAPI document, and over WebSockets
+  (`attachWsServer`, multiplexed subscriptions on one socket).
+
+Prefer a fresh project? `npm create dendra-app@latest` scaffolds the `minimal`
+or `mcp` template — see the [Quickstart](/quickstart).
