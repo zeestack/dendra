@@ -8,8 +8,9 @@
 //   npm i @modelcontextprotocol/sdk
 //   node mcp-server.ts
 //
-// Env: APP_URL (default http://localhost:3100), TENANT (default "public"),
-//      MCP_USER (default "claude").
+// Env: APP_URL (default http://localhost:3100), MCP_TOKEN — a service token
+//      from the app's MCP_TOKENS. The token decides the workspace and user; with
+//      no token the app falls back to APP_URL's subdomain, like a browser.
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -21,13 +22,12 @@ import { createClient, mcpToolDefinitions } from "dendra";
 import { appRouter, type AppRouter } from "./server/router.ts";
 
 const APP_URL = process.env.APP_URL ?? "http://localhost:3100";
-const TENANT = process.env.TENANT ?? "public";
-const USER = process.env.MCP_USER ?? "claude";
+const TOKEN = process.env.MCP_TOKEN;
 
-// Typed client to the running app; tenant/user passed as headers.
+// Typed client to the running app; the token carries the tenant/user.
 const api = createClient<AppRouter>(APP_URL, {
   prefix: "/rpc/",
-  headers: { "x-tenant": TENANT, "x-user": USER },
+  headers: TOKEN ? { authorization: `Bearer ${TOKEN}` } : {},
 });
 
 const server = new Server(
@@ -73,4 +73,4 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
 
 await server.connect(new StdioServerTransport());
 // stdout is reserved for the protocol — log to stderr only.
-console.error(`dendra MCP server ready (stdio) → ${APP_URL} [tenant=${TENANT}]`);
+console.error(`dendra MCP server ready (stdio) → ${APP_URL} [${TOKEN ? "token" : "no token"}]`);

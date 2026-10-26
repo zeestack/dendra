@@ -1,16 +1,18 @@
 // Context is plain and framework-neutral — note there are NO `next/*` types here,
 // so these procedures run under any adapter (Next, standalone Node WS, tests).
 //
-// MULTI-TENANCY lives here and nowhere else: we resolve the tenant from the
-// request's host (subdomain) once, put `tenantId` on ctx, and every procedure is
-// automatically scoped. Handlers never parse hosts or think about tenancy — they
-// just read ctx.tenantId. Swap adapters (WS, tests) and tenancy still works
+// MULTI-TENANCY lives here and nowhere else: we resolve the tenant once — from
+// the bearer token when there is one (it was issued for one workspace), else
+// from the request's host (subdomain) — put `tenantId` on ctx, and every
+// procedure is automatically scoped. Handlers never parse hosts or think about
+// tenancy — they just read ctx.tenantId. Swap adapters (WS, tests) and tenancy still works
 // because each adapter builds ctx the same way.
 
-import type { PubSub, MemoryStore } from "dendra";
+import { DendraError, type PubSub, type MemoryStore } from "dendra";
 import { db } from "./db.ts";
 import { pubsub } from "./pubsub.ts";
 import { createSqliteMemory } from "./memory.ts";
+import { bearerToken, principalFromToken } from "./credentials.ts";
 
 export interface Ctx {
   tenantId: string;
@@ -31,10 +33,14 @@ export interface Ctx {
 export async function createContext(req: Request): Promise<Ctx> {
   const host = req.headers.get("host") ?? "";
   const cookie = req.headers.get("cookie") ?? "";
-  // Browsers hit a subdomain; programmatic clients (e.g. the MCP server) can
-  // instead pass explicit x-tenant / x-user headers.
-  const tenantId = req.headers.get("x-tenant") ?? tenantFromHost(host);
-  const userId = req.headers.get("x-user") ?? parseSession(cookie) ?? "anonymous";
+  // Programmatic clients (the MCP servers, scripts) send a bearer token, and the
+  // token alone decides the tenant + user — a caller can't pick a workspace by
+  // header or host. Browsers have no token and use their subdomain.
+  const token = bearerToken(req);
+  const principal = token ? principalFromToken(token) : null;
+  if (token && !principal) throw new DendraError("UNAUTHORIZED", "Invalid or expired token");
+  const tenantId = principal?.tenantId ?? tenantFromHost(host);
+  const userId = principal?.userId ?? parseSession(cookie) ?? "anonymous";
   return {
     tenantId,
     userId,

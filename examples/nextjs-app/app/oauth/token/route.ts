@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     return err("invalid_grant", "PKCE verification failed");
   }
 
-  const { token, expiresIn } = oauth.issueToken(rec.clientId, rec.user);
+  const { token, expiresIn } = oauth.issueToken(rec.clientId, rec.user, rec.tenantId);
   return Response.json({
     access_token: token,
     token_type: "Bearer",
