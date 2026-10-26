@@ -1,8 +1,9 @@
 // Verifies the MCP server the way Claude would: spawn it, list tools, call them.
-// Requires the Next app running (npm run dev). Uses tenant "acme" so you can see
-// the created note isolated to that tenant.
+// Requires the Next app running with a service token for tenant "acme", so you
+// can see the created note isolated to that tenant:
 //
-//   node mcp-test.ts
+//   MCP_TOKENS=acme:claude:dev-acme-token npm run dev
+//   MCP_TOKEN=dev-acme-token node mcp-test.ts
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -10,7 +11,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 const transport = new StdioClientTransport({
   command: "node",
   args: ["mcp-server.ts"],
-  env: { ...process.env, TENANT: "acme", MCP_USER: "claude" },
+  env: { ...process.env, MCP_TOKEN: process.env.MCP_TOKEN ?? "dev-acme-token" },
 });
 
 const client = new Client({ name: "mcp-test", version: "1.0.0" });

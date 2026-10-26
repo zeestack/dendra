@@ -14,11 +14,14 @@ interface Code {
   redirectUri: string;
   codeChallenge: string;
   user: string;
+  /** The workspace the user approved access to; carried onto the token. */
+  tenantId: string;
   expiresAt: number;
 }
 interface Token {
   clientId: string;
   user: string;
+  tenantId: string;
   expiresAt: number;
 }
 
@@ -57,10 +60,14 @@ export const oauth = {
     const hash = createHash("sha256").update(verifier).digest("base64url");
     return hash === challenge;
   },
-  issueToken(clientId: string, user: string): { token: string; expiresIn: number } {
+  issueToken(
+    clientId: string,
+    user: string,
+    tenantId: string,
+  ): { token: string; expiresIn: number } {
     const token = rand(48);
     const expiresIn = 3600;
-    tokens.set(token, { clientId, user, expiresAt: Date.now() + expiresIn * 1000 });
+    tokens.set(token, { clientId, user, tenantId, expiresAt: Date.now() + expiresIn * 1000 });
     return { token, expiresIn };
   },
   validateToken(token: string): Token | null {

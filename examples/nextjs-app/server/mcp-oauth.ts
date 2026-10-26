@@ -53,7 +53,12 @@ export function authStore(): Map<string, PendingAuth> {
  * in the callback request by looking the record up by `state`.
  */
 export class AppOAuthProvider implements OAuthClientProvider {
-  constructor(private pending: PendingAuth) {}
+  // A plain field, not a `private` parameter property: Node's type stripping
+  // (node mcp-server.ts) can't run parameter properties.
+  private pending: PendingAuth;
+  constructor(pending: PendingAuth) {
+    this.pending = pending;
+  }
 
   get redirectUrl(): string {
     return this.pending.redirectUri;

@@ -37,8 +37,8 @@ so Claude's actions hit real, tenant-scoped data.
 
 ```bash
 npm i @modelcontextprotocol/sdk
-npm run dev            # app must be running
-node mcp-test.ts       # verify: lists tools, creates + lists a note via MCP
+MCP_TOKENS=acme:claude:dev-acme-token npm run dev   # app must be running
+MCP_TOKEN=dev-acme-token node mcp-test.ts           # lists tools, creates + lists a note via MCP
 ```
 
 **Claude Desktop** — add to `claude_desktop_config.json`:
@@ -49,7 +49,7 @@ node mcp-test.ts       # verify: lists tools, creates + lists a note via MCP
     "dendra-notes": {
       "command": "node",
       "args": ["/ABS/PATH/examples/nextjs-app/mcp-server.ts"],
-      "env": { "APP_URL": "http://localhost:3100", "TENANT": "acme", "MCP_USER": "claude" }
+      "env": { "APP_URL": "http://localhost:3100", "MCP_TOKEN": "dev-acme-token" }
     }
   }
 }
@@ -59,9 +59,13 @@ node mcp-test.ts       # verify: lists tools, creates + lists a note via MCP
 
 ```bash
 claude mcp add dendra-notes \
-  --env APP_URL=http://localhost:3100 --env TENANT=acme --env MCP_USER=claude \
+  --env APP_URL=http://localhost:3100 --env MCP_TOKEN=dev-acme-token \
   -- node "$(pwd)/mcp-server.ts"
 ```
+
+`MCP_TOKENS` on the app maps each service token to one workspace and user
+(`<tenant>:<user>:<token>`, comma-separated). The token decides the workspace —
+see [Workspace isolation](#workspace-isolation-for-mcp).
 
 Then ask Claude to "list my notes" or "create a note titled X" — it calls the
 tools, which hit the live app. Tools exposed: `notes.list`, `notes.create`,
@@ -88,7 +92,9 @@ starts the flow. Expose the app over public HTTPS (tunnel/deploy) and add
 
 > ⚠️ The `/oauth/authorize` here **auto-approves** as a fixed user — it's a
 > reference, not production auth. A real app plugs in its own login/consent/IdP.
-> Set `MCP_TOKEN=…` instead for a simpler static-bearer mode behind a private tunnel.
+> Set `MCP_TOKENS=…` instead for a simpler static-bearer mode behind a private
+> tunnel. Each OAuth token is bound to the workspace it was authorized on (the
+> host's subdomain at `/oauth/authorize`).
 
 ## Multi-tenancy by subdomain
 
@@ -106,6 +112,21 @@ automatically (data queries and pub/sub topics). Handlers never parse hosts.
 Notes created under one tenant are invisible to the others — the same
 `createContext` runs for the RPC, REST, and WebSocket adapters, so tenancy holds
 across all of them.
+
+### Workspace isolation for MCP
+
+Programmatic callers (both MCP servers, scripts) send `Authorization: Bearer
+<token>`, and a token is issued for exactly one workspace
+([`server/credentials.ts`](server/credentials.ts)). When there's a token,
+`createContext` takes the tenant and user from it and ignores the host and any
+`x-tenant`/`x-user` headers; an unknown token is a `401`. So an MCP connection
+for workspace A can't read or write workspace B, even though the same handlers
+serve MCP and RPC. [`test/tenant-isolation.test.ts`](test/tenant-isolation.test.ts)
+checks this across both surfaces (`npm test`).
+
+> Subdomain tenancy for browsers is still demo-grade: a real app also checks the
+> signed-in user is a member of the workspace (a `.use()` guard or in
+> `createContext`).
 
 ## File map
 
