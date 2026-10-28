@@ -55,8 +55,9 @@ let inference do the rest — never hand-write client types or `.d.ts`.
    - Else: `toFetchHandler` (Hono/Bun/Deno/Workers), `toNodeHandler` (`node:http`),
      `toRestHandler` (plain REST). `toOpenApiDocument(appRouter, info)` emits 3.1.
 3. **Call** with the inferred client: `createClient<AppRouter>(baseUrl, { prefix })`.
-   In a Server Component, use `createCaller(appRouter, ctx)` (no HTTP), wrapped in
-   `orPage(call, { signIn })` from `dendra/next` to turn NOT_FOUND into a 404 and
+   In a Server Component, use `createServerCaller(appRouter, createContext)` from
+   `dendra/next` (no HTTP; `ctx` built from `headers()` once per request), with
+   calls wrapped in `orPage(call, { signIn })` to turn NOT_FOUND into a 404 and
    UNAUTHORIZED into a sign-in redirect. Client results are typed as JSON
    (`Jsonify`: a `Date` is a `string`); the caller keeps real types.
 

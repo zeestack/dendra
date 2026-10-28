@@ -12,9 +12,11 @@
     "skipLibCheck": true,
     "verbatimModuleSyntax": true,
     "forceConsistentCasingInFileNames": true,
-    // `next` has no exports map, so NodeNext can't see `next/navigation`; Next
-    // itself needs that exact specifier (it aliases it in Server Components).
+    // `next` has no exports map, so NodeNext can't see `next/headers` or
+    // `next/navigation`; Next itself needs those exact specifiers (it aliases
+    // them in Server Components).
     "paths": {
+      "next/headers": ["./node_modules/next/headers.d.ts"],
       "next/navigation": ["./node_modules/next/navigation.d.ts"]
     }
   },

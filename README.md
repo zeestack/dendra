@@ -141,15 +141,27 @@ lazy: nothing is sent until you await or iterate one. Results are typed as what
 survives JSON (`Jsonify<T>`): a handler returning a `Date` gives the client a
 `string`, and `undefined` props come back optional.
 
-In a Server Component, skip HTTP entirely with `createCaller(appRouter, ctx)` —
-no serialization, so results keep their real types (a `Date` stays a `Date`;
-the type is `Caller<AppRouter>`). `dendra/next` turns errors into pages:
+In a Server Component, skip HTTP entirely with an in-process caller — no
+serialization, so results keep their real types (a `Date` stays a `Date`; the
+type is `Caller<AppRouter>`). `createServerCaller` from `dendra/next` builds
+`ctx` from the incoming request with your route handler's `createContext`, once
+per request however many layouts and pages ask; `orPage` turns errors into pages:
 
 ```ts
+// server/caller.ts
+import { createServerCaller } from "dendra/next";
+export const serverCaller = createServerCaller(appRouter, createContext);
+
+// app/notes/[id]/page.tsx
 import { orPage } from "dendra/next";
+const api = await serverCaller();
 // NOT_FOUND / BAD_REQUEST → notFound(); UNAUTHORIZED → redirect("/sign-in")
-const note = await orPage(caller.notes.get({ id }), { signIn: "/sign-in" });
+const note = await orPage(api.notes.get({ id }), { signIn: "/sign-in" });
 ```
+
+`createContext` gets a `Request` carrying the incoming headers (cookies too),
+with the request's origin as its URL. Outside Next, `createCaller(appRouter, ctx)`
+takes a `ctx` you build yourself.
 
 ## The AI / MCP story
 

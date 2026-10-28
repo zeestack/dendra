@@ -5,9 +5,14 @@
 // A Server Component that loads data through `createCaller` (or the client)
 // wants failures as pages, not a crashed render: a missing record is a 404, a
 // missing session is a trip to sign-in. `orPage` maps those error codes onto
-// Next's own `notFound()` and `redirect()`.
+// Next's own `notFound()` and `redirect()`. `createServerCaller` gives that
+// Server Component a caller whose `ctx` comes from the incoming request, built
+// by the same `createContext` the route handler uses.
 
+import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
+import * as React from "react";
+import { createCaller, type Caller } from "./caller.ts";
 
 export interface OrPageOptions {
   /** Where UNAUTHORIZED goes. Without it, UNAUTHORIZED is rethrown. */
@@ -39,4 +44,39 @@ export async function orPage<T>(call: PromiseLike<T>, opts: OrPageOptions = {}):
     if (code === "UNAUTHORIZED" && opts.signIn) redirect(opts.signIn);
     throw e;
   }
+}
+
+/**
+ * A typed in-process caller for Server Components, with `ctx` built from the
+ * incoming request by your route handler's `createContext`. Call it per render:
+ * it reads `headers()`, so the page renders dynamically.
+ *
+ * `createContext` gets a `Request` with the incoming headers (cookies included)
+ * and the request's origin as its URL — Server Components don't see the path.
+ * Inside Next, `ctx` is built once per request, however many layouts and pages
+ * ask for it.
+ *
+ * ```ts
+ * // server/caller.ts
+ * export const serverCaller = createServerCaller(appRouter, createContext);
+ *
+ * // app/notes/[id]/page.tsx
+ * const api = await serverCaller();
+ * const note = await orPage(api.notes.get({ id }), { signIn: "/sign-in" });
+ * ```
+ */
+export function createServerCaller<R extends object, Ctx>(
+  router: R,
+  createContext: (req: Request) => Ctx | Promise<Ctx>,
+): () => Promise<Caller<R>> {
+  // React's `cache` memoizes per request in Server Components. React 18 outside
+  // Next has no `cache` (nor its types); there every call builds its own ctx.
+  const perRequest = (React as { cache?: <F>(fn: F) => F }).cache ?? (<F,>(fn: F) => fn);
+  return perRequest(async () => {
+    const h = await headers();
+    const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost";
+    const proto = h.get("x-forwarded-proto") ?? "http";
+    const req = new Request(`${proto}://${host}/`, { headers: new Headers(h) });
+    return createCaller(router, await createContext(req));
+  });
 }

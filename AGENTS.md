@@ -26,7 +26,7 @@ npm i dendra
 # optional helpers, only if used:
 npm i @anthropic-ai/sdk   # for dendra/anthropic (runAgent)
 npm i react               # for dendra/react (useAssistant)
-npm i next                # for dendra/next (orPage)
+npm i next                # for dendra/next (createServerCaller, orPage)
 ```
 
 ## The one pattern: define → serve → call
@@ -78,9 +78,11 @@ export const api = createClient<AppRouter>("", { prefix: "/rpc/" });
 // Every call takes an optional 2nd arg: { signal } to abort, { batch: false }.
 ```
 
-In a Server Component, skip HTTP with `createCaller(appRouter, ctx)`, and wrap
-calls in `orPage(call, { signIn })` from `dendra/next` so NOT_FOUND/BAD_REQUEST
-become `notFound()` and UNAUTHORIZED a sign-in redirect.
+In a Server Component, skip HTTP with `createServerCaller(appRouter,
+createContext)` from `dendra/next` — it builds `ctx` from `headers()` with the
+route handler's own `createContext`, once per request — and wrap calls in
+`orPage(call, { signIn })` so NOT_FOUND/BAD_REQUEST become `notFound()` and
+UNAUTHORIZED a sign-in redirect. Don't rebuild a `Request` from `headers()` by hand.
 
 ## Conventions that aren't obvious from the types
 

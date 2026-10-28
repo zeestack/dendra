@@ -90,7 +90,7 @@ Each item links the issue with the evidence.
 ### 0.10 — "Next.js first-class"
 - [x] **`orPage`** ([#8](https://github.com/zeestack/dendra/issues/8), shipped 0.9.0) — `dendra/next` maps
   `NOT_FOUND` → `notFound()`, `UNAUTHORIZED` → sign-in redirect.
-- [ ] **`createServerCaller`** ([#24](https://github.com/zeestack/dendra/issues/24)) — the rest of `dendra/next`: a caller that builds `ctx` from `headers()`, so
+- [x] **`createServerCaller`** ([#24](https://github.com/zeestack/dendra/issues/24)) — the rest of `dendra/next`: a caller that builds `ctx` from `headers()`, so
   Server Components don't wire `createContext` by hand.
 - [ ] **SSE subscriptions** ([#25](https://github.com/zeestack/dendra/issues/25)) — moved up from candidates, as an option beside NDJSON (friendlier to proxies).
 - [ ] **"Deploying streams" recipe** ([#26](https://github.com/zeestack/dendra/issues/26)) — proxy flushing (Caddy `flush_interval -1`, nginx `proxy_buffering off`),
@@ -286,9 +286,9 @@ has to step outside dendra to stay safe.
 ### Nice to have
 - [x] `CONFLICT` (409) and `TOO_MANY_REQUESTS` (429) error codes. _Shipped 0.4.0,
   along with `UNPROCESSABLE` (422) and `NOT_IMPLEMENTED` (501)._
-- [ ] Next.js helpers _(half shipped)_ — mapping `NOT_FOUND` → `notFound()`, `UNAUTHORIZED` → sign-in
-  redirect shipped in 0.9.0 as `orPage` ([#8](https://github.com/zeestack/dendra/issues/8)); `createServerCaller(router,
-  createContext)` reading `headers()` is scheduled for 0.10 ([#24](https://github.com/zeestack/dendra/issues/24)).
+- [x] Next.js helpers — mapping `NOT_FOUND` → `notFound()`, `UNAUTHORIZED` → sign-in redirect shipped in
+  0.9.0 as `orPage` ([#8](https://github.com/zeestack/dendra/issues/8)); `createServerCaller(router, createContext)`
+  reading `headers()` lands in 0.10 ([#24](https://github.com/zeestack/dendra/issues/24)).
 - [ ] `useProcedure(api.x.get, input, { refetchWhile })` polling hook (or fold into
   `dendra/react-query`). _Job status is folded into [#27](https://github.com/zeestack/dendra/issues/27)._
 - [ ] Better Auth recipe in the docs (session in `createContext`, org/role as middleware).
