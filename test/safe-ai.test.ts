@@ -280,7 +280,11 @@ describe("approvals with transforming schemas", () => {
           typeof (v as { at?: unknown })?.at === "string"
             ? { value: { at: new Date((v as { at: string }).at) } }
             : { issues: [{ message: "at must be a string" }] },
-      },
+        // Standard JSON Schema: what the model sees (a string, before the transform).
+        jsonSchema: {
+          input: () => ({ type: "object", properties: { at: { type: "string" } }, required: ["at"] }),
+        },
+      } as StandardSchemaV1<unknown, { at: Date }>["~standard"],
     };
     const r = {
       schedule: route

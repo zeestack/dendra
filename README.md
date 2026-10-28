@@ -359,9 +359,10 @@ export const appRouter = {
 - If two schemas declare the same key, the **earlier** one wins, so the handler
   sees exactly the value the guard checked.
 - OpenAPI and tool schemas show one combined object. Two built-in `s.object`s
-  merge into one, so `.strict()` checks the combined keys. Other libraries don't
-  publish a JSON schema today, so only `s.*` parts appear there — and don't make
-  a non-`s.*` base schema strict, since it would reject the later fields.
+  merge into one, so `.strict()` checks the combined keys. Zod 4, ArkType and
+  Valibot (wrapped in `toStandardJsonSchema`) parts appear there too; a part
+  without JSON Schema (Zod 3) is left out. Don't make a non-`s.*` base schema
+  strict, since it would reject the later fields.
 
 ### After-hooks (`.after()`) — audit, usage, metrics
 
@@ -870,7 +871,7 @@ createNote: route
 
 | Making your API usable by an LLM / Claude | tRPC + MCP | **dendra** |
 |---|---|---|
-| Tool JSON Schema | hand-convert from Zod | same schema, automatic (`s.*`) |
+| Tool JSON Schema | hand-convert from Zod | same schema, automatic |
 | Which procedures are tools | maintain a separate list | `.ai()` on the procedure |
 | Validation + auth on tool calls | re-wire yourself | same path as HTTP |
 | Anthropic + OpenAI formats | convert per provider | one `format` option |

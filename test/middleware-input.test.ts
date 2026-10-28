@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { z } from "zod";
+import { z as z3 } from "zod/v3";
 import {
   initDendra,
   createCaller,
@@ -131,13 +132,25 @@ describe("chained built-in object schemas", () => {
 describe("chained schemas without a JSON schema", () => {
   it("publish only the parts that have one", () => {
     const p = route
-      .input(z.object({ workspaceId: z.number() }))
+      .input(z3.object({ workspaceId: z3.number() }))
       .input(s.object({ title: s.string() }))
       .handler(() => "ok");
     expect(p.inputJsonSchema).toEqual({
       type: "object",
       properties: { title: { type: "string" } },
       required: ["title"],
+    });
+  });
+
+  it("include a Zod 4 part, which publishes Standard JSON Schema", () => {
+    const p = route
+      .input(z.object({ workspaceId: z.number() }))
+      .input(s.object({ title: s.string() }))
+      .handler(() => "ok");
+    expect(p.inputJsonSchema).toEqual({
+      type: "object",
+      properties: { workspaceId: { type: "number" }, title: { type: "string" } },
+      required: ["workspaceId", "title"],
     });
   });
 });

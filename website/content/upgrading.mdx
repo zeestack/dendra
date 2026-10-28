@@ -82,6 +82,18 @@ endpoint takes JSON larger than 10 MB, raise it:
 toNextHandler(appRouter, { prefix: '/rpc/', createContext, maxBodyBytes: 50 * 1024 * 1024 })
 ```
 
+### `.ai()` inputs need a JSON Schema
+
+A tool's input schema is what the model sees. dendra now reads it from Zod 4,
+ArkType and Valibot as well as `s.*`, and an `.ai()` procedure whose input has
+none throws where it's defined, instead of showing the model no parameters.
+
+- **Zod 3:** move the tool's input to Zod 4 or `s.*`.
+- **Valibot:** wrap the schema in `toStandardJsonSchema` from
+  `@valibot/to-json-schema`.
+- **A `z.date()` or other type with no JSON form:** take a string and parse it in
+  the handler, or use `z.iso.datetime()`.
+
 ### Tool calls
 
 - `createToolExecutor` answers `NOT_FOUND` for a procedure without `.ai()`, as

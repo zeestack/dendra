@@ -166,9 +166,10 @@ UNAUTHORIZED a sign-in redirect. Don't rebuild a `Request` from `headers()` by h
   union/null/nullable/array/record/object`, with chainable constraints like
   `s.string().min(1).max(200).email()`, `s.integer().min(1)`,
   `s.object({…}).strict()`), or any Standard Schema lib (Zod/Valibot/ArkType).
-  `s.*` schemas and their constraints are emitted into OpenAPI and AI tool
-  schemas automatically; other libraries validate but don't appear there yet,
-  so use `s.*` for `.ai()` inputs.
+  Constraints are emitted into OpenAPI and AI tool schemas automatically, for
+  `s.*`, Zod 4, ArkType, and Valibot wrapped in `toStandardJsonSchema`
+  (`@valibot/to-json-schema`). `.ai()` throws on an input with no JSON Schema
+  (Zod 3, plain Valibot, a Zod `z.date()`) — don't work around it.
 
 ## AI / MCP
 

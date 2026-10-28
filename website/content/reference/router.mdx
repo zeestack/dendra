@@ -191,10 +191,12 @@ create: route
   .handler(({ input, ctx }) => ctx.db.notes.insert(input))
 ```
 
-Throws an `Error` where the procedure is defined if it is also `.noAi()`, or if
-its input has an `s.file()` field (models can't send files through tool calls).
-The file check runs when `.handler()`, `.stream()` or `.background()` builds the
-procedure.
+Throws an `Error` where the procedure is defined if it is also `.noAi()`, if
+its input has an `s.file()` field (models can't send files through tool calls),
+or if any part of its input has no JSON Schema (the model wouldn't know the
+parameters; see [third-party schemas](/reference/schema#third-party-schemas)).
+The file and JSON Schema checks run when `.handler()`, `.stream()` or
+`.background()` builds the procedure; the error gives the library's reason.
 
 ### `.noAi()`
 
@@ -355,7 +357,8 @@ The rules:
   the two outputs are merged, earlier keys winning.
 - **JSON Schema** (for OpenAPI and tools) is the merged object's own schema for
   two `s.object()`s. Otherwise it's an object combining the `properties` of both
-  (earlier wins) and the union of their `required` keys.
+  (earlier wins) and the union of their `required` keys. A part with no JSON
+  Schema is left out, and makes `.ai()` throw.
 - Validation always covers the whole chain and runs once, before the first
   middleware.
 
@@ -377,9 +380,11 @@ get: route
   .handler(({ input, ctx }) => ctx.db.notes.get(input.id))
 ```
 
-OpenAPI uses the schema's `jsonSchema` property, which every built-in `s.*`
-schema has. A third-party schema without one still types the handler, but the
-response is undocumented (`{}`).
+OpenAPI uses the schema's JSON Schema: every `s.*` schema has one, and Zod 4,
+ArkType and wrapped Valibot schemas publish one
+([third-party schemas](/reference/schema#third-party-schemas)). Without one the
+handler is still typed, but the response is undocumented (`{}`). `.output()`
+doesn't validate the result at runtime.
 
 ### `.handler(fn)`
 

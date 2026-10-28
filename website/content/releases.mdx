@@ -27,6 +27,14 @@ From the AI/MCP security review
   code, with the server's text.
 - `lazyToolset` throws when two tools sanitize to the same name (`a.b` and
   `a_b`), which used to route calls to the wrong one.
+- **Zod, ArkType and Valibot schemas reach OpenAPI and AI tools.** Libraries
+  that implement Standard JSON Schema publish their JSON Schema to OpenAPI and
+  tool definitions, as `s.*` does: Zod 4 and ArkType, and Valibot through
+  `toStandardJsonSchema` from `@valibot/to-json-schema`
+  ([#65](https://github.com/zeestack/dendra/issues/65)). Before, a tool with a
+  Zod input showed the model no parameters. **Breaking:** an `.ai()` procedure
+  whose input has no JSON Schema (Zod 3, plain Valibot, a `z.date()`) now throws
+  where it's defined.
 - **`maxBodyBytes` caps JSON bodies too.** RPC, batch and REST JSON bodies were
   read whole with no limit; now, like uploads, they're refused past the cap
   (default 10 MB) with `413 PAYLOAD_TOO_LARGE`, while reading

@@ -161,6 +161,8 @@ interface State<Ctx, In> {
   noAi?: boolean;
   inputSchema?: StandardSchemaV1<unknown, In>;
   inputJsonSchema?: JSONSchema;
+  /** Why (part of) the input has no JSON Schema; `.ai()` refuses it. */
+  inputJsonMissing?: string;
   outputJsonSchema?: JSONSchema;
   middlewares?: AnyMiddleware[];
   middlewareNames?: string[];
@@ -170,14 +172,50 @@ interface State<Ctx, In> {
 
 // Models can't send bytes through a tool call, so a file-input tool could only
 // ever fail. Refuse it where it's defined rather than ship a broken tool.
+// Likewise a tool whose input has no JSON Schema: the model would see no
+// parameters and could only guess.
 function assertAiCompatible<Ctx, In>(s: State<Ctx, In>): void {
   if (!s.ai?.expose) return;
+  if (s.inputJsonMissing) {
+    throw new Error(
+      `An AI tool needs a JSON Schema for its input, so the model knows the parameters. ` +
+        `${s.inputJsonMissing}. Use s.*, Zod 4 or ArkType, or wrap a Valibot schema in ` +
+        `toStandardJsonSchema (@valibot/to-json-schema).`,
+    );
+  }
   const files = fileFields(s.inputJsonSchema);
   if (files.length === 0) return;
   throw new Error(
     `A procedure with file input (${files.join(", ")}) can't be an AI tool: ` +
       `models can't send files through tool calls. Remove .ai().`,
   );
+}
+
+// The JSON Schema a schema publishes. Built-in `s.*` schemas carry it as
+// `jsonSchema`; other libraries through Standard JSON Schema
+// (`~standard.jsonSchema`), as Zod 4 and ArkType do. A library can refuse
+// (a Zod `Date`, a transform's output): then `missing` says why.
+function jsonSchemaOf(
+  schema: StandardSchemaV1,
+  io: "input" | "output",
+): { json?: JSONSchema; missing?: string } {
+  const own = (schema as { jsonSchema?: JSONSchema }).jsonSchema;
+  if (own) return { json: own };
+  const std = schema["~standard"] as StandardSchemaV1["~standard"] & {
+    jsonSchema?: Partial<Record<typeof io, (o: { target: string }) => Record<string, unknown>>>;
+  };
+  const convert = std.jsonSchema?.[io];
+  if (typeof convert !== "function") {
+    return { missing: `This ${std.vendor} schema doesn't publish one (Standard JSON Schema)` };
+  }
+  try {
+    // OpenAPI 3.1 and the model APIs use draft 2020-12. `$schema` names a
+    // document's dialect; it doesn't belong on an embedded schema.
+    const { $schema: _, ...json } = convert.call(std.jsonSchema, { target: "draft-2020-12" });
+    return { json: json as JSONSchema };
+  } catch (e) {
+    return { missing: `${std.vendor} can't convert it: ${e instanceof Error ? e.message : String(e)}` };
+  }
 }
 
 // Chained `.input()`: the first schema can be anything; after that, both sides
@@ -375,11 +413,14 @@ class Builder<
   input<S extends StandardSchemaV1<unknown, ChainableInput<In>>>(
     schema: S,
   ): Builder<Ctx, ChainedInput<In, InferOutput<S>>, DOut, Rd, M> {
-    const jsonSchema = (schema as { jsonSchema?: JSONSchema }).jsonSchema;
+    const { json, missing } = jsonSchemaOf(schema, "input");
     const s = this.state.inputSchema
-      ? extendInput(this.state.inputSchema, this.state.inputJsonSchema, schema, jsonSchema)
-      : { inputSchema: schema, inputJsonSchema: jsonSchema };
-    return this.next(s as Partial<State<Ctx, ChainedInput<In, InferOutput<S>>>>);
+      ? extendInput(this.state.inputSchema, this.state.inputJsonSchema, schema, json)
+      : { inputSchema: schema, inputJsonSchema: json };
+    const inputJsonMissing = this.state.inputJsonMissing ?? missing;
+    return this.next({ ...s, inputJsonMissing } as Partial<
+      State<Ctx, ChainedInput<In, InferOutput<S>>>
+    >);
   }
   /**
    * Declare the response shape. Feeds OpenAPI AND constrains the handler's
@@ -389,10 +430,9 @@ class Builder<
   output<S extends StandardSchemaV1>(
     schema: S,
   ): Builder<Ctx, In, InferOutput<S>, Rd, M> {
-    const jsonSchema = (schema as { jsonSchema?: JSONSchema }).jsonSchema;
     return new Builder<Ctx, In, InferOutput<S>, Rd, M>({
       ...this.state,
-      outputJsonSchema: jsonSchema,
+      outputJsonSchema: jsonSchemaOf(schema, "output").json,
     });
   }
   /** Unary procedure: returns a value. */
