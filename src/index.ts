@@ -1,23 +1,4 @@
 // Public surface.
-import {
-  resolveProc as resolveProc_,
-  invokeUnary as invokeUnary_,
-  invokeStream as invokeStream_,
-} from "./core.ts";
-import type {
-  Proc as Proc_,
-  AnyProc as AnyProc_,
-  CallSite as CallSite_,
-  Transport as Transport_,
-  ProcedureKind as ProcedureKind_,
-} from "./core.ts";
-import {
-  createMemoryStore as createMemoryStore_,
-  recallMemory as recallMemory_,
-  rememberFacts as rememberFacts_,
-  formatMemoryBlock as formatMemoryBlock_,
-} from "./memory.ts";
-
 export { initDendra } from "./core.ts";
 export type {
   RouterRecord,
@@ -30,25 +11,6 @@ export type {
   AiConfig,
   ToolAnnotations,
 } from "./core.ts";
-
-// Moved to `dendra/adapter` in 0.12. These aliases go in 0.13.
-/** @deprecated Import from "dendra/adapter". Removed in 0.13. */
-export const resolveProc = resolveProc_;
-/** @deprecated Import from "dendra/adapter". Removed in 0.13. */
-export const invokeUnary = invokeUnary_;
-/** @deprecated Import from "dendra/adapter". Removed in 0.13. */
-export const invokeStream = invokeStream_;
-/** @deprecated Import from "dendra/adapter". Removed in 0.13. */
-export type Proc<Ctx = unknown, In = unknown, Out = unknown, K extends ProcedureKind_ = "unary"> =
-  Proc_<Ctx, In, Out, K>;
-/** @deprecated Import from "dendra/adapter". Removed in 0.13. */
-export type AnyProc = AnyProc_;
-/** @deprecated Import from "dendra/adapter". Removed in 0.13. */
-export type CallSite = CallSite_;
-/** @deprecated Import from "dendra/adapter". Removed in 0.13. */
-export type Transport = Transport_;
-/** @deprecated Import from "dendra/adapter". Removed in 0.13. */
-export type ProcedureKind = ProcedureKind_;
 
 export {
   createApprovals,
@@ -129,7 +91,6 @@ export {
   createContextManager,
   memorySource,
   lazyToolSource,
-  toolSource,
 } from "./context-manager.ts";
 export type {
   ContextManager,
@@ -141,7 +102,6 @@ export type {
   PreparedContext,
   MemorySourceOptions,
   LazyToolSourceOptions,
-  ToolSourceOptions,
 } from "./context-manager.ts";
 
 export { mcpToolDefinitions, createMcpBridge, createMcpToolSource, createMcpRouter } from "./mcp.ts";
@@ -203,16 +163,8 @@ export type {
 } from "./agent.ts";
 
 // Memory: the store interface lives here so you can type `ctx.memory`; the
-// functions are in `dendra/memory`. These aliases go in 0.13.
+// functions are in `dendra/memory`.
 export type { MemoryStore, MemoryRecord, RecallOptions } from "./memory.ts";
-/** @deprecated Import from "dendra/memory". Removed in 0.13. */
-export const createMemoryStore = createMemoryStore_;
-/** @deprecated Import from "dendra/memory". Removed in 0.13. */
-export const recallMemory = recallMemory_;
-/** @deprecated Import from "dendra/memory". Removed in 0.13. */
-export const rememberFacts = rememberFacts_;
-/** @deprecated Import from "dendra/memory". Removed in 0.13. */
-export const formatMemoryBlock = formatMemoryBlock_;
 
 // Built-in Standard-Schema validators, namespaced as `s`.
 export * as s from "./schema.ts";

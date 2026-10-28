@@ -10,6 +10,18 @@ What counts as breaking, and how long deprecated APIs last, is in the
 
 ## Unreleased
 
+**Breaking** (the [1.0 upgrade guide](/upgrading#upgrading-to-10) covers each):
+
+- The deprecated aliases from 0.12 are removed from `dendra`: `resolveProc`,
+  `invokeUnary`, `invokeStream` and the `Proc`, `AnyProc`, `CallSite`,
+  `Transport` and `ProcedureKind` types (import them from `dendra/adapter`);
+  `createMemoryStore`, `recallMemory`, `rememberFacts` and `formatMemoryBlock`
+  (from `dendra/memory`); `toolSource` and `ToolSourceOptions` (now
+  `lazyToolSource` and `LazyToolSourceOptions`).
+- `engines` requires Node.js 22 or later.
+- An `.ai()` procedure whose input has no JSON Schema throws where it's defined,
+  and `maxBodyBytes` caps JSON bodies (both below).
+
 From the AI/MCP security review
 ([#42](https://github.com/zeestack/dendra/issues/42),
 [`docs/security-review-ai-mcp.md`](https://github.com/zeestack/dendra/blob/main/docs/security-review-ai-mcp.md)).
