@@ -39,6 +39,18 @@ export interface CallSite {
   batch?: boolean;
   /** Fires when the caller goes away (client disconnect, abort, unsubscribe). */
   signal?: AbortSignal;
+  /** Set on `.ai({ confirm: true })` calls: the proposal and the decision. */
+  approval?: Approval;
+}
+
+/**
+ * Where a confirm-tool call stands. `pending` = the model proposed it (the
+ * handler didn't run); `approved` / `rejected` = a person decided.
+ */
+export interface Approval {
+  id: string;
+  status: "pending" | "approved" | "rejected";
+  reason?: string;
 }
 
 // File results are raw HTTP responses; transports that speak JSON frames can't
@@ -71,6 +83,8 @@ export type AfterInfo<Ctx, In> = {
   path: string;
   transport: Transport;
   durationMs: number;
+  /** Only on `.ai({ confirm: true })` tool calls and their decisions. */
+  approval?: Approval;
 } & (
   | { ok: true; result: unknown; error?: undefined; code?: undefined }
   | { ok: false; result?: undefined; error: unknown; code: ErrorCode }
@@ -95,7 +109,8 @@ export interface Proc<
   readonly method: HttpMethod;
   readonly path?: string;
   readonly description?: string;
-  readonly ai?: { expose: boolean; description?: string };
+  readonly ai?: AiConfig;
+  readonly noAi?: boolean;
   readonly inputSchema?: StandardSchemaV1<unknown, In>;
   readonly inputJsonSchema?: JSONSchema;
   readonly outputJsonSchema?: JSONSchema;
@@ -127,6 +142,13 @@ type Branded<P, Rd extends boolean> = Rd extends true ? P & ReadBrand : P;
 // `typeof router` — so this erasure costs no end-user type safety.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AnyProc = Proc<any, any, any, ProcedureKind>;
+export interface AiConfig {
+  expose: boolean;
+  description?: string;
+  /** Tool calls propose a pending action; a person approves before it runs. */
+  confirm?: boolean;
+}
+
 export interface RouterRecord {
   [k: string]: AnyProc | RouterRecord;
 }
@@ -135,7 +157,8 @@ interface State<Ctx, In> {
   method: HttpMethod;
   path?: string;
   description?: string;
-  ai?: { expose: boolean; description?: string };
+  ai?: AiConfig;
+  noAi?: boolean;
   inputSchema?: StandardSchemaV1<unknown, In>;
   inputJsonSchema?: JSONSchema;
   outputJsonSchema?: JSONSchema;
@@ -280,9 +303,24 @@ class Builder<
   describe(description: string) {
     return this.next<In>({ description });
   }
-  /** Expose this procedure to LLMs as a callable tool (opt-in, never default). */
-  ai(cfg: { description?: string } = {}) {
-    return this.next<In>({ ai: { expose: true, description: cfg.description } });
+  /**
+   * Expose this procedure to LLMs as a callable tool (opt-in, never default).
+   * With `confirm: true`, a tool call only proposes the action: it's stored as
+   * pending, and the handler runs when a person approves it (`createApprovals`).
+   */
+  ai(cfg: { description?: string; confirm?: boolean } = {}) {
+    if (this.state.noAi) throw new Error("A .noAi() procedure can't also be .ai()");
+    return this.next<In>({
+      ai: { expose: true, description: cfg.description, confirm: cfg.confirm === true },
+    });
+  }
+  /**
+   * Never expose this procedure to a model, even by mistake: combining it with
+   * `.ai()` throws where the procedure is defined. `inspectRouter` reports it.
+   */
+  noAi() {
+    if (this.state.ai?.expose) throw new Error("A .ai() procedure can't also be .noAi()");
+    return this.next<In>({ noAi: true });
   }
   /**
    * Attach metadata for `inspectRouter` (e.g. `{ restricted: "approver" }`).
@@ -372,6 +410,7 @@ class Builder<
       path: s.path,
       description: s.description,
       ai: s.ai,
+      noAi: s.noAi,
       inputSchema: s.inputSchema,
       inputJsonSchema: s.inputJsonSchema,
       outputJsonSchema: s.outputJsonSchema,
@@ -399,6 +438,7 @@ class Builder<
       path: s.path,
       description: s.description,
       ai: s.ai,
+      noAi: s.noAi,
       inputSchema: s.inputSchema,
       inputJsonSchema: s.inputJsonSchema,
       outputJsonSchema: s.outputJsonSchema,
@@ -530,6 +570,7 @@ async function runAfterHooks(
         path: site.path ?? "",
         transport: site.transport ?? "caller",
         durationMs,
+        ...(site.approval ? { approval: site.approval } : {}),
         ...settled,
       });
     } catch (e) {
@@ -545,13 +586,28 @@ export async function invokeUnary(
   ctx: unknown,
   site: CallSite = {},
 ): Promise<unknown> {
+  return invokeWith(proc, raw, ctx, site, (input, ctx2) => proc.handler(input, ctx2));
+}
+
+/**
+ * `invokeUnary` with `body` in place of the handler — same validation,
+ * middleware, and after-hooks. Confirm tools use it to store a proposal, and
+ * approvals to run (or refuse) the decided call.
+ */
+export async function invokeWith(
+  proc: AnyProc,
+  raw: unknown,
+  ctx: unknown,
+  site: CallSite,
+  body: (input: unknown, ctx: unknown) => unknown,
+): Promise<unknown> {
   const input = await validateInput(proc, raw);
   const started = Date.now();
   const seen: unknown[] = [];
   let result: unknown;
   try {
     const ctx2 = await runMiddleware(proc, input, ctx, seen);
-    result = await proc.handler(input, ctx2);
+    result = await body(input, ctx2);
     rejectFileResult(result, site);
   } catch (error) {
     await runAfterHooks(proc, site, input, seen, started, { ok: false, error });

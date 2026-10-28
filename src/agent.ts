@@ -19,6 +19,8 @@ export interface AgentToolPart {
   input: unknown;
   result: unknown;
   isError?: boolean;
+  /** Set when the tool needs approval: the pending action to approve or reject. */
+  approvalId?: string;
 }
 
 /**

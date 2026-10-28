@@ -9,6 +9,7 @@
 
 import type Anthropic from "@anthropic-ai/sdk";
 import type { AgentPart } from "./agent.ts";
+import { isPendingResult } from "./approvals.ts";
 import { recallMemory, rememberFacts, type MemoryStore } from "./memory.ts";
 import type { ContextManager } from "./context-manager.ts";
 
@@ -308,7 +309,16 @@ export async function* runAgent(opts: RunAgentOptions): AsyncGenerator<AgentPart
       }
       // The generative-UI event: the client renders a component for it. Use the
       // original (dotted) name so a client registry keyed by it matches.
-      yield { type: "tool", name: original, input: tu.input, result, isError };
+      // A confirm tool only proposed the call; the UI shows approve / reject.
+      const approvalId = isPendingResult(result) ? result.actionId : undefined;
+      yield {
+        type: "tool",
+        name: original,
+        input: tu.input,
+        result,
+        isError,
+        ...(approvalId ? { approvalId } : {}),
+      };
       toolResults.push({
         type: "tool_result",
         tool_use_id: tu.id,

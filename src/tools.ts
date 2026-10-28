@@ -8,6 +8,11 @@
 import type { AnyProc, RouterRecord } from "./core.ts";
 import type { JSONSchema } from "./schema.ts";
 import { invokeStream, invokeUnary, resolveProc } from "./core.ts";
+import { collect, type Approvals } from "./approvals.ts";
+
+/** Appended to a confirm tool's description, so the model knows what to expect. */
+const CONFIRM_NOTE =
+  " (Needs a person's approval: calling it returns a pending action, not the result.)";
 
 export type ToolFormat = "anthropic" | "openai" | "plain";
 
@@ -55,7 +60,9 @@ export function toToolset(
           type: "object",
           properties: {},
         };
-        const description = proc.ai.description ?? proc.description ?? name;
+        const description =
+          (proc.ai.description ?? proc.description ?? name) +
+          (proc.ai.confirm ? CONFIRM_NOTE : "");
         tools.push(formatTool(name, description, schema, format));
       } else {
         walk(child as RouterRecord, [...path, k]);
@@ -85,7 +92,7 @@ export interface ToolSource {
 export function toToolSource<Ctx>(
   router: object,
   ctx: Ctx,
-  opts: { format?: ToolFormat } = {},
+  opts: { format?: ToolFormat; approvals?: Approvals<Ctx> } = {},
 ): ToolSource {
   const format = opts.format ?? "anthropic";
   const names = (toToolset(router, { format: "plain" }) as PlainTool[]).map(
@@ -94,7 +101,7 @@ export function toToolSource<Ctx>(
   return {
     tools: toToolset(router, { format }),
     names,
-    execute: createToolExecutor(router, ctx),
+    execute: createToolExecutor(router, ctx, { approvals: opts.approvals }),
   };
 }
 
@@ -129,26 +136,31 @@ export function mergeToolsets(...sources: ToolSource[]): {
   };
 }
 
-/** Execute a tool call the model requested, by name, with the same safety as HTTP. */
+/**
+ * Execute a tool call the model requested, by name, with the same safety as
+ * HTTP. A confirm tool (`.ai({ confirm: true })`) is only proposed, via
+ * `approvals`; without them it fails closed and never runs.
+ */
 export function createToolExecutor<Ctx>(
   router: object,
   ctx: Ctx,
+  opts: { approvals?: Approvals<Ctx> } = {},
 ): (name: string, args: unknown) => Promise<unknown> {
   return async (name: string, args: unknown) => {
     const proc = resolveProc(router as RouterRecord, name.split("."));
     if (!proc) throw new Error(`Tool '${name}' not found`);
     if (!proc.ai?.expose) throw new Error(`Tool '${name}' is not exposed to AI`);
+    if (proc.ai.confirm) {
+      if (!opts.approvals) {
+        throw new Error(`Tool '${name}' needs approval; pass { approvals } to run it`);
+      }
+      return opts.approvals.propose(proc, name, args, ctx);
+    }
     // Streaming tools: collect the chunks into a single result (join strings,
     // else return the array) so a streaming procedure can be an LLM/MCP tool.
     // Validation runs first in both paths — the guardrail on model output.
     const site = { path: name, transport: "tool" as const };
-    if (proc.kind === "stream") {
-      const chunks: unknown[] = [];
-      for await (const chunk of invokeStream(proc, args, ctx, site)) chunks.push(chunk);
-      return chunks.every((c) => typeof c === "string")
-        ? chunks.join("")
-        : chunks;
-    }
+    if (proc.kind === "stream") return collect(invokeStream(proc, args, ctx, site));
     return invokeUnary(proc, args, ctx, site);
   };
 }
