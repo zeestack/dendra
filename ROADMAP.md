@@ -307,6 +307,8 @@ has to step outside dendra to stay safe.
 - Security review of the AI/MCP exposure path (tool auth, annotations, confirmation).
 - Complete, versioned documentation.
 
+Tracked in the [1.0 milestone](https://github.com/zeestack/dendra/milestone/1) (#38–#43).
+
 APIs may change before 1.0; breaking changes will be called out in release notes.
 
 ---
