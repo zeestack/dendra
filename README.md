@@ -702,7 +702,7 @@ return <Progress value={job.progress} reconnecting={connection === "reconnecting
 changes. The watch stops when the job succeeds or fails, when `jobId` changes, or
 on unmount; a `null` id is `"idle"`. If the stream drops (network error, a
 WebSocket `UNAVAILABLE`, or a proxy closing it early), it reopens after a backoff
-(0.5 s doubling to 10 s, with jitter). A new watch starts with the current state,
+(0.5 s doubling to 10 s, with jitter), or at once when the browser comes back online. A new watch starts with the current state,
 so nothing is missed, and `version` drops states already shown. Any other coded
 error (`NOT_FOUND`, `UNAUTHORIZED`, …) stops it and sets `error`.
 

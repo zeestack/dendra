@@ -59,6 +59,8 @@ export interface FollowJobOptions {
   signal?: AbortSignal;
   /** Reconnect delay: starts at `initialMs`, doubles up to `maxMs`, ±25% jitter. Default 500 ms → 10 s. */
   backoff?: { initialMs?: number; maxMs?: number };
+  /** Where to hear "online" to retry at once. Default `globalThis` in browsers; `false` turns it off. */
+  online?: Pick<EventTarget, "addEventListener" | "removeEventListener"> | false;
 }
 
 const isFinal = (status: string) => status === "succeeded" || status === "failed";
@@ -78,6 +80,11 @@ export function followJob<S extends JobSnapshotLike>(
 ): JobFollower<S> {
   const initialMs = opts.backoff?.initialMs ?? 500;
   const maxMs = opts.backoff?.maxMs ?? 10_000;
+  const g = globalThis as { addEventListener?: unknown };
+  const online =
+    opts.online === false
+      ? undefined
+      : (opts.online ?? (typeof g.addEventListener === "function" ? (globalThis as unknown as EventTarget) : undefined));
   const ac = new AbortController();
   const listeners = new Set<(s: FollowedJob<S>) => void>();
   let state: FollowedJob<S> = { job: null, connection: "connecting", error: null };
@@ -95,13 +102,16 @@ export function followJob<S extends JobSnapshotLike>(
   if (opts.signal?.aborted) stop();
   else opts.signal?.addEventListener("abort", stop, { once: true });
 
+  // A backoff wait ends early on stop, or when the browser comes back online.
   const wait = (ms: number) =>
     new Promise<void>((resolve) => {
       const t = setTimeout(done, ms);
       ac.signal.addEventListener("abort", done, { once: true });
+      online?.addEventListener("online", done);
       function done() {
         clearTimeout(t);
         ac.signal.removeEventListener("abort", done);
+        online?.removeEventListener("online", done);
         resolve();
       }
     });

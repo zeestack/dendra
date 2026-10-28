@@ -129,7 +129,7 @@ const CONNECTING: FollowedJob<never> = { job: null, connection: "connecting", er
 export function useJob<S extends JobSnapshotLike>(
   jobId: string | null | undefined,
   open: (jobId: string, signal: AbortSignal) => AsyncIterable<S>,
-  opts: Pick<FollowJobOptions, "backoff"> = {},
+  opts: Pick<FollowJobOptions, "backoff" | "online"> = {},
 ): FollowedJob<S> {
   const openRef = useRef(open);
   openRef.current = open;

@@ -101,6 +101,20 @@ describe("followJob", () => {
     expect(f.get()).toMatchObject({ connection: "ended", error: null });
   });
 
+  it("retries at once when the browser comes back online", async () => {
+    const { open, opened } = scripted([
+      { yields: [snap(1)], then: new TypeError("offline") },
+      { yields: [snap(2, "succeeded")] },
+    ]);
+    const online = new EventTarget();
+    const f = followJob(open, { backoff: { initialMs: 60_000 }, online });
+    await sleep(5);
+    expect(f.get().connection).toBe("reconnecting");
+    online.dispatchEvent(new Event("online"));
+    expect((await f.done).version).toBe(2);
+    expect(opened).toHaveLength(2);
+  });
+
   it("an aborted signal stops it, including during a backoff wait", async () => {
     const { open, opened } = scripted([{ yields: [], then: new TypeError("offline") }]);
     const ac = new AbortController();
