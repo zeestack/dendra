@@ -54,7 +54,8 @@ export function createMcpBridge<Ctx>(
     async callTool(name: string, args: unknown): Promise<McpCallResult> {
       try {
         const result = await execute(name, args ?? {});
-        return { content: [{ type: "text", text: JSON.stringify(result) }] };
+        // `undefined` isn't JSON (and `text` must be a string): send `null`.
+        return { content: [{ type: "text", text: JSON.stringify(result ?? null) }] };
       } catch (e) {
         // Unexpected errors are masked (their text can carry internals) and logged.
         if (!(e instanceof DendraError)) console.error(`[dendra] mcp: tool '${name}' failed:`, e);
