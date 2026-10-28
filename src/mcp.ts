@@ -9,6 +9,7 @@ import type { ToolFormat, ToolSource } from "./tools.ts";
 import type { JSONSchema } from "./schema.ts";
 import { resolveProc, type RouterRecord } from "./core.ts";
 import type { Approvals } from "./approvals.ts";
+import { DendraError, publicError } from "./errors.ts";
 
 export interface McpToolDef {
   name: string;
@@ -55,10 +56,9 @@ export function createMcpBridge<Ctx>(
         const result = await execute(name, args ?? {});
         return { content: [{ type: "text", text: JSON.stringify(result) }] };
       } catch (e) {
-        return {
-          content: [{ type: "text", text: (e as Error).message }],
-          isError: true,
-        };
+        // Unexpected errors are masked (their text can carry internals) and logged.
+        if (!(e instanceof DendraError)) console.error(`[dendra] mcp: tool '${name}' failed:`, e);
+        return { content: [{ type: "text", text: publicError(e).message }], isError: true };
       }
     },
   };
@@ -136,7 +136,7 @@ export async function createMcpToolSource(
     names: [...remoteName.keys()],
     async execute(name, args) {
       const remote = remoteName.get(name);
-      if (!remote) throw new Error(`Tool '${name}' is not in this MCP source`);
+      if (!remote) throw new DendraError("NOT_FOUND", `Tool '${name}' not found`);
       const res = await client.callTool({
         name: remote,
         arguments: (args as Record<string, unknown>) ?? {},
@@ -145,7 +145,8 @@ export async function createMcpToolSource(
         .filter((c) => c.type === "text" && typeof c.text === "string")
         .map((c) => c.text as string)
         .join("");
-      if (res.isError) throw new Error(text || `MCP tool '${remote}' failed`);
+      // The remote server wrote this text for the model, so it passes through.
+      if (res.isError) throw new DendraError("BAD_GATEWAY", text || `MCP tool '${remote}' failed`);
       try {
         return JSON.parse(text);
       } catch {

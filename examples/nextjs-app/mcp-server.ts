@@ -18,7 +18,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { createClient, mcpToolDefinitions } from "dendra";
+import { createClient, inspectRouter, mcpToolDefinitions } from "dendra";
 import { appRouter, type AppRouter } from "./server/router.ts";
 
 const APP_URL = process.env.APP_URL ?? "http://localhost:3100";
@@ -38,8 +38,14 @@ const server = new Server(
 // Tool names must match ^[a-zA-Z0-9_-]+$ for the model to accept them, but our
 // procedure paths are dotted (notes.list). Expose underscored names and map back
 // on call — otherwise Claude silently drops the tools ("not picking up").
+//
+// This server calls the app over plain RPC, which doesn't know the caller is a
+// model. So it must enforce what the tool executor would: only the tools it
+// listed, and no `.ai({ confirm: true })` tools, which need createApprovals in
+// the app (use the remote endpoint, app/api/mcp, for those).
+const needsApproval = new Set(inspectRouter(appRouter).filter((r) => r.confirm).map((r) => r.path));
 const safeToOriginal = new Map<string, string>();
-const toolDefs = mcpToolDefinitions(appRouter).map((t) => {
+const toolDefs = mcpToolDefinitions(appRouter).filter((t) => !needsApproval.has(t.name)).map((t) => {
   const safe = t.name.replace(/[^a-zA-Z0-9_-]/g, "_");
   safeToOriginal.set(safe, t.name);
   return { ...t, name: safe };
@@ -53,8 +59,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 // tools/call — map the safe name back to the dotted path, dispatch to the client.
 server.setRequestHandler(CallToolRequestSchema, async (req) => {
   const { name, arguments: args } = req.params;
-  const original = safeToOriginal.get(name) ?? name;
+  const original = safeToOriginal.get(name);
   try {
+    if (!original) throw new Error(`Tool '${name}' not found`);
     // Walk the proxy by path: "notes.create" -> api.notes.create
     const fn = original
       .split(".")

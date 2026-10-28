@@ -13,7 +13,7 @@
 import type { Client } from "./caller.ts";
 import type { RouterRecord } from "./core.ts";
 import { invokeStream, invokeUnary, resolveProc } from "./core.ts";
-import { DendraClientError, DendraError } from "./errors.ts";
+import { DendraClientError, DendraError, publicError } from "./errors.ts";
 
 type ClientMsg =
   | { id: number; type: "call"; path: string; input?: unknown }
@@ -30,11 +30,10 @@ type ServerMsg =
   | { id: number; type: "next"; value: unknown }
   | { id: number; type: "complete" };
 
+// Unexpected errors are masked (see `publicError`) and logged.
 function toErr(e: unknown): { code: string; message: string; details?: unknown } {
-  if (e instanceof DendraError) {
-    return { code: e.code, message: e.message, details: e.details };
-  }
-  return { code: "INTERNAL", message: e instanceof Error ? e.message : "error" };
+  if (!(e instanceof DendraError)) console.error("[dendra] ws: unexpected error:", e);
+  return publicError(e);
 }
 
 // --------------------------------------------------------------------------

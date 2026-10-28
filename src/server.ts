@@ -10,7 +10,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AnyProc, CallSite, HttpMethod, RouterRecord } from "./core.ts";
 import { invokeStream, invokeUnary, resolveProc } from "./core.ts";
 import type { JSONSchema } from "./schema.ts";
-import { DendraError } from "./errors.ts";
+import { DendraError, publicError } from "./errors.ts";
 import { DEFAULT_MAX_BODY_BYTES, fileResponse, isFileResult, readFormInput } from "./files.ts";
 
 export interface ServerOptions<Ctx> {
@@ -462,18 +462,11 @@ function jsonResponse(body: unknown, status: number): Response {
   });
 }
 
-function errorBody(e: unknown): {
-  code: string;
-  message: string;
-  details?: unknown;
-} {
-  if (e instanceof DendraError) {
-    return { code: e.code, message: e.message, details: e.details };
-  }
-  return {
-    code: "INTERNAL",
-    message: e instanceof Error ? e.message : "Internal error",
-  };
+// An unexpected error reaches the client as a bare INTERNAL (its message can
+// carry internals); the original is logged here so it isn't lost.
+function errorBody(e: unknown): ReturnType<typeof publicError> {
+  if (!(e instanceof DendraError)) console.error("[dendra] unexpected error:", e);
+  return publicError(e);
 }
 
 function errorToResponse(e: unknown): Response {
@@ -528,9 +521,8 @@ function streamResponse(
 const streamHeaders = { "cache-control": "no-cache", "x-accel-buffering": "no" };
 
 function streamError(e: unknown): { code: string; message: string } {
-  return e instanceof DendraError
-    ? { code: e.code, message: e.message }
-    : { code: "INTERNAL", message: e instanceof Error ? e.message : "stream error" };
+  const { code, message } = errorBody(e);
+  return { code, message };
 }
 
 // Pull-based, so a slow reader applies backpressure to the generator. On

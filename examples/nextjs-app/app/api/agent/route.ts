@@ -7,21 +7,20 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { toToolset, createToolExecutor } from "dendra";
 import { appRouter } from "@/server/router";
-import { directContext } from "@/server/context";
+import { createContext } from "@/server/context";
 
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
-  const { messages, userId } = (await req.json()) as {
-    messages: Anthropic.MessageParam[];
-    userId: string;
-  };
+  const { messages } = (await req.json()) as { messages: Anthropic.MessageParam[] };
 
   const client = new Anthropic();
   const tools = toToolset(appRouter, {
     format: "anthropic",
   }) as Anthropic.Tool[];
-  const execute = createToolExecutor(appRouter, directContext(userId));
+  // ctx comes from the request (cookie or bearer token), never from the body:
+  // the model acts with the signed-in user's permissions, and only theirs.
+  const execute = createToolExecutor(appRouter, await createContext(req));
 
   const convo: Anthropic.MessageParam[] = [...messages];
 
