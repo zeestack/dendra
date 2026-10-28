@@ -8,12 +8,15 @@ import { createRequire } from "node:module";
 // error as INTERNAL.
 const require = createRequire(import.meta.url);
 const built = existsSync(new URL("../dist/index.cjs", import.meta.url));
+// Required inside each test: a skipped describe still runs its body.
+const load = () => ({
+  dendra: require("../dist/index.cjs"),
+  adapter: require("../dist/adapter.cjs"),
+});
 
 describe.skipIf(!built)("CommonJS build", () => {
-  const dendra = require("../dist/index.cjs");
-  const adapter = require("../dist/adapter.cjs");
-
   it("dendra/adapter throws the same DendraError class as dendra", async () => {
+    const { dendra, adapter } = load();
     const { route } = dendra.initDendra();
     const router = { x: route.input(dendra.s.object({ n: dendra.s.number() })).handler(() => 1) };
     const err = await adapter
@@ -24,6 +27,7 @@ describe.skipIf(!built)("CommonJS build", () => {
   });
 
   it("dendra/next maps a core NOT_FOUND to notFound()", async () => {
+    const { dendra } = load();
     const next = require("../dist/next.cjs");
     const { route } = dendra.initDendra();
     const caller = dendra.createCaller({
@@ -38,6 +42,7 @@ describe.skipIf(!built)("CommonJS build", () => {
   });
 
   it("after-hooks see a guard's code under require()", async () => {
+    const { dendra, adapter } = load();
     const { route } = dendra.initDendra();
     const seen: string[] = [];
     const router = {
