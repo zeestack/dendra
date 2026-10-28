@@ -7,9 +7,13 @@
 // deltas, appends tool parts, and exposes `send`/`busy`. You keep full control of
 // rendering (the generative-UI registry is yours) and of per-part side effects
 // (navigation, text-to-speech) via `onPart`.
+//
+// `useJob` follows a background job to completion over its watch procedure,
+// reconnecting as needed (see `followJob`).
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentPart } from "./agent.ts";
+import { followJob, type FollowedJob, type FollowJobOptions, type JobSnapshotLike } from "./follow-job.ts";
 
 export type AssistantItem =
   | { role: "user"; text: string }
@@ -102,4 +106,44 @@ export function useAssistant(opts: UseAssistantOptions): UseAssistant {
   const reset = useCallback(() => setItems([]), []);
 
   return { items, input, setInput, busy, send, reset };
+}
+
+const IDLE: FollowedJob<never> = { job: null, connection: "idle", error: null };
+const CONNECTING: FollowedJob<never> = { job: null, connection: "connecting", error: null };
+
+/**
+ * Follow a job by id: the latest snapshot (`job.status`, `job.progress`,
+ * `job.result`, `job.error`), how the watch is doing (`connection`), and
+ * `error` if following stopped early (e.g. `NOT_FOUND`). Stops when the job
+ * settles, the id changes, or the component unmounts; a `null` id is idle.
+ *
+ *   const { job } = useJob(jobId, (id, signal) => api.jobs.watch({ jobId: id }, { signal }));
+ *
+ * `open` may be an inline function; only `jobId` restarts the watch.
+ */
+export function useJob<S extends JobSnapshotLike>(
+  jobId: string | null | undefined,
+  open: (jobId: string, signal: AbortSignal) => AsyncIterable<S>,
+  opts: Pick<FollowJobOptions, "backoff"> = {},
+): FollowedJob<S> {
+  const openRef = useRef(open);
+  openRef.current = open;
+  const optsRef = useRef(opts);
+  optsRef.current = opts;
+  // Keyed by id, so a new id never shows the previous job's state.
+  const [current, setCurrent] = useState<{ id: string; state: FollowedJob<S> } | null>(null);
+
+  useEffect(() => {
+    if (!jobId) return;
+    const follower = followJob<S>((signal) => openRef.current(jobId, signal), optsRef.current);
+    setCurrent({ id: jobId, state: follower.get() });
+    const off = follower.subscribe((state) => setCurrent({ id: jobId, state }));
+    return () => {
+      off();
+      follower.stop();
+    };
+  }, [jobId]);
+
+  if (!jobId) return IDLE;
+  return current?.id === jobId ? current.state : CONNECTING;
 }

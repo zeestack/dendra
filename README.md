@@ -670,6 +670,39 @@ const appRouter = {
   By default, an expired lease allows retry, and `stop()` aborts `job.signal`
   and requeues running jobs without using an attempt. Set `onInterrupt: "fail"`
   for work that must not replay after a crash, shutdown or execution deadline.
+
+### Following a job in the browser
+
+`useJob` from `dendra/react` follows a job until it settles, with no polling:
+
+```tsx
+import { useJob } from "dendra/react";
+
+const { job, connection, error } = useJob(jobId, (id, signal) =>
+  api.summarize.watch({ jobId: id }, { signal }),
+);
+if (error) return <p>{error.message}</p>; // e.g. NOT_FOUND: following stopped
+if (!job) return <Spinner />;
+if (job.status === "failed") return <p>Failed: {job.error.message}</p>;
+if (job.status === "succeeded") return <Summary text={job.result.summary} />;
+return <Progress value={job.progress} reconnecting={connection === "reconnecting"} />;
+```
+
+`job` is the typed snapshot (status, progress, result, error) and updates as it
+changes. The watch stops when the job succeeds or fails, when `jobId` changes, or
+on unmount; a `null` id is `"idle"`. If the stream drops (network error, a
+WebSocket `UNAVAILABLE`, or a proxy closing it early), it reopens after a backoff
+(0.5 s doubling to 10 s, with jitter). A new watch starts with the current state,
+so nothing is missed, and `version` drops states already shown. Any other coded
+error (`NOT_FOUND`, `UNAUTHORIZED`, …) stops it and sets `error`.
+
+Outside React, `followJob` from `dendra` does the same:
+
+```ts
+const f = followJob((signal) => api.summarize.watch({ jobId }, { signal }));
+f.subscribe(({ job, connection }) => render(job, connection));
+const final = await f.done; // the succeeded/failed snapshot; f.stop() to give up
+```
 - **Snapshots:** `{ id, name, status, attempt, maxAttempts, progress, result, error }`,
   where `status` is `"queued" | "running" | "succeeded" | "failed"` and `error` is
   `{ code, message }`. A retrying job is `"queued"` with the last error.

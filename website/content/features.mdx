@@ -84,7 +84,9 @@ watch: authed.input(s.object({ jobId: s.string() }))  // check the job is theirs
 ```
 
 Retries with backoff, one running job per key, a concurrency cap per job name,
-and status streamed over the pub/sub. Stores: in-memory and Postgres.
+and status streamed over the pub/sub. Stores: in-memory and Postgres. In the
+browser, `useJob` (from `dendra/react`) or `followJob` follows a job to
+completion, reconnecting as needed, with no polling.
 
 ## In-process caller
 
