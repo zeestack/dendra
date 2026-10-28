@@ -37,8 +37,10 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: npm ci
       - run: npm run typecheck
-      - run: npm test
+      # Build first: the tests include ones that load dist/.
       - run: npm run build
+      - run: npm run check:package
+      - run: npm test
       - name: Publish if this version is new
         run: |
           VER=$(node -p "require('./package.json').version")
