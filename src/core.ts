@@ -142,6 +142,23 @@ type Branded<P, Rd extends boolean> = Rd extends true ? P & ReadBrand : P;
 // `typeof router` — so this erasure costs no end-user type safety.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AnyProc = Proc<any, any, any, ProcedureKind>;
+/**
+ * MCP tool annotations (the spec's `ToolAnnotations`): hints that tell an MCP
+ * client what a tool does, so it can decide what to ask the user about.
+ */
+export interface ToolAnnotations {
+  /** A human-readable name for the tool. */
+  title?: string;
+  /** The tool doesn't change anything. */
+  readOnlyHint?: boolean;
+  /** A change it makes may destroy or overwrite data (meaningful when not read-only). */
+  destructiveHint?: boolean;
+  /** Calling it again with the same arguments has no further effect. */
+  idempotentHint?: boolean;
+  /** It reaches outside the app (the web, another company's API). */
+  openWorldHint?: boolean;
+}
+
 export interface AiConfig {
   expose: boolean;
   description?: string;
@@ -151,6 +168,25 @@ export interface AiConfig {
   maxItems?: number;
   /** Streaming tools: stop collecting after this long, in ms. Default 30 s. */
   timeoutMs?: number;
+  /** MCP annotations, over the ones derived from `.get()` and `confirm`. */
+  annotations?: ToolAnnotations;
+}
+
+/**
+ * A tool's MCP annotations: `.get()` is read-only, a confirm tool is
+ * destructive, and `.ai({ annotations })` overrides either. Read-only wins over
+ * a derived destructive hint, which only means something for a tool that writes.
+ */
+export function toolAnnotations(proc: AnyProc): ToolAnnotations {
+  const derived: ToolAnnotations =
+    proc.method === "GET"
+      ? { readOnlyHint: true }
+      : proc.ai?.confirm
+        ? { readOnlyHint: false, destructiveHint: true }
+        : {};
+  const out = { ...derived, ...proc.ai?.annotations };
+  if (out.readOnlyHint && proc.ai?.annotations?.destructiveHint === undefined) delete out.destructiveHint;
+  return out;
 }
 
 export interface RouterRecord {
@@ -182,6 +218,9 @@ function assertAiCompatible<Ctx, In>(s: State<Ctx, In>, kind: ProcedureKind): vo
   if (!s.ai?.expose) return;
   if (kind !== "stream" && (s.ai.maxItems !== undefined || s.ai.timeoutMs !== undefined)) {
     throw new Error(".ai({ maxItems, timeoutMs }) only applies to .stream() procedures");
+  }
+  if (s.method === "GET" && s.ai.annotations?.readOnlyHint === false) {
+    throw new Error("A .get() procedure is a read: it can't be .ai({ annotations: { readOnlyHint: false } })");
   }
   if (s.inputJsonMissing) {
     throw new Error(
@@ -357,9 +396,18 @@ class Builder<
    * the agent; then the handler's signal aborts.
    */
   ai(
-    cfg: { description?: string; confirm?: boolean; maxItems?: number; timeoutMs?: number } = {},
+    cfg: {
+      description?: string;
+      confirm?: boolean;
+      maxItems?: number;
+      timeoutMs?: number;
+      annotations?: ToolAnnotations;
+    } = {},
   ) {
     if (this.state.noAi) throw new Error("A .noAi() procedure can't also be .ai()");
+    if (cfg.annotations?.readOnlyHint && cfg.annotations.destructiveHint) {
+      throw new Error(".ai({ annotations }): a tool can't be both readOnlyHint and destructiveHint");
+    }
     for (const key of ["maxItems", "timeoutMs"] as const) {
       const v = cfg[key];
       if (v !== undefined && !(Number.isInteger(v) && v > 0)) {
@@ -373,6 +421,7 @@ class Builder<
         confirm: cfg.confirm === true,
         ...(cfg.maxItems !== undefined ? { maxItems: cfg.maxItems } : {}),
         ...(cfg.timeoutMs !== undefined ? { timeoutMs: cfg.timeoutMs } : {}),
+        ...(cfg.annotations ? { annotations: { ...cfg.annotations } } : {}),
       },
     });
   }

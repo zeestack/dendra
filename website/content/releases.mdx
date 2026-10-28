@@ -35,6 +35,13 @@ From the AI/MCP security review
   Zod input showed the model no parameters. **Breaking:** an `.ai()` procedure
   whose input has no JSON Schema (Zod 3, plain Valibot, a `z.date()`) now throws
   where it's defined.
+- **Per-tool MCP annotations.** `.ai({ annotations })` sets MCP's `title`,
+  `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint` over
+  the defaults dendra derives from `.get()` and `confirm`, so a POST that only
+  reads, or a write that's safe to repeat, is described correctly
+  ([#59](https://github.com/zeestack/dendra/issues/59)). `inspectRouter` shows
+  each tool's `annotations`, so a test can assert them. New type
+  `ToolAnnotations`.
 - **`createMcpRouter`** mounts an external MCP server's tools in your router as
   `.ai()` procedures (`{ ...appRouter, gh: await createMcpRouter(client) }`),
   so `confirm` (with `createApprovals`), your `.use()` guards, after-hooks and

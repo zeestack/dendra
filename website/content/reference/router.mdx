@@ -175,7 +175,13 @@ executor. The tool's description is `config.description`, else the
 `.describe()` text, else the procedure path.
 
 ```ts
-ai(config?: { description?: string; confirm?: boolean; maxItems?: number; timeoutMs?: number }): Builder
+ai(config?: {
+  description?: string
+  confirm?: boolean
+  maxItems?: number
+  timeoutMs?: number
+  annotations?: ToolAnnotations
+}): Builder
 ```
 
 | Option | Type | Default | Description |
@@ -183,6 +189,7 @@ ai(config?: { description?: string; confirm?: boolean; maxItems?: number; timeou
 | `description` | `string` | the `.describe()` text, else the path | What the model reads to decide when to call the tool. |
 | `confirm` | `boolean` | `false` | A tool call only proposes the action; it runs after a person approves it. See `createApprovals` in [AI](/reference/ai). |
 | `maxItems` | `number` | `1000` | `.stream()` tools only: stop collecting after this many chunks. A positive integer. |
+| `annotations` | `ToolAnnotations` | derived | MCP hints, over the defaults (`.get()` is read-only, a confirm tool is destructive). See [`mcpToolDefinitions`](/reference/ai). |
 | `timeoutMs` | `number` | `30000` | `.stream()` tools only: stop collecting after this long. A positive integer. The tool answers with what arrived, and the handler's `signal` aborts. |
 
 ```ts
@@ -195,7 +202,8 @@ create: route
 
 Throws an `Error` where the procedure is defined if it is also `.noAi()`, if
 `maxItems` or `timeoutMs` is set on a procedure that isn't `.stream()` (or isn't
-a positive integer), if
+a positive integer), if `annotations` has both `readOnlyHint` and
+`destructiveHint`, or `readOnlyHint: false` on a `.get()` procedure, if
 its input has an `s.file()` field (models can't send files through tool calls),
 or if any part of its input has no JSON Schema (the model wouldn't know the
 parameters; see [third-party schemas](/reference/schema#third-party-schemas)).
@@ -488,6 +496,21 @@ How a procedure is exposed as a tool, as stored by `.ai()`.
 | `confirm` | `boolean` | Tool calls wait for a person's approval. |
 | `maxItems` | `number` | A streaming tool's chunk limit, if set (default 1,000 when collecting). |
 | `timeoutMs` | `number` | A streaming tool's time limit in ms, if set (default 30 s when collecting). |
+| `annotations` | `ToolAnnotations` | The `.ai({ annotations })` given, if any (not the derived defaults; `inspectRouter` shows those). |
+
+#### `ToolAnnotations`
+
+MCP's tool annotations: hints an MCP client uses to decide what to ask the user
+about. Set them with `.ai({ annotations })`; `mcpToolDefinitions` lists them, and
+`inspectRouter` shows the effective set.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `title` | `string` | A human-readable name for the tool. |
+| `readOnlyHint` | `boolean` | The tool doesn't change anything. Default `true` for `.get()`. |
+| `destructiveHint` | `boolean` | A change it makes may destroy or overwrite data. Only meaningful when not read-only. Default `true` for confirm tools. |
+| `idempotentHint` | `boolean` | Calling it again with the same arguments has no further effect. |
+| `openWorldHint` | `boolean` | It reaches outside the app, e.g. the web or another company's API. |
 
 #### `Approval`
 
@@ -543,6 +566,7 @@ One entry from `inspectRouter`.
 | `ai` | `boolean` | Exposed as a tool with `.ai()`. |
 | `confirm` | `boolean` | `.ai({ confirm: true })`. |
 | `noAi` | `boolean` | Marked `.noAi()`. |
+| `annotations` | `ToolAnnotations` | The MCP annotations the tool is listed with: the derived defaults plus `.ai({ annotations })`. `{}` for a procedure that isn't a tool, or has none. |
 | `meta` | `Meta` | Merged `.meta()` values; `{}` when none were set. |
 
 ## Errors
