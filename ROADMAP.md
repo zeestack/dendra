@@ -90,17 +90,17 @@ Each item links the issue with the evidence.
 ### 0.10 — "Next.js first-class"
 - [x] **`orPage`** ([#8](https://github.com/zeestack/dendra/issues/8), shipped 0.9.0) — `dendra/next` maps
   `NOT_FOUND` → `notFound()`, `UNAUTHORIZED` → sign-in redirect.
-- [ ] **`createServerCaller`** — the rest of `dendra/next`: a caller that builds `ctx` from `headers()`, so
+- [ ] **`createServerCaller`** ([#24](https://github.com/zeestack/dendra/issues/24)) — the rest of `dendra/next`: a caller that builds `ctx` from `headers()`, so
   Server Components don't wire `createContext` by hand.
-- [ ] **SSE subscriptions** — moved up from candidates, as an option beside NDJSON (friendlier to proxies).
-- [ ] **"Deploying streams" recipe** — proxy flushing (Caddy `flush_interval -1`, nginx `proxy_buffering off`),
+- [ ] **SSE subscriptions** ([#25](https://github.com/zeestack/dendra/issues/25)) — moved up from candidates, as an option beside NDJSON (friendlier to proxies).
+- [ ] **"Deploying streams" recipe** ([#26](https://github.com/zeestack/dendra/issues/26)) — proxy flushing (Caddy `flush_interval -1`, nginx `proxy_buffering off`),
   compression, idle timeouts, heartbeats.
 
 Carried over from 0.9:
-- [ ] **Job status on the client** — a hook that follows a job over the subscription instead of polling
+- [ ] **Job status on the client** ([#27](https://github.com/zeestack/dendra/issues/27)) — a hook that follows a job over the subscription instead of polling
   (folds in `useProcedure` / `dendra/react-query`).
-- [ ] **`inspectRouter`** — moved up from Field requests: fail the build when a procedure lacks its tenant or role check.
-- [ ] **Safe-by-default AI** — moved up from Field requests (`.noAi()`, `.ai({ confirm: true })`): a security item.
+- [ ] **`inspectRouter`** ([#28](https://github.com/zeestack/dendra/issues/28)) — moved up from Field requests: fail the build when a procedure lacks its tenant or role check.
+- [ ] **Safe-by-default AI** ([#29](https://github.com/zeestack/dendra/issues/29)) — moved up from Field requests (`.noAi()`, `.ai({ confirm: true })`): a security item.
 
 ### Then
 The AI / MCP work in the 0.2.0 section below, in its current order (skills, `dendra/openai`, `dendra/bedrock`,
@@ -240,7 +240,7 @@ default, no CSS-framework choice — keep it to 2–3 questions; link docs for t
 
 ## 0.3.0 and later — candidates
 
-- [ ] **SSE subscriptions** _(scheduled for 0.10)_ — real-time without standing up WebSocket infra.
+- [ ] **SSE subscriptions** _(scheduled for 0.10, [#25](https://github.com/zeestack/dendra/issues/25))_ — real-time without standing up WebSocket infra.
 - [ ] **Serialization transformers** (superjson-style; honest types come first in 0.8, [#3](https://github.com/zeestack/dendra/issues/3)) — Dates / Maps / BigInt over the wire.
 - [x] **File uploads** (multipart). _Shipped 0.7.0 with downloads; see Field requests._
 - [ ] **Observability hooks** — logging / tracing / OpenTelemetry via middleware.
@@ -268,10 +268,10 @@ has to step outside dendra to stay safe.
 - [x] ⭐ **After-handler hooks** (shipped 0.6.0) — `.after(({ ctx, input, result, error, durationMs,
   path }) => …)` on every transport (RPC, REST, caller, WebSocket, AI/MCP); errors
   in the hook are logged, not returned. _The primitive "Observability hooks" builds on._
-- [ ] **`inspectRouter(appRouter)`** _(scheduled for 0.10, see Next)_ — `[{ path, kind, method, restPath,
+- [ ] **`inspectRouter(appRouter)`** _(scheduled for 0.10, [#28](https://github.com/zeestack/dendra/issues/28))_ — `[{ path, kind, method, restPath,
   middlewares, ai, meta }]`, plus named middleware and typed `.meta()`, so a test
   can fail the build when a procedure lacks its tenant or role check.
-- [ ] **Safe-by-default AI** _(scheduled for 0.10, see Next)_ — `.noAi()` (build-time error if `.ai()` is also set)
+- [ ] **Safe-by-default AI** _(scheduled for 0.10, [#29](https://github.com/zeestack/dendra/issues/29))_ — `.noAi()` (build-time error if `.ai()` is also set)
   and `.ai({ confirm: true })` returning a pending action a person approves before
   the handler runs. _Overlaps MCP annotations + the 1.0 security review._
 
@@ -288,9 +288,9 @@ has to step outside dendra to stay safe.
   along with `UNPROCESSABLE` (422) and `NOT_IMPLEMENTED` (501)._
 - [ ] Next.js helpers _(half shipped)_ — mapping `NOT_FOUND` → `notFound()`, `UNAUTHORIZED` → sign-in
   redirect shipped in 0.9.0 as `orPage` ([#8](https://github.com/zeestack/dendra/issues/8)); `createServerCaller(router,
-  createContext)` reading `headers()` is scheduled for 0.10.
+  createContext)` reading `headers()` is scheduled for 0.10 ([#24](https://github.com/zeestack/dendra/issues/24)).
 - [ ] `useProcedure(api.x.get, input, { refetchWhile })` polling hook (or fold into
-  `dendra/react-query`).
+  `dendra/react-query`). _Job status is folded into [#27](https://github.com/zeestack/dendra/issues/27)._
 - [ ] Better Auth recipe in the docs (session in `createContext`, org/role as middleware).
 - `dendra/bedrock` — already planned above.
 
