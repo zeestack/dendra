@@ -119,6 +119,10 @@ UNAUTHORIZED a sign-in redirect. Don't rebuild a `Request` from `headers()` by h
 - **Client results are JSON-typed.** `createClient` results are `Jsonify<Out>`
   (a `Date` arrives as a `string`); `createCaller` keeps real types
   (`Caller<R>`). Don't cast client results back to `Date` — parse them.
+- **Streaming tools are bounded.** A `.stream()` with `.ai()` answers with the
+  chunks collected in `timeoutMs` (default 30 s) or `maxItems` (1,000), then
+  its `signal` aborts: `.ai({ timeoutMs: 5_000 })` for a "watch for 5 s" tool.
+  Pass `{ signal }` as the executor's third argument to cancel a call.
 - **Streams stop with their consumer.** A `.stream()` handler gets `signal`,
   aborted when the client disconnects, cancels, unsubscribes, or aborts its own
   `{ signal }`. Pass it to `pubsub.subscribe(topic, { signal })` or long work

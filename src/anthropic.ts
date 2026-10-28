@@ -38,8 +38,11 @@ export interface RunAgentOptions {
   /** Tool schemas in Anthropic format (e.g. from `mergeToolsets().tools`).
    *  Ignored when `lazyToolset` is set (which owns the tool list). */
   tools: unknown[];
-  /** Runs a tool the model chose (e.g. `mergeToolsets().execute`). */
-  execute: (name: string, args: unknown) => Promise<unknown>;
+  /**
+   * Runs a tool the model chose (e.g. `mergeToolsets().execute`). It gets the
+   * run's `signal`, so aborting the run cancels a tool call in flight.
+   */
+  execute: (name: string, args: unknown, call?: { signal?: AbortSignal }) => Promise<unknown>;
   /**
    * Opt-in tool-context management (`dendra` `lazyToolset`). When set, the full
    * schemas are NOT sent up front — the model gets a compact menu + a
@@ -305,8 +308,10 @@ export async function* runAgent(opts: RunAgentOptions): AsyncGenerator<AgentPart
       let result: unknown;
       let isError = false;
       try {
-        result = await execute(original, tu.input);
+        result = await execute(original, tu.input, { signal: opts.signal });
       } catch (e) {
+        // A cancelled run ends here, rather than reporting a tool error.
+        if (opts.signal?.aborted) throw e;
         // The model sees a DendraError's message; anything else is masked, since
         // its text can carry internals, and logged here instead.
         if (!(e instanceof DendraError)) console.error(`[dendra] tool '${original}' failed:`, e);

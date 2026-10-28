@@ -75,21 +75,29 @@ function createToolExecutor<Ctx>(
   router: object,
   ctx: Ctx,
   opts?: { approvals?: Approvals<Ctx> },
-): (name: string, args: unknown) => Promise<unknown>
+): (name: string, args: unknown, call?: { signal?: AbortSignal }) => Promise<unknown>
 ```
 
 ```ts
 const execute = createToolExecutor(appRouter, await createContext(req), { approvals })
-const result = await execute('notes.create', { title: 'Hi', body: '…' })
+const result = await execute('notes.create', { title: 'Hi', body: '…' }, { signal })
 ```
 
 The model acts with the permissions of the `ctx` you pass. Build it from the
 request, per request; an executor made once at startup with a service ctx gives the
 model that service's rights.
 
-A streaming procedure (`.stream()`) runs to the end and its chunks are collected:
-joined into one string if every chunk is a string, else returned as an array. There
-is no limit or cancellation, so don't mark an endless subscription `.ai()`.
+A streaming procedure (`.stream()`) has its chunks collected: joined into one
+string if every chunk is a string, else returned as an array. Collection stops at
+the tool's `maxItems` (default 1,000) or `timeoutMs` (default 30 s), set with
+[`.ai()`](/reference/router), and the call answers with what arrived. The
+handler's `signal` then aborts, so a subscription stops too. So a `watch` exposed
+as a tool reads like "what happened in the next 30 seconds".
+
+`call.signal` cancels a call: it rejects with the signal's reason, as `fetch`
+does, and a stream's handler `signal` aborts. A unary handler has no signal and
+runs on, but the caller stops waiting for it. An already-aborted signal rejects
+before the tool runs. `runAgent` passes its own `signal`.
 
 | Option | Type | Description |
 | --- | --- | --- |
@@ -171,7 +179,7 @@ that owns the name.
 ```ts
 function mergeToolsets(...sources: ToolSource[]): {
   tools: unknown[]
-  execute: (name: string, args: unknown) => Promise<unknown>
+  execute: (name: string, args: unknown, call?: { signal?: AbortSignal }) => Promise<unknown>
 }
 ```
 
@@ -194,7 +202,7 @@ interface ToolSource {
   /** The tool names this source answers to (used for routing). */
   names: string[]
   /** Run one of this source's tools by name. */
-  execute(name: string, args: unknown): Promise<unknown>
+  execute(name: string, args: unknown, call?: { signal?: AbortSignal }): Promise<unknown>
 }
 ```
 
@@ -248,18 +256,19 @@ function createMcpBridge<Ctx>(
   opts?: { approvals?: Approvals<Ctx> },
 ): {
   listTools(): McpToolDef[]
-  callTool(name: string, args: unknown): Promise<McpCallResult>
+  callTool(name: string, args: unknown, call?: { signal?: AbortSignal }): Promise<McpCallResult>
 }
 ```
 
 ```ts
 const bridge = createMcpBridge(appRouter, ctx, { approvals })
 server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: bridge.listTools() }))
-server.setRequestHandler(CallToolRequestSchema, (req) =>
-  bridge.callTool(req.params.name, req.params.arguments))
+server.setRequestHandler(CallToolRequestSchema, (req, extra) =>
+  bridge.callTool(req.params.name, req.params.arguments, { signal: extra.signal }))
 ```
 
-`callTool` never throws. It passes `args ?? {}` to the executor and returns the
+`callTool` throws only when `call.signal` aborts (the client cancelled, so the
+SDK drops the response). It passes `args ?? {}` to the executor and returns the
 result as one text item holding `JSON.stringify(result)`. On failure it returns
 `isError: true` with the error's public message as the text: a `DendraError`'s own
 message, or `Internal error` for anything else (logged with `console.error`). Only
@@ -309,6 +318,9 @@ Each tool's description falls back to its name, and a missing `inputSchema` to
   text as the message (or `MCP tool 'x' failed` if there's none). The server wrote
   that text for the model, so it passes through unmasked.
 - Throws `NOT_FOUND` for a name it didn't list.
+- With `call.signal`, stops waiting when it aborts and rejects with its reason.
+  The remote call isn't cancelled: the MCP SDK takes a signal in a different
+  argument in v1 and v2, so `McpClientLike` doesn't pass one.
 
 Errors thrown by the client itself (a dropped connection) are not wrapped. Remote
 tool names, descriptions and results reach the model as the server sent them, so

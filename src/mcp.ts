@@ -4,7 +4,7 @@
 // thin, zero-dependency shaping layer; the example wires it to the official MCP
 // SDK transport (stdio / HTTP). Only `.ai()`-exposed procedures are surfaced.
 
-import { createToolExecutor, formatTool, toToolset } from "./tools.ts";
+import { createToolExecutor, formatTool, toToolset, untilAborted } from "./tools.ts";
 import type { ToolFormat, ToolSource } from "./tools.ts";
 import type { JSONSchema } from "./schema.ts";
 import { resolveProc, type RouterRecord } from "./core.ts";
@@ -51,12 +51,19 @@ export function createMcpBridge<Ctx>(
     listTools(): McpToolDef[] {
       return mcpToolDefinitions(router);
     },
-    async callTool(name: string, args: unknown): Promise<McpCallResult> {
+    /** `signal` cancels the call (the MCP SDK passes one to each request handler). */
+    async callTool(
+      name: string,
+      args: unknown,
+      call: { signal?: AbortSignal } = {},
+    ): Promise<McpCallResult> {
       try {
-        const result = await execute(name, args ?? {});
+        const result = await execute(name, args ?? {}, call);
         // `undefined` isn't JSON (and `text` must be a string): send `null`.
         return { content: [{ type: "text", text: JSON.stringify(result ?? null) }] };
       } catch (e) {
+        // Cancelled: the client isn't waiting for a result (the SDK drops it).
+        if (call.signal?.aborted) throw e;
         // Unexpected errors are masked (their text can carry internals) and logged.
         if (!(e instanceof DendraError)) console.error(`[dendra] mcp: tool '${name}' failed:`, e);
         return { content: [{ type: "text", text: publicError(e).message }], isError: true };
@@ -135,13 +142,16 @@ export async function createMcpToolSource(
   return {
     tools,
     names: [...remoteName.keys()],
-    async execute(name, args) {
+    async execute(name, args, call = {}) {
+      call.signal?.throwIfAborted();
       const remote = remoteName.get(name);
       if (!remote) throw new DendraError("NOT_FOUND", `Tool '${name}' not found`);
-      const res = await client.callTool({
-        name: remote,
-        arguments: (args as Record<string, unknown>) ?? {},
-      });
+      // The MCP SDK's callTool takes its signal in a different place in v1 and
+      // v2, so the remote call isn't cancelled; we only stop waiting for it.
+      const res = await untilAborted(
+        client.callTool({ name: remote, arguments: (args as Record<string, unknown>) ?? {} }),
+        call.signal,
+      );
       const text = (res.content ?? [])
         .filter((c) => c.type === "text" && typeof c.text === "string")
         .map((c) => c.text as string)
