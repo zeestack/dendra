@@ -39,6 +39,23 @@ const merged = mergeToolsets(local, external) // one { tools, execute }
 The model can't tell local procedures from remote MCP tools — each call is routed
 back to the source that owns it.
 
+A remote server is untrusted input: its descriptions and results reach the
+model. To put its tools under the same rules as yours (a person's approval,
+your guards, your audit hook), mount them in your router instead:
+
+```ts
+import { createMcpRouter, createApprovals, createToolExecutor } from 'dendra'
+
+const gh = await createMcpRouter(githubClient, {
+  filter: (name) => ['search_code', 'create_issue'].includes(name),
+  confirm: (name) => name === 'create_issue',
+})
+const router = { ...appRouter, gh }
+const execute = createToolExecutor(router, ctx, { approvals: createApprovals(router) })
+```
+
+See [External servers are untrusted](/reference/ai#external-servers-are-untrusted).
+
 ## The agent loop (optional)
 
 `dendra/anthropic` ships `runAgent` — the model↔tool loop every chat app

@@ -143,12 +143,13 @@ export type {
   ToolSourceOptions,
 } from "./context-manager.ts";
 
-export { mcpToolDefinitions, createMcpBridge, createMcpToolSource } from "./mcp.ts";
+export { mcpToolDefinitions, createMcpBridge, createMcpToolSource, createMcpRouter } from "./mcp.ts";
 export type {
   McpToolDef,
   McpCallResult,
   McpClientLike,
   McpToolSourceOptions,
+  McpRouterOptions,
 } from "./mcp.ts";
 
 export { createInMemoryPubSub, createPubSub } from "./pubsub.ts";

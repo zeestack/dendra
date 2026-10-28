@@ -178,8 +178,8 @@ UNAUTHORIZED a sign-in redirect. Don't rebuild a `Request` from `headers()` by h
 ## AI / MCP
 
 ```ts
-import { toToolset, createToolExecutor, mcpToolDefinitions,
-         toToolSource, mergeToolsets, createMcpToolSource } from "dendra";
+import { toToolset, createToolExecutor, mcpToolDefinitions, toToolSource,
+         mergeToolsets, createMcpToolSource, createMcpRouter } from "dendra";
 
 const tools = toToolset(appRouter, { format: "anthropic" }); // or "openai"/"plain"
 const execute = createToolExecutor(appRouter, ctx);          // validated, ctx-scoped
@@ -189,7 +189,15 @@ const mcp = mcpToolDefinitions(appRouter);                   // MCP tools/list
 const local = toToolSource(appRouter, ctx, { format: "anthropic" });
 const external = await createMcpToolSource(connectedMcpClient, { prefix: "gh." });
 const merged = mergeToolsets(local, external);               // one { tools, execute }
+
+// Or mount an external server's tools in your router, so approvals
+// (confirm), guards and after-hooks cover them like local tools:
+const gh = await createMcpRouter(connectedMcpClient, { filter, confirm: (n) => n !== "search" });
+const router = { ...appRouter, gh };                         // tools named gh.*
 ```
+
+External MCP servers are untrusted input: `filter` to the tools you need, and
+`confirm` anything that writes.
 
 Optional helpers (peer deps, opt-in; **experimental**, may change in a minor release):
 - `dendra/anthropic` → `runAgent({ client, model, tools, execute, prompt, system })`
