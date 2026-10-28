@@ -1,0 +1,16 @@
+{
+  "node": "v22.23.4",
+  "platform": "linux-x64",
+  "values": {
+    "bundle.client": 4459,
+    "bundle.server": 7458,
+    "bundle.full": 24862,
+    "throughput.unary": 1.126,
+    "latency.unary.p50": 1.24,
+    "throughput.get": 1.206,
+    "latency.get.p50": 1.408,
+    "throughput.stream": 1.441,
+    "latency.stream.p50": 1.769,
+    "coldStart": 1.077
+  }
+}
