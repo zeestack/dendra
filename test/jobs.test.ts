@@ -31,7 +31,7 @@ async function collect<T>(it: AsyncIterable<T>) {
 
 const started: Jobs<unknown>[] = [];
 afterEach(async () => {
-  await Promise.all(started.splice(0).map((j) => j.stop()));
+  await Promise.all(started.splice(0).map((j) => j.stop({ timeoutMs: 100 })));
 });
 
 function setup(store: JobStore = createInMemoryJobStore(), ctx: unknown = { db: "worker-db" }) {
@@ -257,6 +257,298 @@ describe("createJobs", () => {
     jobs.start();
     await until(async () => (await job.get(jobId))?.status === "failed");
     expect((await job.get(jobId))?.error?.message).toMatch(/interrupted/);
+  });
+});
+
+describe("execution policies and bounded shutdown", () => {
+  it("requires explicit store support and validates execution deadlines", () => {
+    const legacy = { ...createInMemoryJobStore(), capabilities: undefined };
+    const { jobs } = setup(legacy);
+    expect(() => jobs.define("legacy", { run: () => null })).not.toThrow();
+    expect(() => jobs.define("paid", { onInterrupt: "fail", run: () => null })).toThrow(/execution policies/);
+    expect(() => jobs.define("timed", { timeoutMs: 10, run: () => null })).toThrow(/execution policies/);
+    const supported = setup().jobs;
+    for (const timeoutMs of [0, -1, NaN, Infinity, 1.5])
+      expect(() => supported.define("bad", { timeoutMs, run: () => null })).toThrow(/timeoutMs/);
+  });
+
+  it("persists policies and fails a reclaimed paid job before context or handler execution", async () => {
+    const store = createInMemoryJobStore();
+    const first = setup(store);
+    const paid = first.jobs.define("paid", { timeoutMs: 1000, onInterrupt: "fail", retries: 5, run: () => null });
+    const { jobId } = await paid.enqueue({ tenant: "workspace-a" });
+    expect(await store.get(jobId)).toMatchObject({ timeoutMs: 1000, onInterrupt: "fail", maxAttempts: 6 });
+    await store.claim(["paid"], "dead", 10);
+    await sleep(20);
+    let contexts = 0;
+    let calls = 0;
+    const next = createJobs({ store, pubsub: createInMemoryPubSub(), context: () => { contexts++; return {}; }, pollMs: 5 });
+    started.push(next);
+    // Definitions may change after a deploy. The queued record's policy still applies.
+    next.define("paid", { run: () => { calls++; } });
+    next.start();
+    await until(async () => (await paid.get(jobId))?.status === "failed");
+    expect(contexts).toBe(0);
+    expect(calls).toBe(0);
+    expect(await store.get(jobId)).toMatchObject({ attempt: 2, status: "failed", deadlineAt: null });
+  });
+
+  it("expired deadlines cannot be renewed and are reclaimable before the lease expires", async () => {
+    const store = createInMemoryJobStore();
+    await store.add({ id: "deadline", name: "j", input: null, key: null, runAt: Date.now(), maxAttempts: 2, timeoutMs: 10 });
+    const first = await store.claim(["j"], "old", 60_000);
+    expect(first).toMatchObject({ interrupted: false });
+    await sleep(20);
+    expect(await store.extend("deadline", "old", 60_000)).toBe(false);
+    const second = await store.claim(["j"], "new", 60_000);
+    expect(second).toMatchObject({ interrupted: true, attempt: 2 });
+    expect(second!.deadlineAt!).toBeGreaterThan(first!.deadlineAt!);
+    expect(await store.settle("deadline", "old", { status: "succeeded", result: "late" })).toBeNull();
+  });
+
+  it("fences late results/progress and keeps a timed-out handler's concurrency slot occupied", async () => {
+    const { jobs, store } = setup();
+    let finish!: () => void;
+    let lateProgress!: () => Promise<void>;
+    let secondStarted = false;
+    const blocked = jobs.define("blocked", {
+      concurrency: 1, timeoutMs: 40, retries: 3, onInterrupt: "fail",
+      run: async ({ input, job }: { input: number; job: import("../src/jobs.ts").JobHandle }) => {
+        if (input === 2) { secondStarted = true; return "second"; }
+        lateProgress = () => job.progress({ late: true });
+        await new Promise<void>((resolve) => { finish = resolve; });
+        return "late success";
+      },
+    });
+    const first = await blocked.enqueue(1);
+    const second = await blocked.enqueue(2);
+    jobs.start();
+    await until(async () => (await blocked.get(first.jobId))?.status === "failed");
+    const version = (await store.get(first.jobId))!.version;
+    await lateProgress();
+    await sleep(25);
+    expect(secondStarted).toBe(false);
+    expect((await store.get(first.jobId))!.version).toBe(version);
+    finish();
+    await until(async () => (await blocked.get(second.jobId))?.status === "succeeded");
+    expect(await blocked.get(first.jobId)).toMatchObject({ status: "failed", version, attempt: 1 });
+    expect((await blocked.get(first.jobId))?.error?.message).toMatch(/deadline/);
+  });
+
+  it.each(["return", "throw", "progress"])("enforces the persisted deadline when CPU work delays timers (%s)", async (action) => {
+    const { jobs, store } = setup();
+    let calls = 0;
+    const job = jobs.define("cpu", { concurrency: 1, timeoutMs: 10, onInterrupt: "fail", retries: 2,
+      run: async ({ job }) => {
+        calls++;
+        const until = Date.now() + 30;
+        while (Date.now() < until) { /* Deliberately prevent the timeout callback from running. */ }
+        if (action === "throw") throw new Error("ordinary late failure");
+        if (action === "progress") await job.progress({ late: true });
+        return "too late";
+      },
+    });
+    const { jobId } = await job.enqueue(null);
+    jobs.start();
+    await until(async () => (await job.get(jobId))?.status === "failed");
+    expect(calls).toBe(1);
+    expect(await store.get(jobId)).toMatchObject({ status: "failed", progress: null, error: { message: "Job execution deadline exceeded" } });
+  });
+
+  it("retryable execution deadlines consume attempts and use a fresh deadline for each attempt", async () => {
+    const { jobs } = setup();
+    let calls = 0;
+    const job = jobs.define("retry-timeout", { concurrency: 1, timeoutMs: 15, onInterrupt: "retry", retries: 1,
+      backoff: { initialMs: 1, maxMs: 1 }, run: ({ job }) => {
+        calls++;
+        return new Promise((_, reject) => job.signal.addEventListener("abort", () => reject(job.signal.reason), { once: true }));
+      },
+    });
+    const { jobId } = await job.enqueue(null);
+    jobs.start();
+    await until(async () => (await job.get(jobId))?.status === "failed");
+    expect(calls).toBe(2);
+    expect(await job.get(jobId)).toMatchObject({ status: "failed", attempt: 2, maxAttempts: 2 });
+  });
+
+  it("a durable schedule retains its cursor on registration and runs through the worker", async () => {
+    const store = createInMemoryJobStore();
+    const { jobs } = setup(store);
+    const calendar = { kind: "daily" as const, hourUTC: 2, minuteUTC: 0 };
+    let ran: unknown;
+    const job = jobs.define("scheduled", { input: s.object({ workspaceId: s.integer() }),
+      key: (input) => String(input.workspaceId), timeoutMs: 1000, onInterrupt: "fail", retries: 0,
+      run: ({ input }) => { ran = input; },
+    });
+    const past = Date.now() - 5_000;
+    await store.putSchedule({ id: "daily", name: "scheduled", input: { workspaceId: 7 }, key: "7",
+      maxAttempts: 1, timeoutMs: 1000, onInterrupt: "fail", calendar, nextRunAt: past,
+    });
+    await job.schedule("daily", { workspaceId: 7 }, calendar);
+    expect(await store.dueSchedules(["scheduled"], Date.now())).toMatchObject([{ nextRunAt: past }]);
+    jobs.start();
+    await until(() => ran !== undefined);
+    expect(ran).toEqual({ workspaceId: 7 });
+    expect(await store.dueSchedules(["scheduled"], Date.now())).toEqual([]);
+    await jobs.unschedule("daily");
+    expect(await store.dueSchedules(["scheduled"], Number.MAX_SAFE_INTEGER)).toEqual([]);
+  });
+
+  it("memory schedule claims fence concurrent advancement and deletion/recreation", async () => {
+    const store = createInMemoryJobStore();
+    const config = { id: "daily", name: "j", input: null, key: null, maxAttempts: 1,
+      calendar: { kind: "daily" as const, hourUTC: 2, minuteUTC: 0 }, nextRunAt: 100,
+    };
+    const old = await store.putSchedule(config);
+    expect(await store.removeSchedule("daily")).toBe(true);
+    const current = await store.putSchedule(config);
+    expect(current.revision).toBeGreaterThan(old.revision);
+    const record = { id: "occurrence", name: "j", input: null, key: null, maxAttempts: 1, runAt: 100 };
+    expect(await store.advanceSchedule(old, 200, record)).toBe(false);
+    const won = await Promise.all([store.advanceSchedule(current, 200, record), store.advanceSchedule(current, 200, { ...record, id: "duplicate" })]);
+    expect(won.sort()).toEqual([false, true]);
+    const claims = await Promise.all([store.claim(["j"], "a", 1000), store.claim(["j"], "b", 1000)]);
+    expect(claims.filter(Boolean)).toHaveLength(1);
+  });
+
+  it("allows work to complete during the shutdown grace period", async () => {
+    const { jobs } = setup();
+    let finish!: () => void;
+    let aborted = false;
+    const job = jobs.define("grace", { onInterrupt: "fail", run: ({ job }) => {
+      job.signal.addEventListener("abort", () => { aborted = true; });
+      return new Promise<string>((resolve) => { finish = () => resolve("finished"); });
+    } });
+    const { jobId } = await job.enqueue(null);
+    jobs.start();
+    await until(() => !!finish);
+    setTimeout(finish, 20);
+    expect(await jobs.stop({ graceMs: 80, timeoutMs: 150 })).toEqual({ drained: true, pending: 0 });
+    expect(aborted).toBe(false);
+    expect(await job.get(jobId)).toMatchObject({ status: "succeeded", result: "finished" });
+  });
+
+  it("bounds shutdown of uncooperative paid work without refunding or accepting a late result", async () => {
+    const { jobs, store } = setup();
+    let finish!: () => void;
+    const job = jobs.define("paid", { onInterrupt: "fail", retries: 3,
+      run: () => new Promise<string>((resolve) => { finish = () => resolve("charged already"); }),
+    });
+    const { jobId } = await job.enqueue(null);
+    jobs.start();
+    await until(() => !!finish);
+    const before = Date.now();
+    expect(await jobs.stop({ timeoutMs: 35 })).toMatchObject({ drained: false, pending: 1 });
+    expect(Date.now() - before).toBeLessThan(250);
+    expect(await store.get(jobId)).toMatchObject({ status: "failed", attempt: 1 });
+    finish();
+    expect(await jobs.stop({ timeoutMs: 100 })).toMatchObject({ drained: true, pending: 0 });
+    expect(await store.get(jobId)).toMatchObject({ status: "failed", attempt: 1 });
+  });
+
+  it("a context resolving after shutdown cannot start the handler", async () => {
+    const store = createInMemoryJobStore();
+    let release!: () => void;
+    let called = false;
+    const jobs = createJobs({ store, pubsub: createInMemoryPubSub(),
+      context: () => new Promise<void>((resolve) => { release = resolve; }), pollMs: 5,
+    });
+    started.push(jobs);
+    const job = jobs.define("context", { onInterrupt: "fail", run: () => { called = true; } });
+    const { jobId } = await job.enqueue(null);
+    jobs.start();
+    await until(() => !!release);
+    expect(await jobs.stop({ timeoutMs: 25 })).toMatchObject({ drained: false, pending: 1 });
+    release();
+    expect(await jobs.stop({ timeoutMs: 100 })).toMatchObject({ drained: true });
+    expect(called).toBe(false);
+    expect(await job.get(jobId)).toMatchObject({ status: "failed" });
+  });
+
+  it("a claim resolving after the shutdown budget settles without invoking the handler", async () => {
+    const inner = createInMemoryJobStore();
+    let release!: () => void;
+    let called = false;
+    const store: JobStore = { ...inner, async claim(names, token, lease) {
+      await new Promise<void>((resolve) => { release = resolve; });
+      return inner.claim(names, token, lease);
+    } };
+    const { jobs } = setup(store);
+    const job = jobs.define("claim", { onInterrupt: "fail", run: () => { called = true; } });
+    const { jobId } = await job.enqueue(null);
+    jobs.start();
+    await until(() => !!release);
+    expect(await jobs.stop({ timeoutMs: 25 })).toMatchObject({ drained: false, pending: 1 });
+    release();
+    await until(async () => (await job.get(jobId))?.status === "failed");
+    expect(called).toBe(false);
+    expect(await jobs.stop({ timeoutMs: 100 })).toMatchObject({ drained: true });
+  });
+
+  it("reports settlement failures instead of claiming the worker drained", async () => {
+    const inner = createInMemoryJobStore();
+    const store: JobStore = { ...inner, async settle() { throw new Error("database unavailable"); } };
+    const { jobs, errors } = setup(store);
+    const job = jobs.define("settle", { onInterrupt: "fail", run: () => "done" });
+    await job.enqueue(null);
+    jobs.start();
+    await until(() => errors.length > 0);
+    const result = await jobs.stop({ timeoutMs: 30 });
+    expect(result).toMatchObject({ drained: false, pending: 1, errors: [{ message: "database unavailable" }] });
+    await expect(jobs.stop()).rejects.toThrow(/did not drain/);
+  });
+
+  it("clears a transient settlement error after the same worker recovers and settles the job", async () => {
+    const inner = createInMemoryJobStore();
+    let failOnce = true;
+    const store: JobStore = { ...inner, async settle(...args) {
+      if (failOnce) { failOnce = false; throw new Error("transient database failure"); }
+      return inner.settle(...args);
+    } };
+    const { jobs, errors } = setup(store);
+    let calls = 0;
+    const job = jobs.define("recover-settlement", { onInterrupt: "fail", retries: 3, run: () => { calls++; return "charged"; } });
+    const { jobId } = await job.enqueue(null);
+    jobs.start();
+    await until(() => errors.length === 1);
+    await until(async () => (await job.get(jobId))?.status === "failed");
+    expect(calls).toBe(1); // Recovery must settle the paid job without replaying its handler.
+    expect(await jobs.stop({ timeoutMs: 100 })).toEqual({ drained: true, pending: 0 });
+    await expect(jobs.stop()).resolves.toBeUndefined();
+  });
+
+  it("settles a success write delayed past its deadline before reporting shutdown drained", async () => {
+    const inner = createInMemoryJobStore();
+    let release!: () => void;
+    const outcomes: string[] = [];
+    const store: JobStore = { ...inner, async settle(id, token, outcome) {
+      outcomes.push(outcome.status);
+      if (outcome.status === "succeeded") await new Promise<void>((resolve) => { release = resolve; });
+      return inner.settle(id, token, outcome);
+    } };
+    const { jobs } = setup(store);
+    const job = jobs.define("late-settlement", { concurrency: 1, timeoutMs: 20, onInterrupt: "fail", run: () => "done" });
+    const { jobId } = await job.enqueue(null);
+    jobs.start();
+    await until(() => !!release);
+    const stopped = jobs.stop({ timeoutMs: 150 });
+    await sleep(30);
+    release();
+    expect(await stopped).toEqual({ drained: true, pending: 0 });
+    expect(outcomes).toEqual(["succeeded", "failed"]);
+    expect(await store.get(jobId)).toMatchObject({ status: "failed", error: { message: "Job execution deadline exceeded" } });
+  });
+
+  it("bounds shutdown even when a settlement never resolves", async () => {
+    const inner = createInMemoryJobStore();
+    const store: JobStore = { ...inner, settle: () => new Promise(() => {}) };
+    const { jobs } = setup(store);
+    let ran = false;
+    const job = jobs.define("hung-store", { run: () => { ran = true; } });
+    await job.enqueue(null);
+    jobs.start();
+    await until(() => ran);
+    expect(await jobs.stop({ timeoutMs: 25 })).toMatchObject({ drained: false, pending: 1 });
   });
 });
 

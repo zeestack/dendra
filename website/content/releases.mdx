@@ -5,6 +5,36 @@ description: 'dendra release notes: what changed in each version, including brea
 
 # Release notes
 
+## 0.10.0 — job lifecycle, schedules and router tools
+
+- `createServerCaller` in `dendra/next` builds request context from Next.js
+  headers and reuses it within a server render.
+- `inspectRouter`, named middleware and typed `.meta()` make router policy
+  assertions possible without reading procedure internals.
+
+- Per-attempt `timeoutMs` deadlines and persisted `onInterrupt: "fail"` prevent
+  automatic replay of interrupted work. Late results cannot overwrite terminal
+  failures; handlers that ignore cancellation keep their local concurrency slot.
+- `jobs.stop({ graceMs, timeoutMs })` provides bounded shutdown and reports
+  unfinished work or settlement errors. No-argument `stop()` retains its
+  `Promise<void>` signature and immediate cancellation, with a 30-second bound.
+- `job.schedule(id, input, calendar)` and `jobs.unschedule(id)` support durable
+  daily/weekly UTC schedules. Atomic occurrence insertion and cursor advancement
+  prevent duplicate occurrences across workers. Missed runs coalesce into one
+  catch-up, not an unbounded backlog.
+- Both built-in stores support the new policies. Custom stores explicitly
+  advertise capabilities; unsupported features fail clearly.
+
+**Upgrading:** run the new Postgres `store.schema` as owner before deploying
+workers. It adds columns to existing job tables, a schedules table and its
+revision sequence; grant the runtime role DML and sequence USAGE. Stop 0.9
+workers before enabling new policies, or use distinct queues during transition.
+Choose `retries: 0, onInterrupt: "fail"` for paid work that must not replay.
+Cancellation is cooperative and cannot undo external side effects.
+
+Daily/weekly schedules are UTC only; arbitrary cron expressions and timezones
+are outside this release. Existing retry defaults remain unchanged.
+
 ## 0.9.0 — real-time and long-running work
 
 This release also carries everything planned for 0.8, which was never published
