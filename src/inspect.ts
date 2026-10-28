@@ -15,6 +15,10 @@ export interface RouteInfo<Meta = Record<string, unknown>> {
   middlewares: string[];
   /** Exposed to LLMs / MCP via `.ai()`. */
   ai: boolean;
+  /** `.ai({ confirm: true })`: tool calls wait for a person's approval. */
+  confirm: boolean;
+  /** `.noAi()`: may never be a tool. */
+  noAi: boolean;
   /** Merged `.meta()` values; `{}` when none were set. */
   meta: Meta;
 }
@@ -36,6 +40,8 @@ export function inspectRouter<Meta = Record<string, unknown>>(
           ...(proc.path ? { restPath: proc.path } : {}),
           middlewares: [...(proc.middlewareNames ?? [])],
           ai: proc.ai?.expose === true,
+          confirm: proc.ai?.confirm === true,
+          noAi: proc.noAi === true,
           meta: { ...proc.meta } as Meta,
         });
       } else {

@@ -7,11 +7,15 @@
 import { createToolExecutor, formatTool, toToolset } from "./tools.ts";
 import type { ToolFormat, ToolSource } from "./tools.ts";
 import type { JSONSchema } from "./schema.ts";
+import { resolveProc, type RouterRecord } from "./core.ts";
+import type { Approvals } from "./approvals.ts";
 
 export interface McpToolDef {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  /** Set for `.get()` reads and `.ai({ confirm: true })` tools. */
+  annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean };
 }
 
 export interface McpCallResult {
@@ -21,15 +25,27 @@ export interface McpCallResult {
 
 /** MCP `tools/list` payload derived from the router's `.ai()` procedures. */
 export function mcpToolDefinitions(router: object): McpToolDef[] {
-  return toToolset(router, { format: "plain" }) as McpToolDef[];
+  return (toToolset(router, { format: "plain" }) as McpToolDef[]).map((def) => {
+    const proc = resolveProc(router as RouterRecord, def.name.split("."));
+    // A read can't change anything; a confirm tool is one a person must approve.
+    if (proc?.method === "GET") return { ...def, annotations: { readOnlyHint: true } };
+    if (proc?.ai?.confirm) {
+      return { ...def, annotations: { readOnlyHint: false, destructiveHint: true } };
+    }
+    return def;
+  });
 }
 
 /**
  * In-process bridge: list + call tools against the router directly (own data).
  * For calling a *running* app instead, see the example's HTTP-proxy server.
  */
-export function createMcpBridge<Ctx>(router: object, ctx: Ctx) {
-  const execute = createToolExecutor(router, ctx);
+export function createMcpBridge<Ctx>(
+  router: object,
+  ctx: Ctx,
+  opts: { approvals?: Approvals<Ctx> } = {},
+) {
+  const execute = createToolExecutor(router, ctx, opts);
   return {
     listTools(): McpToolDef[] {
       return mcpToolDefinitions(router);

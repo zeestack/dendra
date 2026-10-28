@@ -12,7 +12,22 @@ export type {
   CallSite,
   Transport,
   ReadBrand,
+  Approval,
+  AiConfig,
 } from "./core.ts";
+
+export {
+  createApprovals,
+  createInMemoryApprovalStore,
+  isPendingResult,
+} from "./approvals.ts";
+export type {
+  Approvals,
+  ApprovalsOptions,
+  ApprovalStore,
+  PendingAction,
+  PendingResult,
+} from "./approvals.ts";
 
 export { inspectRouter } from "./inspect.ts";
 export type { RouteInfo } from "./inspect.ts";

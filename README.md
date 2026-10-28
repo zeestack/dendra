@@ -188,6 +188,47 @@ a **stdio** server for Claude Desktop and a **remote HTTP** endpoint for claude.
 (with optional OAuth 2.1) — so Claude can list, create, and delete your app's data
 through the exact procedures you already wrote.
 
+### Keeping a model away from risky procedures
+
+`.noAi()` marks a procedure as never-a-tool: adding `.ai()` too throws where it's
+defined. `.ai({ confirm: true })` makes it a tool that only **proposes**: the call
+is validated and passes its `.use()` guards, then waits for a person.
+
+```ts
+const appRouter = {
+  approve: authed.noAi().handler(/* … */),
+  publish: authed
+    .input(s.object({ postId: s.string() }))
+    .ai({ description: "Publish a post", confirm: true })
+    .handler(({ input, ctx }) => ctx.db.posts.publish(input.postId)),
+};
+
+const approvals = createApprovals<Ctx>(appRouter, { scope: (ctx) => ctx.tenantId });
+const execute = createToolExecutor(appRouter, ctx, { approvals });
+await execute("publish", { postId: "p1" });
+// → { status: "pending_approval", actionId, message } — the handler hasn't run
+
+// Later, from the person's own request (e.g. an "Approve" button):
+await approvals.list(ctx);                 // pending actions in their scope
+await approvals.approve(actionId, ctx);    // guards re-run with *their* ctx, then the handler
+await approvals.reject(actionId, ctx, "wrong post");
+```
+
+- Without `{ approvals }`, a confirm tool fails closed — it never runs.
+- `approve` re-runs the guards with the approver's ctx; if they reject, the action
+  stays pending. Each action is decided once.
+- `scope(ctx)` (e.g. the tenant) is recorded with the proposal; other scopes get
+  `NOT_FOUND`. Set it in multi-tenant apps.
+- After-hooks see the proposal and the decision, with `approval: { id, status:
+  "pending" | "approved" | "rejected", reason? }`; a rejection is a `FORBIDDEN` failure.
+- The store is pluggable (`ApprovalStore`: `add`/`get`/`take`/`list`; `take` must be
+  atomic). The default is in memory — use your own across instances or restarts.
+- The tool description tells the model it needs approval; MCP gets
+  `destructiveHint: true` (and `.get()` tools `readOnlyHint: true`). `runAgent`
+  sets `approvalId` on the tool part so your UI can show approve / reject.
+- Only tool calls wait. The same procedure called over RPC, REST, or the caller —
+  by a person — runs directly.
+
 ### Consuming external MCP servers (inbound tools)
 
 The reverse direction too: pull tools **from** another MCP server (GitHub's,
@@ -322,6 +363,8 @@ const audited = authed.after(({ ctx, path, transport, input, ok, result, code, d
   before it, and sees that ctx — so `ctx.userId` above is typed and real. Put a
   hook *before* the auth guard to also record rejected calls. Input that fails
   validation never reaches the chain, so it doesn't trigger hooks.
+- Confirm tools (`.ai({ confirm: true })`) add `approval` — see
+  [Keeping a model away from risky procedures](#keeping-a-model-away-from-risky-procedures).
 
 ### Checking guards in a test (`inspectRouter`)
 
@@ -347,7 +390,7 @@ for (const p of inspectRouter<{ restricted?: "approver" }>(appRouter)) {
 }
 ```
 
-Each entry is `{ path, kind, method, restPath?, middlewares, ai, meta }`, class
+Each entry is `{ path, kind, method, restPath?, middlewares, ai, confirm, noAi, meta }`, class
 controllers included. An unnamed inline middleware is listed as `"anonymous"`;
 `.meta()` calls merge, and only `inspectRouter` reads them.
 

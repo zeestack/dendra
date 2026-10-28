@@ -100,7 +100,7 @@ Carried over from 0.9:
 - [ ] **Job status on the client** ([#27](https://github.com/zeestack/dendra/issues/27)) — a hook that follows a job over the subscription instead of polling
   (folds in `useProcedure` / `dendra/react-query`).
 - [x] **`inspectRouter`** ([#28](https://github.com/zeestack/dendra/issues/28)) — moved up from Field requests: fail the build when a procedure lacks its tenant or role check.
-- [ ] **Safe-by-default AI** ([#29](https://github.com/zeestack/dendra/issues/29)) — moved up from Field requests (`.noAi()`, `.ai({ confirm: true })`): a security item.
+- [x] **Safe-by-default AI** ([#29](https://github.com/zeestack/dendra/issues/29)) — moved up from Field requests (`.noAi()`, `.ai({ confirm: true })`): a security item.
 
 ### Then
 The AI / MCP work in the 0.2.0 section below, in its current order (skills, `dendra/openai`, `dendra/bedrock`,
@@ -271,7 +271,7 @@ has to step outside dendra to stay safe.
 - [x] **`inspectRouter(appRouter)`** _(lands in 0.10, [#28](https://github.com/zeestack/dendra/issues/28))_ — `[{ path, kind, method, restPath,
   middlewares, ai, meta }]`, plus named middleware and typed `.meta()`, so a test
   can fail the build when a procedure lacks its tenant or role check.
-- [ ] **Safe-by-default AI** _(scheduled for 0.10, [#29](https://github.com/zeestack/dendra/issues/29))_ — `.noAi()` (build-time error if `.ai()` is also set)
+- [x] **Safe-by-default AI** _(lands in 0.10, [#29](https://github.com/zeestack/dendra/issues/29))_ — `.noAi()` (build-time error if `.ai()` is also set)
   and `.ai({ confirm: true })` returning a pending action a person approves before
   the handler runs. _Overlaps MCP annotations + the 1.0 security review._
 

@@ -108,7 +108,7 @@ UNAUTHORIZED a sign-in redirect. Don't rebuild a `Request` from `headers()` by h
   (incl. AI tools). Awaited; throws are logged, not returned. It only sees calls
   that passed the `.use()`s before it — place it before auth to record rejections.
 - **Assert guards in a test.** `inspectRouter(appRouter)` → `[{ path, kind,
-  method, restPath?, middlewares, ai, meta }]`. Middlewares are listed by
+  method, restPath?, middlewares, ai, confirm, noAi, meta }]`. Middlewares are listed by
   `.use(mw, { name })`, else the function's name (inline arrows: `"anonymous"`).
   Tag procedures with `.meta({ restricted: "approver" })`, typed by
   `initDendra<Ctx, Meta>()`. Don't read `proc.middlewares` internals.
@@ -127,6 +127,11 @@ UNAUTHORIZED a sign-in redirect. Don't rebuild a `Request` from `headers()` by h
   `createJobs({ context })`, never the request — pass tenant/user ids via `map`.
   Call `jobs.start()` in processes that run jobs.
 - **`.ai()` is opt-in.** Only `.ai()`-marked procedures are exposed as tools.
+  Mark ones a model must never call `.noAi()` (throws if `.ai()` is added). For
+  tools a person must approve, `.ai({ confirm: true })` + `createApprovals(router,
+  { scope })` passed as `createToolExecutor(router, ctx, { approvals })`: the call
+  returns `{ status: "pending_approval", actionId }`; `approvals.approve(id, ctx)`
+  runs it with the approver's ctx. Don't build your own pending-action flow.
 - **WebSockets:** `attachWsServer(wss, router, { path, allowedOrigins,
   createContext })` on a `ws` server made with `{ noServer: true, maxPayload:
   1_000_000 }`; call `handleUpgrade` from your HTTP server's `upgrade` event

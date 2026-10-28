@@ -44,6 +44,9 @@ let inference do the rest — never hand-write client types or `.d.ts`.
      in a `.stream()` sends status. Jobs get `context()`, not the request ctx.
    - Typed output (and OpenAPI response): `.output(schema)`.
    - Expose to an LLM/MCP as a tool: `.ai({ description: "…" })` (opt-in).
+     Never a tool: `.noAi()`. Needs a person's OK: `.ai({ confirm: true })` plus
+     `createApprovals(router, { scope })` passed to `createToolExecutor(…, { approvals })`;
+     `approvals.approve(id, ctx)` / `reject(id, ctx, reason)` decide.
    - Keep the object `satisfies RouterRecord` — unless it contains a class
      controller instance, which has no index signature (then drop `satisfies`;
      `Client<AppRouter>` still validates it).
@@ -100,7 +103,7 @@ metadata, never file contents.
 Guard checks: name middlewares (`.use(mw, { name: "tenant" })`, or a named
 function), tag procedures with typed `.meta({ restricted: "approver" })`
 (`initDendra<Ctx, Meta>()`), and assert in a test over `inspectRouter(appRouter)`
-→ `[{ path, kind, method, restPath?, middlewares, ai, meta }]`.
+→ `[{ path, kind, method, restPath?, middlewares, ai, confirm, noAi, meta }]`.
 
 CSRF: the server only takes POST as JSON (or dendra multipart with `X-Dendra: 1`)
 and GET for `.get()` reads. Hand-written `fetch` calls must send
