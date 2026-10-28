@@ -8,8 +8,9 @@ description: 'API reference for the built-in s.* validators, their chainable con
 `s` is dendra's built-in, zero-dependency validator set. Every `s.*` schema is a
 [Standard Schema](https://standardschema.dev), so `.input()` and `.output()`
 accept it alongside any other Standard Schema library: Zod (3 and 4), Valibot or
-ArkType. Each built-in schema also carries a JSON Schema, which becomes the
-OpenAPI spec and the AI tool parameters. See
+ArkType. Each schema's JSON Schema becomes the OpenAPI spec and the AI tool
+parameters: built-in schemas carry one, and other libraries publish theirs
+through [Standard JSON Schema](#third-party-schemas). See
 [Features → Standard Schema](/features#standard-schema).
 
 ```ts
@@ -54,11 +55,30 @@ s.string().email().describe('Where we send the receipt')
 ### Third-party schemas
 
 Zod, Valibot, ArkType or any other Standard Schema validates and types the input
-in `.input()` and `.output()` exactly like `s.*`. dendra reads JSON Schema only
-from a schema's `jsonSchema` property, which the built-in `s.*` schemas have and
-third-party schemas don't. So a procedure with a third-party input schema has no
-input schema in its OpenAPI operation, and as a tool it's described with an empty
-object schema.
+in `.input()` and `.output()` exactly like `s.*`. For OpenAPI and tools, dendra
+takes JSON Schema from a library that implements
+[Standard JSON Schema](https://standardschema.dev/json-schema)
+(`~standard.jsonSchema`), using draft 2020-12 without `$schema`:
+
+| Library | JSON Schema |
+| --- | --- |
+| Zod 4 | built in |
+| ArkType | built in |
+| Valibot | wrap the schema: `toStandardJsonSchema(v.object(…))` from `@valibot/to-json-schema` |
+| Zod 3, others | none |
+
+```ts
+import * as v from 'valibot'
+import { toStandardJsonSchema } from '@valibot/to-json-schema'
+
+route.input(toStandardJsonSchema(v.object({ title: v.string() })))
+```
+
+A library can refuse to convert a schema: Zod has no JSON Schema for `z.date()`
+inputs or for a transform's output. A schema without JSON Schema still validates
+and types the handler, but OpenAPI leaves it out, and an
+[`.ai()`](/reference/router) procedure refuses it where it's defined, since the
+model wouldn't know the parameters.
 
 ## Scalars
 
