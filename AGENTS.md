@@ -107,6 +107,11 @@ UNAUTHORIZED a sign-in redirect. Don't rebuild a `Request` from `headers()` by h
   error, code, durationMs }) => …)` runs once the call settles, on every transport
   (incl. AI tools). Awaited; throws are logged, not returned. It only sees calls
   that passed the `.use()`s before it — place it before auth to record rejections.
+- **Assert guards in a test.** `inspectRouter(appRouter)` → `[{ path, kind,
+  method, restPath?, middlewares, ai, meta }]`. Middlewares are listed by
+  `.use(mw, { name })`, else the function's name (inline arrows: `"anonymous"`).
+  Tag procedures with `.meta({ restricted: "approver" })`, typed by
+  `initDendra<Ctx, Meta>()`. Don't read `proc.middlewares` internals.
 - **Client results are JSON-typed.** `createClient` results are `Jsonify<Out>`
   (a `Date` arrives as a `string`); `createCaller` keeps real types
   (`Caller<R>`). Don't cast client results back to `Date` — parse them.

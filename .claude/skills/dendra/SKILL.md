@@ -97,6 +97,11 @@ runs once a call settles, on every transport. It only sees calls that passed the
 `.use()`s before it — put it before auth to also record rejections. Log file
 metadata, never file contents.
 
+Guard checks: name middlewares (`.use(mw, { name: "tenant" })`, or a named
+function), tag procedures with typed `.meta({ restricted: "approver" })`
+(`initDendra<Ctx, Meta>()`), and assert in a test over `inspectRouter(appRouter)`
+→ `[{ path, kind, method, restPath?, middlewares, ai, meta }]`.
+
 CSRF: the server only takes POST as JSON (or dendra multipart with `X-Dendra: 1`)
 and GET for `.get()` reads. Hand-written `fetch` calls must send
 `Content-Type: application/json`. Don't enable `allowFormPosts` without a CSRF

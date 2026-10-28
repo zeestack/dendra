@@ -100,6 +100,9 @@ export interface Proc<
   readonly inputJsonSchema?: JSONSchema;
   readonly outputJsonSchema?: JSONSchema;
   readonly middlewares?: ReadonlyArray<AnyMiddleware>;
+  /** One per middleware, in order: its `{ name }`, else the function's name. */
+  readonly middlewareNames?: ReadonlyArray<string>;
+  readonly meta?: Readonly<Record<string, unknown>>;
   readonly afterHooks?: ReadonlyArray<AfterEntry>;
   readonly handler: (
     input: In,
@@ -137,6 +140,8 @@ interface State<Ctx, In> {
   inputJsonSchema?: JSONSchema;
   outputJsonSchema?: JSONSchema;
   middlewares?: AnyMiddleware[];
+  middlewareNames?: string[];
+  meta?: Record<string, unknown>;
   afterHooks?: AfterEntry[];
 }
 
@@ -235,13 +240,19 @@ function mergeJsonSchemas(
   return { type: "object", properties, required: [...required] };
 }
 
-class Builder<Ctx, In, DOut = never, Rd extends boolean = false> {
+class Builder<
+  Ctx,
+  In,
+  DOut = never,
+  Rd extends boolean = false,
+  M extends object = Record<string, unknown>,
+> {
   readonly state: State<Ctx, In>;
   constructor(state: State<Ctx, In>) {
     this.state = state;
   }
-  private next<In2>(patch: Partial<State<Ctx, In2>>): Builder<Ctx, In2, DOut, Rd> {
-    return new Builder<Ctx, In2, DOut, Rd>({
+  private next<In2>(patch: Partial<State<Ctx, In2>>): Builder<Ctx, In2, DOut, Rd, M> {
+    return new Builder<Ctx, In2, DOut, Rd, M>({
       ...(this.state as unknown as State<Ctx, In2>),
       ...patch,
     });
@@ -251,8 +262,8 @@ class Builder<Ctx, In, DOut = never, Rd extends boolean = false> {
    * can never trigger a mutation. The path is optional: with one, it's also a
    * REST route; without, it's an RPC read (e.g. a file for `urlFor`).
    */
-  get(path?: string): Builder<Ctx, In, DOut, true> {
-    return new Builder<Ctx, In, DOut, true>({ ...this.state, method: "GET", path });
+  get(path?: string): Builder<Ctx, In, DOut, true, M> {
+    return new Builder<Ctx, In, DOut, true, M>({ ...this.state, method: "GET", path });
   }
   post(path: string) {
     return this.next<In>({ method: "POST", path });
@@ -274,20 +285,33 @@ class Builder<Ctx, In, DOut = never, Rd extends boolean = false> {
     return this.next<In>({ ai: { expose: true, description: cfg.description } });
   }
   /**
+   * Attach metadata for `inspectRouter` (e.g. `{ restricted: "approver" }`).
+   * Typed by `initDendra<Ctx, Meta>()`; repeated calls merge shallowly.
+   */
+  meta(meta: M) {
+    return this.next<In>({ meta: { ...this.state.meta, ...meta } });
+  }
+  /**
    * Add a middleware. It runs before the handler (across RPC, REST, the caller,
    * WebSocket, and AI/MCP tool execution). Throw a DendraError to reject; return
    * an object to merge it into ctx — the downstream handler sees the enriched,
-   * typed context.
+   * typed context. `inspectRouter` lists it by `opts.name`, else the function's
+   * own name, so a test can assert every procedure has its guard.
    */
   use<CtxAdd extends Record<string, unknown> | void>(
     mw: Middleware<Ctx, In, CtxAdd>,
-  ): Builder<Ctx & (CtxAdd extends void ? unknown : CtxAdd), In, DOut, Rd> {
-    return new Builder<Ctx & (CtxAdd extends void ? unknown : CtxAdd), In, DOut, Rd>({
+    opts: { name?: string } = {},
+  ): Builder<Ctx & (CtxAdd extends void ? unknown : CtxAdd), In, DOut, Rd, M> {
+    return new Builder<Ctx & (CtxAdd extends void ? unknown : CtxAdd), In, DOut, Rd, M>({
       ...(this.state as unknown as State<
         Ctx & (CtxAdd extends void ? unknown : CtxAdd),
         In
       >),
       middlewares: [...(this.state.middlewares ?? []), mw as AnyMiddleware],
+      middlewareNames: [
+        ...(this.state.middlewareNames ?? []),
+        opts.name ?? (mw.name || "anonymous"),
+      ],
     });
   }
   /**
@@ -312,7 +336,7 @@ class Builder<Ctx, In, DOut = never, Rd extends boolean = false> {
    */
   input<S extends StandardSchemaV1<unknown, ChainableInput<In>>>(
     schema: S,
-  ): Builder<Ctx, ChainedInput<In, InferOutput<S>>, DOut, Rd> {
+  ): Builder<Ctx, ChainedInput<In, InferOutput<S>>, DOut, Rd, M> {
     const jsonSchema = (schema as { jsonSchema?: JSONSchema }).jsonSchema;
     const s = this.state.inputSchema
       ? extendInput(this.state.inputSchema, this.state.inputJsonSchema, schema, jsonSchema)
@@ -326,9 +350,9 @@ class Builder<Ctx, In, DOut = never, Rd extends boolean = false> {
    */
   output<S extends StandardSchemaV1>(
     schema: S,
-  ): Builder<Ctx, In, InferOutput<S>, Rd> {
+  ): Builder<Ctx, In, InferOutput<S>, Rd, M> {
     const jsonSchema = (schema as { jsonSchema?: JSONSchema }).jsonSchema;
-    return new Builder<Ctx, In, InferOutput<S>, Rd>({
+    return new Builder<Ctx, In, InferOutput<S>, Rd, M>({
       ...this.state,
       outputJsonSchema: jsonSchema,
     });
@@ -352,6 +376,8 @@ class Builder<Ctx, In, DOut = never, Rd extends boolean = false> {
       inputJsonSchema: s.inputJsonSchema,
       outputJsonSchema: s.outputJsonSchema,
       middlewares: s.middlewares,
+      middlewareNames: s.middlewareNames,
+      meta: s.meta,
       afterHooks: s.afterHooks,
       handler: async (input: In, ctx: Ctx) => fn({ input, ctx }),
     } as Branded<Proc<Ctx, In, [DOut] extends [never] ? Awaited<Out> : DOut, "unary">, Rd>;
@@ -377,6 +403,8 @@ class Builder<Ctx, In, DOut = never, Rd extends boolean = false> {
       inputJsonSchema: s.inputJsonSchema,
       outputJsonSchema: s.outputJsonSchema,
       middlewares: s.middlewares,
+      middlewareNames: s.middlewareNames,
+      meta: s.meta,
       afterHooks: s.afterHooks,
       handler: (input: In, ctx: Ctx, signal?: AbortSignal) =>
         fn({ input, ctx, signal: signal ?? new AbortController().signal }),
@@ -397,7 +425,7 @@ class Builder<Ctx, In, DOut = never, Rd extends boolean = false> {
     map?: (o: { input: In; ctx: Ctx }) => unknown,
   ): Branded<Proc<Ctx, In, { jobId: string }, "unary">, Rd> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (this as Builder<Ctx, In, any, Rd>).handler(async ({ input, ctx }) =>
+    return (this as Builder<Ctx, In, any, Rd, M>).handler(async ({ input, ctx }) =>
       job.enqueue(map ? await map({ input, ctx }) : input),
     );
   }
@@ -407,8 +435,11 @@ class Builder<Ctx, In, DOut = never, Rd extends boolean = false> {
 type Enqueuer<I> = { enqueue: (input: I) => Promise<{ jobId: string }> };
 
 /** Bind a context type, then define procedures off `route`. */
-export function initDendra<Ctx = Record<string, never>>() {
-  const route = new Builder<Ctx, void>({ method: "POST" });
+export function initDendra<
+  Ctx = Record<string, never>,
+  Meta extends object = Record<string, unknown>,
+>() {
+  const route = new Builder<Ctx, void, never, false, Partial<Meta>>({ method: "POST" });
   return { route };
 }
 

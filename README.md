@@ -323,6 +323,34 @@ const audited = authed.after(({ ctx, path, transport, input, ok, result, code, d
   hook *before* the auth guard to also record rejected calls. Input that fails
   validation never reaches the chain, so it doesn't trigger hooks.
 
+### Checking guards in a test (`inspectRouter`)
+
+Name a middleware (or let it use its function's name), tag procedures with
+typed `.meta()`, then walk the router and fail the build when a guard is missing:
+
+```ts
+const { route } = initDendra<Ctx, { restricted?: "approver" }>();
+
+const scoped = route.use(tenant);                       // listed as "tenant"
+const publish = scoped
+  .use(requireRole("approver"), { name: "role:approver" })
+  .meta({ restricted: "approver" })
+  .handler(/* … */);
+
+// test/guards.test.ts
+for (const p of inspectRouter<{ restricted?: "approver" }>(appRouter)) {
+  expect(p.middlewares, p.path).toContain("tenant");
+  if (p.meta.restricted) {
+    expect(p.middlewares, p.path).toContain(`role:${p.meta.restricted}`);
+    expect(p.ai, p.path).toBe(false);
+  }
+}
+```
+
+Each entry is `{ path, kind, method, restPath?, middlewares, ai, meta }`, class
+controllers included. An unnamed inline middleware is listed as `"anonymous"`;
+`.meta()` calls merge, and only `inspectRouter` reads them.
+
 ## Files in and out
 
 A file route is just a procedure, so the tenant check in `.use()` and the audit

@@ -14,6 +14,9 @@ export type {
   ReadBrand,
 } from "./core.ts";
 
+export { inspectRouter } from "./inspect.ts";
+export type { RouteInfo } from "./inspect.ts";
+
 export { createCaller } from "./caller.ts";
 export { file } from "./files.ts";
 export type { FileOptions, FileResult, FileBody } from "./files.ts";
