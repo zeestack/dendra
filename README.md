@@ -544,6 +544,74 @@ once with code `UNAVAILABLE` rather than being replayed later.
 | `1013` | Client too slow to read |
 | `4401` | `revalidate` said no, or `closeWhere` (default) — sign in again |
 
+### Server-Sent Events
+
+`.stream()` procedures answer NDJSON by default. Behind proxies, CDNs or
+corporate networks that buffer or mangle it, switch the client to Server-Sent
+Events. Iteration, typed errors and cancellation stay the same:
+
+```ts
+export const api = createClient<AppRouter>("", { prefix: "/rpc/", streamFormat: "sse" });
+for await (const ev of api.notes.watch()) render(ev); // break → server's signal aborts
+```
+
+The server picks the format from `Accept`: `text/event-stream` gets SSE, anything
+else NDJSON, so nothing changes on the server side. Each value is a `data:` event.
+A failure is an `error` event with `{ code, message }`, which the client throws as
+a `DendraClientError`. A normal end is a `done` event. While the handler is idle,
+a `: ping` comment goes out every 15 s; set `heartbeatMs` in the server options
+(`0` turns it off).
+
+A browser `EventSource` works too, but it can only send GET, so the procedure
+needs `.get()`. Close it on `done`, or it reconnects and runs the subscription
+again:
+
+```ts
+const es = new EventSource("/rpc/notes.watch");
+es.onmessage = (e) => render(JSON.parse(e.data));
+es.addEventListener("done", () => es.close());
+es.addEventListener("error", (e) => {
+  // `data` is set on a server error event; a dropped connection has none
+  // and EventSource retries by itself.
+  if ((e as MessageEvent).data) { showError(JSON.parse((e as MessageEvent).data)); es.close(); }
+});
+```
+
+### Deploying streams
+
+A stream that works locally can stall behind a proxy or arrive in one chunk.
+Check these, in order:
+
+- **Next.js route:** `export const runtime = "nodejs"` and `export const dynamic
+  = "force-dynamic"` on the `app/rpc/[...path]/route.ts` handler. On Vercel and
+  similar hosts a stream also ends at the function's time limit; raise it with
+  `export const maxDuration = …` and have the client reconnect.
+- **Proxy buffering.** Both stream formats are sent with `Cache-Control: no-cache`
+  and `X-Accel-Buffering: no`.
+  - nginx honours `X-Accel-Buffering: no` unless you set `proxy_ignore_headers`;
+    otherwise add `proxy_buffering off;` to the stream location. Keep
+    `proxy_read_timeout` (60 s by default) above the heartbeat.
+  - Caddy flushes `text/event-stream` at once and streams responses of unknown
+    length. If NDJSON still arrives late, add `flush_interval -1` to the
+    `reverse_proxy` block.
+- **Compression buffers.** A gzip layer can sit on a stream until enough bytes
+  arrive.
+  - Caddy's `encode` streams SSE as it's written.
+  - nginx's `gzip_types` doesn't include `text/event-stream` or
+    `application/x-ndjson` unless you add them; leave them out.
+  - `next start` gzips route handler responses. If streams arrive in one chunk
+    there, set `compress: false` in `next.config` and compress at the proxy.
+  - `toNodeHandler` calls `res.flush()` after each chunk, so Express's
+    `compression()` middleware passes streams through.
+- **Idle timeouts.** Load balancers drop quiet connections, often after 60 s
+  (AWS ALB's default). SSE's 15 s heartbeat keeps a connection alive. NDJSON has
+  no heartbeat, so behind a short idle timeout use SSE or raise the timeout.
+- **WebSockets** need the proxy to forward the upgrade. In nginx:
+  `proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade;
+  proxy_set_header Connection "upgrade";`. Raise its read timeout too. Caddy
+  forwards upgrades by default. Next.js itself can't accept upgrades; see
+  [WebSockets with Next.js](#websockets-with-nextjs) for the Node server in front.
+
 ## Background jobs
 
 Long work (an AI call, an export) shouldn't hang off a request or vanish in a

@@ -121,6 +121,11 @@ UNAUTHORIZED a sign-in redirect. Don't rebuild a `Request` from `headers()` by h
   won't stop. Multi-instance pub/sub: `createRedisPubSub(client)` or
   `createPgPubSub(pool)` (LISTEN/NOTIFY; messages under 8000 bytes — publish
   ids). Batched calls (`batch: true`) stream back as each settles.
+- **SSE when proxies buffer.** `createClient(url, { streamFormat: "sse" })`
+  streams as Server-Sent Events instead of NDJSON. The server picks the format
+  from `Accept`, pings every 15 s (server option `heartbeatMs`), and ends with a
+  `done` event. A bare `EventSource` needs `.get()`; close it on `done`. For
+  proxy, compression and timeout settings, see "Deploying streams" in the README.
 - **Long work goes in a job,** not `after()`: `jobs.define(name, { input, run, key,
   retries })`, then `route.….background(job, map?)` returns `{ jobId }` and
   `job.watch(jobId, { signal })` streams status. A job's ctx comes from

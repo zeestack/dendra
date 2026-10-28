@@ -22,6 +22,12 @@ export interface ClientOptions {
    * default.
    */
   batch?: boolean;
+  /**
+   * Wire format for `.stream()` procedures: `"ndjson"` (default) or `"sse"`
+   * (Server-Sent Events, which more proxies and CDNs pass through unbuffered).
+   * Iteration, errors and cancellation work the same either way.
+   */
+  streamFormat?: "ndjson" | "sse";
 }
 
 // `X-Dendra` marks a request as coming from dendra's client. Browsers can't
@@ -125,7 +131,8 @@ export function createClient<R extends object>(
             ? (input: unknown) => enqueue(dotted, input)
             : undefined;
         const { signal } = call;
-        return lazyCall(doFetch, url, args[0], opts.headers, batchUnary, signal);
+        const accept = opts.streamFormat === "sse" ? "text/event-stream" : "application/x-ndjson";
+        return lazyCall(doFetch, url, args[0], opts.headers, batchUnary, signal, accept);
       },
     });
 
@@ -182,8 +189,9 @@ function lazyCall(
   headers?: Record<string, string>,
   batchUnary?: (input: unknown) => Promise<unknown>,
   signal?: AbortSignal,
+  streamAccept?: string,
 ) {
-  const start = () => {
+  const start = (accept?: Record<string, string>) => {
     signal?.throwIfAborted();
     return doFetch(
       url,
@@ -191,13 +199,13 @@ function lazyCall(
         ? {
             // No content-type: fetch sets multipart/form-data with its boundary.
             method: "POST",
-            headers: { "x-dendra": "1", ...(headers ?? {}) },
+            headers: { "x-dendra": "1", ...accept, ...(headers ?? {}) },
             body: toFormData(input as Record<string, unknown>),
             signal,
           }
         : {
             method: "POST",
-            headers: { ...jsonHeaders, ...(headers ?? {}) },
+            headers: { ...jsonHeaders, ...accept, ...(headers ?? {}) },
             body: JSON.stringify(input ?? null),
             signal,
           },
@@ -227,26 +235,42 @@ function lazyCall(
         signal,
       );
     },
-    // Streaming path: iterating the call reads NDJSON frames. Breaking out of
-    // the `for await` (or aborting the signal) cancels the body — closing the
-    // connection so the server can tear the subscription down. An abort then
-    // ends the loop by throwing the signal's reason.
+    // Streaming path: iterating the call reads NDJSON or SSE frames, whichever
+    // the server answered with. Breaking out of the `for await` (or aborting
+    // the signal) cancels the body — closing the connection so the server can
+    // tear the subscription down. An abort then ends the loop by throwing the
+    // signal's reason.
     async function* () {
-      const res = await start();
+      const res = await start(streamAccept ? { accept: streamAccept } : undefined);
       const body = res.body;
       if (!body) return;
+      const type = res.headers.get("content-type") ?? "";
       try {
-        for await (const obj of readNdjson(body, signal)) {
-          if (
-            obj &&
-            typeof obj === "object" &&
-            "$error" in (obj as Record<string, unknown>)
-          ) {
-            throw new DendraClientError(
-              (obj as { $error: { code?: string; message?: string } }).$error,
-            );
+        // A request that failed before streaming (e.g. createContext threw)
+        // answers with a plain JSON error envelope.
+        if (type.startsWith("application/json")) {
+          const data = (await res.json()) as { error?: { code?: string; message?: string } };
+          throw new DendraClientError(data.error ?? {});
+        }
+        if (type.startsWith("text/event-stream")) {
+          for await (const ev of readSse(body, signal)) {
+            if (ev.event === "error") throw new DendraClientError(JSON.parse(ev.data));
+            if (ev.event === "done") return;
+            yield JSON.parse(ev.data);
           }
-          yield obj;
+        } else {
+          for await (const obj of readNdjson(body, signal)) {
+            if (
+              obj &&
+              typeof obj === "object" &&
+              "$error" in (obj as Record<string, unknown>)
+            ) {
+              throw new DendraClientError(
+                (obj as { $error: { code?: string; message?: string } }).$error,
+              );
+            }
+            yield obj;
+          }
         }
         signal?.throwIfAborted();
       } finally {
@@ -302,34 +326,62 @@ async function* readNdjson(
   body: ReadableStream<Uint8Array>,
   signal?: AbortSignal,
 ): AsyncIterable<unknown> {
-  const reader = body.getReader();
-  // Cancelling ends a pending read with `done`, whatever the fetch did.
-  const onAbort = () => void reader.cancel(signal?.reason).catch(() => {});
-  signal?.addEventListener("abort", onAbort, { once: true });
-  try {
-    yield* readLines(reader);
-  } finally {
-    signal?.removeEventListener("abort", onAbort);
-    reader.releaseLock();
+  for await (const raw of readLines(body, signal)) {
+    const line = raw.trim();
+    if (line) yield JSON.parse(line);
+  }
+}
+
+// Server-Sent Events: `event:`/`data:` fields up to a blank line make one
+// event. Comments (`: ping` heartbeats), `id:` and `retry:` are skipped.
+async function* readSse(
+  body: ReadableStream<Uint8Array>,
+  signal?: AbortSignal,
+): AsyncIterable<{ event: string; data: string }> {
+  let event = "";
+  let data: string[] = [];
+  for await (const raw of readLines(body, signal)) {
+    const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
+    if (line === "") {
+      if (data.length) yield { event, data: data.join("\n") };
+      event = "";
+      data = [];
+      continue;
+    }
+    const colon = line.indexOf(":");
+    if (colon === 0) continue;
+    const field = colon < 0 ? line : line.slice(0, colon);
+    let value = colon < 0 ? "" : line.slice(colon + 1);
+    if (value.startsWith(" ")) value = value.slice(1);
+    if (field === "event") event = value;
+    else if (field === "data") data.push(value);
   }
 }
 
 async function* readLines(
-  reader: ReadableStreamDefaultReader<Uint8Array>,
-): AsyncIterable<unknown> {
+  body: ReadableStream<Uint8Array>,
+  signal?: AbortSignal,
+): AsyncIterable<string> {
+  const reader = body.getReader();
+  // Cancelling ends a pending read with `done`, whatever the fetch did.
+  const onAbort = () => void reader.cancel(signal?.reason).catch(() => {});
+  signal?.addEventListener("abort", onAbort, { once: true });
   const dec = new TextDecoder();
   let buf = "";
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
-    let idx: number;
-    while ((idx = buf.indexOf("\n")) >= 0) {
-      const line = buf.slice(0, idx).trim();
-      buf = buf.slice(idx + 1);
-      if (line) yield JSON.parse(line);
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let idx: number;
+      while ((idx = buf.indexOf("\n")) >= 0) {
+        yield buf.slice(0, idx);
+        buf = buf.slice(idx + 1);
+      }
     }
+    if (buf) yield buf;
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+    reader.releaseLock();
   }
-  const last = buf.trim();
-  if (last) yield JSON.parse(last);
 }

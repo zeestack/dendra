@@ -92,8 +92,8 @@ Each item links the issue with the evidence.
   `NOT_FOUND` → `notFound()`, `UNAUTHORIZED` → sign-in redirect.
 - [x] **`createServerCaller`** ([#24](https://github.com/zeestack/dendra/issues/24)) — the rest of `dendra/next`: a caller that builds `ctx` from `headers()`, so
   Server Components don't wire `createContext` by hand.
-- [ ] **SSE subscriptions** ([#25](https://github.com/zeestack/dendra/issues/25)) — moved up from candidates, as an option beside NDJSON (friendlier to proxies).
-- [ ] **"Deploying streams" recipe** ([#26](https://github.com/zeestack/dendra/issues/26)) — proxy flushing (Caddy `flush_interval -1`, nginx `proxy_buffering off`),
+- [x] **SSE subscriptions** ([#25](https://github.com/zeestack/dendra/issues/25)) — moved up from candidates, as an option beside NDJSON (friendlier to proxies).
+- [x] **"Deploying streams" recipe** ([#26](https://github.com/zeestack/dendra/issues/26)) — proxy flushing (Caddy `flush_interval -1`, nginx `proxy_buffering off`),
   compression, idle timeouts, heartbeats.
 
 Carried over from 0.9:
@@ -240,7 +240,7 @@ default, no CSS-framework choice — keep it to 2–3 questions; link docs for t
 
 ## 0.3.0 and later — candidates
 
-- [ ] **SSE subscriptions** _(scheduled for 0.10, [#25](https://github.com/zeestack/dendra/issues/25))_ — real-time without standing up WebSocket infra.
+- [x] **SSE subscriptions** _(shipped in 0.10, [#25](https://github.com/zeestack/dendra/issues/25))_ — real-time without standing up WebSocket infra.
 - [ ] **Serialization transformers** (superjson-style; honest types come first in 0.8, [#3](https://github.com/zeestack/dendra/issues/3)) — Dates / Maps / BigInt over the wire.
 - [x] **File uploads** (multipart). _Shipped 0.7.0 with downloads; see Field requests._
 - [ ] **Observability hooks** — logging / tracing / OpenTelemetry via middleware.
