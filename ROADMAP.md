@@ -97,7 +97,7 @@ Each item links the issue with the evidence.
   compression, idle timeouts, heartbeats.
 
 Carried over from 0.9:
-- [ ] **Job status on the client** ([#27](https://github.com/zeestack/dendra/issues/27)) — a hook that follows a job over the subscription instead of polling
+- [x] **Job status on the client** ([#27](https://github.com/zeestack/dendra/issues/27)) — a hook that follows a job over the subscription instead of polling
   (folds in `useProcedure` / `dendra/react-query`).
 - [x] **`inspectRouter`** ([#28](https://github.com/zeestack/dendra/issues/28)) — moved up from Field requests: fail the build when a procedure lacks its tenant or role check.
 - [x] **Safe-by-default AI** ([#29](https://github.com/zeestack/dendra/issues/29)) — moved up from Field requests (`.noAi()`, `.ai({ confirm: true })`): a security item.

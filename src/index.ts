@@ -129,6 +129,8 @@ export type {
   PgNotification,
 } from "./pg-pubsub.ts";
 export { createJobs, createInMemoryJobStore } from "./jobs.ts";
+export { followJob } from "./follow-job.ts";
+export type { FollowedJob, FollowJobOptions, JobConnection, JobFollower, JobSnapshotLike } from "./follow-job.ts";
 export type {
   Jobs,
   JobsOptions,

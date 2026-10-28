@@ -44,6 +44,8 @@ let inference do the rest — never hand-write client types or `.d.ts`.
      on `createJobs({ store, pubsub, context })`; `.background(job, map?)` makes a
      procedure enqueue it and return `{ jobId }`; `job.watch(jobId, { signal })`
      in a `.stream()` sends status. Jobs get `context()`, not the request ctx.
+     In the browser, `useJob(jobId, (id, signal) => api.x.watch({ jobId: id }, { signal }))`
+     (`dendra/react`) or `followJob` follows it to completion and reconnects.
    - Typed output (and OpenAPI response): `.output(schema)`.
    - Expose to an LLM/MCP as a tool: `.ai({ description: "…" })` (opt-in).
      Never a tool: `.noAi()`. Needs a person's OK: `.ai({ confirm: true })` plus

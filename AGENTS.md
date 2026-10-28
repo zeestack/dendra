@@ -128,7 +128,10 @@ UNAUTHORIZED a sign-in redirect. Don't rebuild a `Request` from `headers()` by h
   proxy, compression and timeout settings, see "Deploying streams" in the README.
 - **Long work goes in a job,** not `after()`: `jobs.define(name, { input, run, key,
   retries })`, then `route.….background(job, map?)` returns `{ jobId }` and
-  `job.watch(jobId, { signal })` streams status. A job's ctx comes from
+  `job.watch(jobId, { signal })` streams status. In the browser follow it with
+  `useJob(jobId, (id, signal) => api.x.watch({ jobId: id }, { signal }))` from
+  `dendra/react` (or `followJob` from `dendra`): it reconnects and stops on
+  succeeded/failed — don't poll or hand-roll that loop. A job's ctx comes from
   `createJobs({ context })`, never the request — pass tenant/user ids via `map`.
   Call `jobs.start()` in processes that run jobs.
 - **`.ai()` is opt-in.** Only `.ai()`-marked procedures are exposed as tools.
