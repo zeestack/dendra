@@ -6,5 +6,6 @@ export default {
   examples: 'Examples',
   architecture: 'Architecture',
   compare: 'Comparison',
-  releases: 'Release notes'
+  releases: 'Release notes',
+  versioning: 'Versioning'
 }

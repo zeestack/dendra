@@ -157,6 +157,8 @@ tool-shaping primitives; it takes an already-connected MCP client, never a token
 - Streaming routes run on the Node runtime.
 - No auth/UI/connection/OAuth logic leaked into framework wiring.
 - Prefer `mergeToolsets` + your own loop unless `runAgent`/`useAssistant` clearly help.
+- No `@deprecated` imports (the tag names the replacement); `@experimental` APIs
+  may change in a minor release.
 
 Full reference: the project's `README.md`, `ARCHITECTURE.md`, and the worked
 `examples/nextjs-app/`.

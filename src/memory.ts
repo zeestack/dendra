@@ -4,6 +4,9 @@
 // reference store. Real apps implement `MemoryStore` over pgvector, SQLite +
 // embeddings, Redis, or a managed memory service — the call sites (and the
 // `runAgent` recall/remember hooks) never change. Core stays dependency-free.
+//
+// @experimental Outside the 1.0 stability guarantee, like the rest of the
+// context layer; may change in a minor release. The `MemoryStore` types are stable.
 
 /** One remembered item. `score` is set by `search()` (higher = more relevant). */
 export interface MemoryRecord {
