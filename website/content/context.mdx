@@ -52,7 +52,7 @@ import { lazyToolset } from 'dendra'
 
 const lazy = lazyToolset(merged.tools, { pin: local.names, k: 6 })
 
-for await (const part of runAgent({ client, model, prompt, lazyToolset: lazy })) {
+for await (const part of runAgent({ client, model, prompt, tools, execute, lazyToolset: lazy })) {
   // the model calls search_tools("create invoice") → the matching tool loads →
   // it calls that tool. A 100-tool connector costs ~1 slot until used.
 }
@@ -82,7 +82,7 @@ const context = createContextManager({
   history: { compact: (msgs, budget) => trimToFit(msgs, budget) }, // optional eviction hook
 })
 
-for await (const part of runAgent({ client, model, prompt, context })) {
+for await (const part of runAgent({ client, model, prompt, tools, execute, context })) {
   // { type: 'context', source: 'memory', op: 'recalled' | 'saved', records }
   // { type: 'context', source: 'tools',  op: 'loaded', tools: [...] }
 }

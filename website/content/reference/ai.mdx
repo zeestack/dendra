@@ -1,0 +1,486 @@
+---
+title: AI tools & MCP
+description: 'Turn .ai() procedures into LLM tools and an MCP server, consume external MCP servers, and require a person to approve tool calls.'
+---
+
+# AI tools & MCP
+
+A procedure marked `.ai()` (see [Router](/reference/router)) can also be called by
+a model. The functions on this page shape those procedures into tool schemas, run
+the model's tool calls with the same validation and `.use()` guards as HTTP,
+expose them over MCP, blend in tools from external MCP servers, and hold
+`.ai({ confirm: true })` calls until a person approves them. For the concepts, see
+[AI & MCP](/ai-mcp).
+
+```ts
+import {
+  toToolset, createToolExecutor, formatTool, toToolSource, mergeToolsets,
+  mcpToolDefinitions, createMcpBridge, createMcpToolSource,
+  createApprovals, createInMemoryApprovalStore, isPendingResult,
+} from 'dendra'
+```
+
+Everything here is stable. The agent loop and context layer built on top of it
+(`runAgent`, `lazyToolset`, …) are on the [Agents](/reference/agents) page.
+
+## Tools
+
+### `toToolset(router, opts?)`
+
+Returns a schema for every `.ai()` procedure in the router, formatted for one
+provider. Procedures without `.ai()` are left out.
+
+```ts
+function toToolset(router: object, opts?: { format?: ToolFormat }): unknown[]
+```
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `format` | `ToolFormat` | `'anthropic'` | Shape of each tool object. |
+
+For each tool:
+
+- **Name** is the procedure's dotted path in the router, the same in every format:
+  `appRouter.notes.create` becomes `notes.create`. dendra doesn't rewrite it.
+  Anthropic and OpenAI only accept names matching `^[a-zA-Z0-9_-]+$`, so if you send
+  these schemas to a provider yourself, map `.` to `_` and back. `runAgent` and
+  `lazyToolset` do that for you.
+- **Description** is `.ai({ description })`, else `.describe()`, else the name. A
+  confirm tool gets this appended: ` (Needs a person's approval: calling it returns a
+  pending action, not the result.)`
+- **Schema** is the procedure's input JSON Schema (the one OpenAPI uses, with its
+  constraints). A procedure with no `.input()` gets `{ type: 'object', properties: {} }`.
+
+What each format produces for `notes.create`:
+
+```ts
+// 'anthropic'
+{ name: 'notes.create', description: 'Create a note', input_schema: { /* … */ } }
+
+// 'openai'
+{ type: 'function', function: { name: 'notes.create', description: 'Create a note', parameters: { /* … */ } } }
+
+// 'plain' (a PlainTool)
+{ name: 'notes.create', description: 'Create a note', inputSchema: { /* … */ } }
+```
+
+### `createToolExecutor(router, ctx, opts?)`
+
+Returns a function that runs one tool call by name, the way the model asked for it.
+Input is validated and every `.use()` guard runs with `ctx`, exactly as over HTTP,
+and after-hooks see the call with `transport: 'tool'`.
+
+```ts
+function createToolExecutor<Ctx>(
+  router: object,
+  ctx: Ctx,
+  opts?: { approvals?: Approvals<Ctx> },
+): (name: string, args: unknown) => Promise<unknown>
+```
+
+```ts
+const execute = createToolExecutor(appRouter, await createContext(req), { approvals })
+const result = await execute('notes.create', { title: 'Hi', body: '…' })
+```
+
+The model acts with the permissions of the `ctx` you pass. Build it from the
+request, per request; an executor made once at startup with a service ctx gives the
+model that service's rights.
+
+A streaming procedure (`.stream()`) runs to the end and its chunks are collected:
+joined into one string if every chunk is a string, else returned as an array. There
+is no limit or cancellation, so don't mark an endless subscription `.ai()`.
+
+| Option | Type | Description |
+| --- | --- | --- |
+| `approvals` | `Approvals<Ctx>` | From `createApprovals()`. Needed to call confirm tools. |
+
+It only throws `DendraError`s, so a hand-written agent loop can pass `e.message`
+to the model as is:
+
+| Code | When |
+| --- | --- |
+| `NOT_FOUND` | No procedure has that name, **or** it has no `.ai()`. Both read `Tool 'x' not found`, so the model can't probe for procedures it wasn't given. |
+| `BAD_REQUEST` | Input validation failed (`Input validation failed`, issues in `details`). |
+| `FORBIDDEN` | A confirm tool was called without `approvals`. It never runs. |
+| any | A `DendraError` thrown by a guard or the handler passes through. |
+| `INTERNAL` | Any other error (a DB driver error, a `TypeError`). The message is `Internal error`; the original is logged with `console.error`. |
+
+For a confirm tool, see [Approvals](#approvals): the call is stored and returns a
+`PendingResult` instead of running. Passing an `approvals` object that didn't come
+from `createApprovals()` throws a plain `Error`.
+
+### `formatTool(name, description, schema, format)`
+
+Shapes a single tool for a provider. `toToolset` and `createMcpToolSource` both use
+it, so a local procedure and a remote MCP tool look the same to the model. Use it
+for tools you define outside the router.
+
+```ts
+function formatTool(name: string, description: string, schema: JSONSchema, format: ToolFormat): unknown
+```
+
+#### `ToolFormat`
+
+Which provider's tool shape to produce (see `toToolset` for each shape).
+
+```ts
+type ToolFormat = 'anthropic' | 'openai' | 'plain'
+```
+
+#### `PlainTool`
+
+The `'plain'` format.
+
+```ts
+interface PlainTool {
+  name: string
+  description: string
+  inputSchema: JSONSchema
+}
+```
+
+## Tool sources
+
+A tool source is a set of tool schemas plus the function that runs them. Your
+router and each external MCP server are sources; `mergeToolsets` combines them.
+
+### `toToolSource(router, ctx, opts?)`
+
+Wraps a router and ctx as a `ToolSource`: `toToolset` for the schemas, the dotted
+names, and `createToolExecutor` to run them.
+
+```ts
+function toToolSource<Ctx>(
+  router: object,
+  ctx: Ctx,
+  opts?: { format?: ToolFormat; approvals?: Approvals<Ctx> },
+): ToolSource
+```
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `format` | `ToolFormat` | `'anthropic'` | Shape of the tool schemas. |
+| `approvals` | `Approvals<Ctx>` | — | Passed to `createToolExecutor`. |
+
+### `mergeToolsets(...sources)`
+
+Merges sources into one flat list and one dispatcher. Each call goes to the source
+that owns the name.
+
+```ts
+function mergeToolsets(...sources: ToolSource[]): {
+  tools: unknown[]
+  execute: (name: string, args: unknown) => Promise<unknown>
+}
+```
+
+```ts
+const local = toToolSource(appRouter, ctx, { format: 'anthropic' })
+const github = await createMcpToolSource(githubClient, { prefix: 'gh.' })
+const { tools, execute } = mergeToolsets(local, github)
+```
+
+Throws a plain `Error` at merge time if two sources share a tool name; give one a
+`prefix`. `execute` throws `NOT_FOUND` (`Tool 'x' not found`) for a name no source
+owns.
+
+#### `ToolSource`
+
+```ts
+interface ToolSource {
+  /** Tool schemas, formatted for the chosen provider. */
+  tools: unknown[]
+  /** The tool names this source answers to (used for routing). */
+  names: string[]
+  /** Run one of this source's tools by name. */
+  execute(name: string, args: unknown): Promise<unknown>
+}
+```
+
+Implement it yourself to merge in tools from anywhere else.
+
+## MCP server
+
+dendra shapes `tools/list` and `tools/call`; it has no MCP transport. Wire these to
+the official `@modelcontextprotocol/sdk` server (stdio or HTTP), as the
+[example app](/examples) does.
+
+### `mcpToolDefinitions(router)`
+
+The MCP `tools/list` payload for the router's `.ai()` procedures. Names,
+descriptions and schemas are the same as `toToolset(router, { format: 'plain' })`.
+
+```ts
+function mcpToolDefinitions(router: object): McpToolDef[]
+```
+
+Annotations are added from the procedure:
+
+| Procedure | `annotations` |
+| --- | --- |
+| `.get()` | `{ readOnlyHint: true }` (this wins over `confirm`) |
+| `.ai({ confirm: true })` | `{ readOnlyHint: false, destructiveHint: true }` |
+| anything else | none, which MCP treats as possibly destructive |
+
+#### `McpToolDef`
+
+```ts
+interface McpToolDef {
+  name: string
+  description: string
+  inputSchema: Record<string, unknown>
+  /** Set for .get() reads and .ai({ confirm: true }) tools. */
+  annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean }
+}
+```
+
+### `createMcpBridge(router, ctx, opts?)`
+
+An in-process MCP server core: lists the router's tools and calls them through
+`createToolExecutor` with `ctx`. Create it per connection or request, with that
+caller's ctx.
+
+```ts
+function createMcpBridge<Ctx>(
+  router: object,
+  ctx: Ctx,
+  opts?: { approvals?: Approvals<Ctx> },
+): {
+  listTools(): McpToolDef[]
+  callTool(name: string, args: unknown): Promise<McpCallResult>
+}
+```
+
+```ts
+const bridge = createMcpBridge(appRouter, ctx, { approvals })
+server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: bridge.listTools() }))
+server.setRequestHandler(CallToolRequestSchema, (req) =>
+  bridge.callTool(req.params.name, req.params.arguments))
+```
+
+`callTool` never throws. It passes `args ?? {}` to the executor and returns the
+result as one text item holding `JSON.stringify(result)`. On failure it returns
+`isError: true` with the error's public message as the text: a `DendraError`'s own
+message, or `Internal error` for anything else (logged with `console.error`). Only
+the message is sent, not the code or `details`. A confirm tool returns its
+`PendingResult` as the text, like any result.
+
+#### `McpCallResult`
+
+```ts
+interface McpCallResult {
+  content: Array<{ type: 'text'; text: string }>
+  isError?: boolean
+}
+```
+
+## MCP client
+
+### `createMcpToolSource(client, opts?)`
+
+Turns an external MCP server into a `ToolSource` you can merge with your own tools.
+Pass a client that is already connected; the official SDK's `Client` fits as is.
+dendra handles no transports, connections or OAuth: that stays in your app.
+
+```ts
+function createMcpToolSource(client: McpClientLike, opts?: McpToolSourceOptions): Promise<ToolSource>
+```
+
+```ts
+const client = new Client({ name: 'my-app', version: '1.0.0' })
+await client.connect(transport)
+const github = await createMcpToolSource(client, {
+  prefix: 'gh.',
+  filter: (name) => !name.startsWith('delete_'),
+})
+```
+
+It calls `listTools()` once, when created; create a new source to pick up new tools.
+Each tool's description falls back to its name, and a missing `inputSchema` to
+`{ type: 'object', properties: {} }`.
+
+`execute`:
+
+- Strips the prefix and calls `callTool({ name, arguments: args ?? {} })`.
+- Joins the result's text items. If the text parses as JSON, returns the parsed
+  value, else the raw string.
+- Throws `BAD_GATEWAY` (502) when the server returns `isError`, with the server's
+  text as the message (or `MCP tool 'x' failed` if there's none). The server wrote
+  that text for the model, so it passes through unmasked.
+- Throws `NOT_FOUND` for a name it didn't list.
+
+Errors thrown by the client itself (a dropped connection) are not wrapped. Remote
+tool names, descriptions and results reach the model as the server sent them, so
+treat them as untrusted input.
+
+#### `McpToolSourceOptions`
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `format` | `ToolFormat` | `'anthropic'` | Shape of the tool schemas. |
+| `filter` | `(name: string) => boolean` | — | Keep only tools whose remote name passes. |
+| `prefix` | `string` | — | Added to each tool name on the dendra side (e.g. `'gh.'`) to avoid clashes. Stripped before the call reaches the server. |
+
+#### `McpClientLike`
+
+The two methods dendra needs from an MCP client. It's structural, so any object of
+this shape works.
+
+```ts
+interface McpClientLike {
+  listTools(): Promise<{
+    tools: Array<{ name: string; description?: string; inputSchema?: Record<string, unknown> }>
+  }>
+  callTool(params: { name: string; arguments?: Record<string, unknown> }): Promise<{
+    content?: Array<{ type: string; text?: string }>
+    isError?: boolean
+    [key: string]: unknown
+  }>
+}
+```
+
+## Approvals
+
+A procedure marked `.ai({ confirm: true })` never runs on the model's say-so. The
+flow:
+
+1. **Propose.** The model calls the tool. `createToolExecutor` (with `approvals`)
+   validates the input and runs the `.use()` guards with the model's ctx, then
+   stores a `PendingAction` instead of running the handler. The model gets a
+   `PendingResult`. After-hooks see the call with `approval: { id, status: 'pending' }`.
+2. **Review.** Your UI lists actions with `approvals.list(ctx)`.
+3. **Decide.** A person calls `approve(id, ctx)` or `reject(id, ctx, reason?)` with
+   **their own** ctx. Approve validates the stored input again, re-runs the guards
+   against the approver, and runs the handler with the approver's ctx. After-hooks
+   see the decision with `status: 'approved'` or `'rejected'`.
+
+```ts
+const approvals = createApprovals(appRouter, {
+  scope: (ctx) => ctx.tenantId,
+  proposer: (ctx) => ctx.user?.id,
+})
+
+// In the agent route, per request
+const execute = createToolExecutor(appRouter, ctx, { approvals })
+const res = await execute('posts.publish', { id: 42 })
+if (isPendingResult(res)) {
+  // { status: 'pending_approval', actionId: '…', message: 'Waiting for a person to approve this action. It has not run yet.' }
+}
+
+// In the approver's request
+const pending = await approvals.list(approverCtx)
+const result = await approvals.approve(pending[0].id, approverCtx)
+// or: await approvals.reject(id, approverCtx, 'Not this week')
+```
+
+Over MCP, confirm tools carry `destructiveHint: true`, and `createMcpBridge` needs
+the same `approvals` option to call them.
+
+### `createApprovals(router, opts?)`
+
+Creates the pending-action store and the decision functions for a router's confirm
+tools. Create it once and pass the same object to every `createToolExecutor`,
+`toToolSource` or `createMcpBridge` that should propose into it.
+
+```ts
+function createApprovals<Ctx>(router: object, opts?: ApprovalsOptions<Ctx>): Approvals<Ctx>
+```
+
+#### `ApprovalsOptions`
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `store` | `ApprovalStore` | `createInMemoryApprovalStore()` | Where pending actions live. Use a shared store with more than one process. |
+| `scope` | `(ctx: Ctx) => string \| undefined` | — | Who may see and decide an action, e.g. the tenant id. Recorded at proposal; `list`, `get`, `approve` and `reject` only find actions whose scope equals the caller's. Set it in multi-tenant apps. |
+| `proposer` | `(ctx: Ctx) => string \| undefined` | — | Who the model was acting for, e.g. the user id. Recorded on the action as `proposedBy`, since the handler runs with the approver's ctx. |
+
+#### `Approvals`
+
+| Method | Returns | Description |
+| --- | --- | --- |
+| `list(ctx)` | `Promise<PendingAction[]>` | Pending actions in the caller's scope. |
+| `get(id, ctx)` | `Promise<PendingAction \| null>` | One action, or `null` if it's missing or in another scope. |
+| `approve(id, ctx)` | `Promise<unknown>` | Runs the call with the approver's ctx and returns the handler's result (a streaming handler's chunks are collected as in `createToolExecutor`). |
+| `reject(id, ctx, reason?)` | `Promise<void>` | Drops the action. After-hooks record it as a `FORBIDDEN` failure with `approval.reason`; `reject` itself resolves. |
+
+`approve` and `reject` both validate the stored input and run the guards with the
+deciding ctx before anything else. The action is removed from the store (with
+`take`) only after the guards pass, so:
+
+- If validation or a guard fails, the error is thrown and the action **stays
+  pending**.
+- Once removed, it's decided: if the handler then throws, the action is gone and
+  the error is thrown to the approver.
+
+Errors:
+
+| Code | When |
+| --- | --- |
+| `NOT_FOUND` | No action with that id in the caller's scope (another tenant's id answers the same), or its procedure no longer exists. |
+| `CONFLICT` | The action was already decided, e.g. two approvers raced. |
+
+#### `PendingAction`
+
+A stored tool call waiting for a decision.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | `string` | A random UUID; also the `actionId` the model got. |
+| `tool` | `string` | Dotted procedure path, e.g. `'posts.publish'`. |
+| `input` | `unknown` | The model's arguments as sent. Validated again on approval. |
+| `scope` | `string` | From `scope(ctx)` at proposal time, if set. |
+| `proposedBy` | `string` | From `proposer(ctx)` at proposal time, if set. |
+| `createdAt` | `number` | `Date.now()` at proposal time. |
+
+#### `PendingResult`
+
+What the model gets from a confirm tool instead of the result.
+
+```ts
+interface PendingResult {
+  status: 'pending_approval'
+  actionId: string
+  message: string // 'Waiting for a person to approve this action. It has not run yet.'
+}
+```
+
+### `isPendingResult(value)`
+
+True if a tool result is a `PendingResult`: an object with `status:
+'pending_approval'` and a string `actionId`. Use it in your agent loop or UI to show
+an approval prompt.
+
+```ts
+function isPendingResult(v: unknown): v is PendingResult
+```
+
+### `createInMemoryApprovalStore()`
+
+A single-process `ApprovalStore` backed by a `Map`, and the default for
+`createApprovals`. Actions are copied with `structuredClone` and lost on restart.
+For development, tests and single-instance apps.
+
+```ts
+function createInMemoryApprovalStore(): ApprovalStore
+```
+
+#### `ApprovalStore`
+
+Implement this to keep pending actions in your database.
+
+```ts
+interface ApprovalStore {
+  add(action: PendingAction): Promise<void>
+  get(id: string): Promise<PendingAction | null>
+  /** Remove and return it, atomically, so an action is decided once. */
+  take(id: string): Promise<PendingAction | null>
+  list(scope?: string): Promise<PendingAction[]>
+}
+```
+
+`take` must be atomic (e.g. `DELETE … RETURNING`): when two approvers race, only
+one may get the action back; the other gets `null`, which becomes `CONFLICT`.
+`list(scope)` filters by scope. `createApprovals` calls it as `list(undefined)` when
+there's no `scope` option (or `scope(ctx)` returns `undefined`), and the in-memory
+store then returns every action.

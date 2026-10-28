@@ -1,0 +1,185 @@
+---
+title: dendra/adapter
+description: 'The dispatch core for writing a new dendra transport: resolve a procedure by path and run it with validation, middleware and after-hooks.'
+---
+
+# dendra/adapter
+
+The dispatch core that every built-in transport sits on: `toFetchHandler`,
+`createCaller`, the WebSocket server and the tool executor. Use it to write a new
+transport, such as a queue consumer, a custom socket protocol or a test harness.
+Apps don't need it; see [Server](/reference/server) and
+[Client](/reference/client) instead.
+
+```ts
+import { resolveProc, invokeUnary, invokeStream } from 'dendra/adapter'
+import type { Proc, AnyProc, CallSite, Transport, ProcedureKind } from 'dendra/adapter'
+```
+
+Everything on this page is experimental: middleware order, after-hook timing and
+the `CallSite` shape may change in a minor release. See
+[Versioning → Experimental APIs](/versioning#experimental-apis).
+
+> **Deprecated aliases.** The same names are also exported from `dendra`, where
+> they're deprecated: import them from `dendra/adapter`. The aliases are removed
+> in 0.13.
+
+A minimal transport:
+
+```ts
+import { resolveProc, invokeUnary, invokeStream } from 'dendra/adapter'
+import { DendraError } from 'dendra'
+
+async function dispatch(msg: { path: string; input: unknown }, ctx: Ctx) {
+  const proc = resolveProc(appRouter, msg.path.split('.'))
+  if (!proc) throw new DendraError('NOT_FOUND', `No procedure '${msg.path}'`)
+  const site = { path: msg.path, transport: 'rpc' as const }
+  if (proc.kind === 'stream') return invokeStream(proc, msg.input, ctx, site)
+  return invokeUnary(proc, msg.input, ctx, site)
+}
+```
+
+## Dispatch
+
+### `resolveProc(router, segments)`
+
+> **Experimental.** May change in a minor release.
+
+Finds the procedure at a path in a router. Returns `undefined` when the path
+doesn't lead to a procedure (a missing key, a path that stops at a sub-router,
+or one that continues past a procedure).
+
+```ts
+function resolveProc(router: RouterRecord, segments: string[]): AnyProc | undefined
+```
+
+```ts
+resolveProc(appRouter, ['notes', 'create'])   // the notes.create procedure
+resolveProc(appRouter, ['notes'])             // undefined: a sub-router
+```
+
+It only looks the procedure up. Checking the HTTP method or the procedure's
+`kind` is the transport's job.
+
+### `invokeUnary(proc, raw, ctx, site?)`
+
+> **Experimental.** May change in a minor release.
+
+Runs a unary procedure the way every transport does: validate `raw` against the
+input schema, run the `.use()` middleware chain (each may throw or add to `ctx`),
+call the handler, then run the `.after()` hooks. Resolves with the handler's
+result.
+
+```ts
+function invokeUnary(proc: AnyProc, raw: unknown, ctx: unknown, site?: CallSite): Promise<unknown>
+```
+
+- Invalid input throws `DendraError('BAD_REQUEST', 'Input validation failed')`
+  with the issues in `details`. This happens before middleware, so after-hooks
+  don't run for it.
+- Errors from middleware and the handler are rethrown unchanged. Masking
+  non-`DendraError`s before they leave your process is the transport's job.
+- After-hooks run once the call settles, success or failure, and are awaited.
+  A hook that throws is logged and doesn't change the outcome. A hook only runs
+  if the middlewares registered before it passed.
+- A `file()` result is returned as is. When `site.transport` is `'tool'`, or
+  `site.batch` is set, or `site.transport` is `'ws'`, a file result fails with
+  `NOT_IMPLEMENTED` instead, since those transports can't carry raw bytes.
+
+### `invokeStream(proc, raw, ctx, site?)`
+
+> **Experimental.** May change in a minor release.
+
+Runs a streaming procedure: validate, run middleware, then yield what the handler
+yields. After-hooks run once the stream ends; a consumer that stops early counts
+as success.
+
+```ts
+function invokeStream(proc: AnyProc, raw: unknown, ctx: unknown, site?: CallSite): AsyncIterable<unknown>
+```
+
+- Nothing runs until the first value is pulled, so validation and middleware
+  errors are thrown from the first `next()`, not from the call.
+- The handler's `signal` aborts when `site.signal` aborts, or when the consumer
+  stops (`return()` on the iterator, or `break` in a `for await`). Pass the
+  client's disconnect as `site.signal` so subscriptions stop.
+
+## Types
+
+### `Proc`
+
+> **Experimental.** May change in a minor release.
+
+A procedure as plain data: what `route.….handler()` and `route.stream()` build.
+`Ctx`, `In` and `Out` carry the types the client and caller read; `K` is its
+`ProcedureKind`.
+
+```ts
+interface Proc<Ctx = unknown, In = unknown, Out = unknown, K extends ProcedureKind = 'unary'> {
+  readonly _dendra: true
+  readonly kind: K
+  readonly method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+  readonly path?: string                 // REST path, e.g. '/notes/:id'
+  readonly description?: string          // from .describe()
+  readonly ai?: { expose: boolean; description?: string; confirm?: boolean }
+  readonly noAi?: boolean
+  readonly inputSchema?: StandardSchemaV1<unknown, In>
+  readonly inputJsonSchema?: JSONSchema
+  readonly outputJsonSchema?: JSONSchema
+  readonly meta?: Readonly<Record<string, unknown>>
+  readonly handler: (input: In, ctx: Ctx, signal?: AbortSignal) => Promise<Out> | AsyncIterable<Out>
+  // also: middlewares, middlewareNames, afterHooks (internal)
+}
+```
+
+Read a router's procedures for display or tests with `inspectRouter` rather than
+these fields. Run them with `invokeUnary` and `invokeStream`, not by calling
+`handler` yourself: that skips validation, middleware and after-hooks.
+
+### `AnyProc`
+
+> **Experimental.** May change in a minor release.
+
+A procedure with its types erased, used for storage and dispatch. `resolveProc`
+returns it and the invoke functions take it.
+
+```ts
+type AnyProc = Proc<any, any, any, ProcedureKind>
+```
+
+### `CallSite`
+
+> **Experimental.** May change in a minor release.
+
+Where a call came from. Pass it to `invokeUnary` and `invokeStream`; after-hooks
+see its `path` and `transport`.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `path` | `string` | The dotted procedure path, such as `notes.create`. After-hooks get `''` when it's missing. |
+| `transport` | `Transport` | Which transport the call arrived on. After-hooks get `'caller'` when it's missing. |
+| `batch` | `boolean` | The call is part of a request batch, which can't carry file results. |
+| `signal` | `AbortSignal` | Fires when the caller goes away (client disconnect, abort, unsubscribe). Streams pass it on to the handler. |
+| `approval` | `{ id: string; status: 'pending' \| 'approved' \| 'rejected'; reason?: string }` | Set on `.ai({ confirm: true })` calls; after-hooks receive it. |
+
+### `Transport`
+
+> **Experimental.** May change in a minor release.
+
+Which transport a call arrived on. After-hooks receive it as `transport`, which
+answers questions like "was this the model?".
+
+```ts
+type Transport = 'rpc' | 'rest' | 'caller' | 'ws' | 'tool'
+```
+
+### `ProcedureKind`
+
+> **Experimental.** May change in a minor release.
+
+Whether a procedure returns one result or a stream. `route.stream()` makes a
+`'stream'` procedure; everything else is `'unary'`.
+
+```ts
+type ProcedureKind = 'unary' | 'stream'
+```

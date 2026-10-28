@@ -870,7 +870,7 @@ createNote: route
 
 | Making your API usable by an LLM / Claude | tRPC + MCP | **dendra** |
 |---|---|---|
-| Tool JSON Schema | hand-convert from Zod | same schema, automatic |
+| Tool JSON Schema | hand-convert from Zod | same schema, automatic (`s.*`) |
 | Which procedures are tools | maintain a separate list | `.ai()` on the procedure |
 | Validation + auth on tool calls | re-wire yourself | same path as HTTP |
 | Anthropic + OpenAI formats | convert per provider | one `format` option |
@@ -1003,8 +1003,10 @@ and a WebSocket server and browser connection with safe defaults.
 > See the [release notes](https://products.techfoundry.io/dendra/releases).
 
 Published on npm as [`dendra`](https://www.npmjs.com/package/dendra). Docs:
-[products.techfoundry.io/dendra](https://products.techfoundry.io/dendra/) —
-what changed in each version is in the
+[products.techfoundry.io/dendra](https://products.techfoundry.io/dendra/), with
+an [API reference](https://products.techfoundry.io/dendra/reference/) for every
+export and an [upgrade guide](https://products.techfoundry.io/dendra/upgrading/)
+for each major version. What changed in each version is in the
 [release notes](https://products.techfoundry.io/dendra/releases/). Before 1.0,
 breaking changes ship in minor releases, and deprecated names keep working for at
 least one; see the [versioning policy](https://products.techfoundry.io/dendra/versioning). What's planned next is in [`ROADMAP.md`](https://github.com/zeestack/dendra/blob/main/ROADMAP.md).

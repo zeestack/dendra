@@ -1,0 +1,664 @@
+---
+title: Agents, context & memory
+description: 'Reference for runAgent, useAssistant, the AgentPart stream, createContextManager and its sources, lazyToolset, and the dendra/memory helpers.'
+---
+
+# Agents, context & memory
+
+The optional agent helpers: a model-and-tool loop for Anthropic (`dendra/anthropic`),
+a headless chat hook (`dendra/react`), the typed parts they exchange, and the
+context layer that keeps memory and large toolsets inside one token budget. For the
+concepts, see [AI & MCP](/ai-mcp) and [Context management](/context). The tools
+themselves come from the [AI reference](/reference/ai) (`toToolset`, `toToolSource`,
+`mergeToolsets`).
+
+> **Experimental.** Everything on this page except the `MemoryStore` and
+> `MemoryRecord` types is outside the 1.0 stability guarantee and may change in a
+> minor release. See [Versioning → Experimental APIs](/versioning#experimental-apis).
+
+```ts
+import { runAgent } from 'dendra/anthropic'          // peer dep: @anthropic-ai/sdk
+import { useAssistant } from 'dendra/react'           // peer dep: react
+import { createMemoryStore } from 'dendra/memory'
+import { createContextManager, memorySource, lazyToolSource, lazyToolset } from 'dendra'
+```
+
+## The agent loop
+
+### `runAgent(opts)`
+
+> **Experimental.** May change in a minor release.
+
+From `dendra/anthropic`. Runs the model-and-tool loop: it streams a model reply,
+runs every tool the model asked for, sends the results back, and repeats until the
+model stops asking for tools or `maxSteps` is reached. It yields typed
+[`AgentPart`s](#agentpart) as it goes: text deltas as they stream, and one tool part
+per tool call.
+
+```ts
+function runAgent(opts: RunAgentOptions): AsyncGenerator<AgentPart>
+```
+
+```ts
+import Anthropic from '@anthropic-ai/sdk'
+import { runAgent } from 'dendra/anthropic'
+import { toToolSource } from 'dendra'
+
+const { tools, execute } = toToolSource(appRouter, ctx, { format: 'anthropic' })
+
+for await (const part of runAgent({ client: new Anthropic(), model, tools, execute, prompt: 'What notes do I have?' })) {
+  if (part.type === 'text') process.stdout.write(part.text)
+  if (part.type === 'tool') console.log(part.name, part.result)
+}
+```
+
+Inside a `.stream()` handler, `yield* runAgent({ …, signal })` streams the parts to
+the client.
+
+Behaviour:
+
+- **Tool names.** Anthropic only accepts `[a-zA-Z0-9_-]` in tool names, so names are
+  sanitized for the model (`notes.list` becomes `notes_list`) and mapped back before
+  `execute` runs. `execute` and the tool part get the original dotted name.
+- **Tool errors.** If `execute` throws a `DendraError`, the model gets its message
+  and the tool part has `isError: true`. Any other error is logged with
+  `console.error` and reaches the model and the part as `Internal error`.
+- **Approvals.** When a tool needs approval (`.ai({ confirm: true })`) and returns
+  `{ status: 'pending_approval', actionId }`, the tool part carries
+  `approvalId: actionId` so the UI can show approve and reject.
+- **Thinking blocks** in the model's reply are dropped before the reply is sent
+  back, since an empty one is rejected by the API.
+- **Messages** are copied; the array you pass isn't changed. If you pass neither
+  `messages` nor `prompt`, the conversation starts empty.
+- Errors from the client itself (network, API errors, an aborted `signal`) are not
+  caught; they end the generator.
+
+Memory and lazy tools have two wirings. With `context` (a
+[`ContextManager`](#contextmanager)), the manager owns recall, tool loading, history
+compaction and write-backs, and they show up as `{ type: 'context' }` parts; the
+`memory`, `recall`, `remember` and `lazyToolset` options are ignored. Without
+`context`, those options work on their own: recall yields one
+`{ type: 'memory', op: 'recalled' }` part, each saved fact yields a
+`{ type: 'memory', op: 'saved' }` part, and a `search_tools` call yields a
+`{ type: 'tool' }` part with the search result.
+
+#### `RunAgentOptions`
+
+> **Experimental.** May change in a minor release.
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `client` | `AnthropicClientLike` | required | `new Anthropic()`, or `new AnthropicBedrock()` from `@anthropic-ai/bedrock-sdk`. |
+| `model` | `string` | required | The model id. |
+| `tools` | `unknown[]` | required | Tool schemas in Anthropic format, e.g. `mergeToolsets(…).tools`. Not sent when `lazyToolset` is set, or when a `context` source owns the tool list (`lazyToolSource`). |
+| `execute` | `(name: string, args: unknown) => Promise<unknown>` | required | Runs a tool the model chose, e.g. `mergeToolsets(…).execute`. Gets the original (unsanitized) name. |
+| `messages` | `Anthropic.MessageParam[]` | — | The conversation so far. Takes precedence over `prompt`. |
+| `prompt` | `string` | — | A single user message, used when `messages` is omitted. |
+| `system` | `string` | — | System prompt. Recalled memory and tool menus are appended to it. |
+| `maxTokens` | `number` | `1024` | `max_tokens` for each model call. |
+| `maxSteps` | `number` | `6` | Most model calls in one run. |
+| `signal` | `AbortSignal` | — | Passed to `client.messages.stream` and to the context manager. |
+| `context` | `ContextManager` | — | Unified context management. When set, `memory`, `recall`, `remember` and `lazyToolset` are ignored. |
+| `lazyToolset` | `LazyToolset` | — | Send a `search_tools` meta-tool and a menu instead of every schema. See [`lazyToolset`](#lazytoolsettools-opts). |
+| `memory` | `MemoryStore` | — | Enables `recall` and `remember`. |
+| `recall` | `false \| { k?, into?, minScore?, query? }` | `{ k: 6, into: 'system' }` when `memory` is set | Before the loop, search `memory` and inject the hits. `into: 'user'` adds them as a first user message instead of to the system prompt. `query(messages)` builds the search string (default: the last user message's text). `false` turns recall off. |
+| `remember` | `(turn: { text, messages }) => string[] \| Promise<string[]>` | off | After the loop, return the facts to save to `memory`. `text` is all assistant text streamed during the run. |
+
+#### `AnthropicClientLike`
+
+> **Experimental.** May change in a minor release.
+
+The part of an Anthropic client `runAgent` uses. It's structural, so any
+API-compatible client fits without a cast: `new Anthropic()` from
+`@anthropic-ai/sdk`, or `new AnthropicBedrock()` from `@anthropic-ai/bedrock-sdk`.
+
+```ts
+interface AnthropicClientLike {
+  messages: {
+    stream(
+      body: Anthropic.MessageStreamParams,
+      options?: { signal?: AbortSignal },
+    ): AsyncIterable<Anthropic.MessageStreamEvent> & {
+      finalMessage(): Promise<Anthropic.Message>
+    }
+  }
+}
+```
+
+## Agent parts
+
+The types `runAgent` yields and `useAssistant` renders. They're plain types with no
+runtime, exported from `dendra`, so a client can import them without the
+Anthropic SDK.
+
+### `AgentPart`
+
+> **Experimental.** May change in a minor release.
+
+One streamed part of an assistant turn. Switch on `type`.
+
+```ts
+type AgentPart = AgentTextPart | AgentToolPart | AgentMemoryPart | AgentContextPart
+```
+
+### `AgentTextPart`
+
+> **Experimental.** May change in a minor release.
+
+A chunk of assistant text, streamed as it arrives.
+
+```ts
+interface AgentTextPart {
+  type: 'text'
+  text: string
+}
+```
+
+### `AgentToolPart`
+
+> **Experimental.** May change in a minor release.
+
+A tool the model called, with its result. This is the generative-UI event: render a
+component keyed by `name`.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `type` | `'tool'` | |
+| `name` | `string` | The original tool name, e.g. `notes.create`. |
+| `input` | `unknown` | The arguments the model sent. |
+| `result` | `unknown` | What the tool returned, or the error message when `isError` is set. |
+| `isError` | `boolean` | Optional. True when the tool threw. |
+| `approvalId` | `string` | Optional. Set when the tool is waiting for approval: the pending action's id. |
+
+### `AgentMemoryPart`
+
+> **Experimental.** May change in a minor release.
+
+A memory read or write from `runAgent`'s `memory` option (without `context`).
+`'recalled'` carries the records injected before the model ran; `'saved'` carries
+newly saved facts.
+
+```ts
+interface AgentMemoryPart {
+  type: 'memory'
+  op: 'recalled' | 'saved'
+  records: MemoryRecord[]
+}
+```
+
+### `AgentContextPart`
+
+> **Experimental.** May change in a minor release.
+
+An event from a [`ContextManager`](#contextmanager). `source` is the source's name
+(`'memory'` for `memorySource`, `'tools'` for `lazyToolSource`). `'recalled'` and
+`'saved'` carry memory `records`; `'loaded'` carries the names of the tools that
+became callable.
+
+```ts
+interface AgentContextPart {
+  type: 'context'
+  source: string
+  op: 'recalled' | 'loaded' | 'saved'
+  records?: MemoryRecord[]
+  tools?: string[]
+}
+```
+
+## React hook
+
+### `useAssistant(opts)`
+
+> **Experimental.** May change in a minor release.
+
+From `dendra/react`. Headless chat state over an `AgentPart` stream: it keeps the
+thread, joins consecutive text parts into one, appends tool and context parts, and
+tracks `busy`. You do the rendering.
+
+```ts
+function useAssistant(opts: UseAssistantOptions): UseAssistant
+```
+
+```tsx
+import { useAssistant } from 'dendra/react'
+
+const { items, input, setInput, busy, send } = useAssistant({
+  stream: (prompt, history) => api.ai.assistant({ prompt, history }),
+  onPart: (part) => { if (part.type === 'tool') refresh() },
+})
+```
+
+`send()` trims the input and does nothing if it's empty or a turn is already
+running. It clears the input, appends a user item and an empty assistant item, and
+fills the assistant item as parts arrive. If `stream` throws, `busy` resets,
+`onDone` still runs, and the promise from `send` rejects. `reset()` clears the
+thread; it doesn't stop a turn in progress. For following a background job, see
+`useJob` on the [jobs page](/reference/jobs).
+
+#### `UseAssistantOptions`
+
+> **Experimental.** May change in a minor release.
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `stream` | `(prompt: string, history: AssistantItem[]) => AsyncIterable<AgentPart>` | required | Starts a turn. `history` is the thread before this turn; send it to the server for multi-turn context, or ignore it. |
+| `onPart` | `(part: AgentPart, meta: { spoken: boolean }) => void` | — | Called for every part as it arrives. |
+| `onDone` | `(parts: AgentPart[], meta: { spoken: boolean }) => void` | — | Called once the turn ends, with all of its parts (unjoined). |
+| `initialItems` | `AssistantItem[]` | `[]` | Seed the thread. |
+| `initialInput` | `string` | `''` | Prefill the input. |
+
+`spoken` is `true` when the turn was started with `send(override)` (for example a
+voice transcript) and `false` when it used the input box.
+
+#### `UseAssistant`
+
+> **Experimental.** May change in a minor release.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `items` | `AssistantItem[]` | The thread. |
+| `input` | `string` | The input box value. |
+| `setInput` | `(v: string) => void` | Update the input. |
+| `busy` | `boolean` | True while a turn is streaming. |
+| `send` | `(override?: string) => Promise<void>` | Send the input, or `override` instead. |
+| `reset` | `() => void` | Clear the thread. |
+
+#### `AssistantItem`
+
+> **Experimental.** May change in a minor release.
+
+One entry in the thread.
+
+```ts
+type AssistantItem =
+  | { role: 'user'; text: string }
+  | { role: 'assistant'; parts: AgentPart[] }
+```
+
+## Context manager
+
+### `createContextManager(opts)`
+
+> **Experimental.** May change in a minor release.
+
+Puts memory recall, lazy tool loading and history compaction under one token
+budget. Pass the result as `runAgent({ context })`. Core ships no tokenizer: you
+pass `budget.count`.
+
+```ts
+function createContextManager(opts: ContextManagerOptions): ContextManager
+```
+
+```ts
+import { createContextManager, memorySource, lazyToolSource } from 'dendra'
+
+const context = createContextManager({
+  budget: { maxTokens: 100_000, count: (text) => Math.ceil(text.length / 4) },
+  sources: [
+    memorySource(ctx.memory, { recall: { k: 6 }, remember: ({ text }) => extractFacts(text) }),
+    lazyToolSource(merged.tools, { pin: local.names }),
+  ],
+})
+
+for await (const part of runAgent({ client, model, tools: merged.tools, execute: merged.execute, prompt, context })) {
+  // { type: 'context', source: 'memory' | 'tools', op, records?, tools? }
+}
+```
+
+How a turn uses the manager:
+
+1. `compact(messages)` runs `history.compact`, if you gave one.
+2. `prepare(turn)` collects each source's initial tools, system text, meta-tool
+   names and name map, then asks each source with `select` for content, in
+   `sources` order. A selection whose text would push the total past
+   `maxTokens - reserve` is skipped. The total counts the serialized messages and
+   all system text; tool schemas aren't counted.
+3. A call to a meta-tool (such as `search_tools`) goes to `handle`, which asks each
+   source in order and uses the first answer.
+4. After the loop, `commit(turn)` runs each source's `commit`.
+
+If any source returns initial tools, that source owns the tool list and the
+`tools` you pass to `runAgent` aren't sent; pin the ones that must always be
+available.
+
+#### `ContextManagerOptions`
+
+> **Experimental.** May change in a minor release.
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `budget.maxTokens` | `number` | required | The token budget for a turn. |
+| `budget.reserve` | `number` | `Math.ceil(maxTokens * 0.1)` | Room kept for the model's output. |
+| `budget.count` | `(text: string) => number` | required | Your token counter. |
+| `sources` | `ContextSource[]` | required | The sources, in priority order. |
+| `history.compact` | `(messages: unknown[], budget: Budget) => unknown[] \| Promise<unknown[]>` | — | Fit the conversation to the budget. Omit to leave history as is. Keep tool-use and tool-result messages paired. |
+
+#### `ContextManager`
+
+> **Experimental.** May change in a minor release.
+
+What `createContextManager` returns. `runAgent` calls these; you only need them to
+drive the manager from your own loop.
+
+| Member | Type | Description |
+| --- | --- | --- |
+| `budget` | `Budget` | The resolved budget (with `reserve` filled in). |
+| `prepare` | `(turn: Turn) => Promise<PreparedContext>` | Gather descriptors and auto-selected content before the model runs. |
+| `handle` | `(name: string, input: unknown, turn: Turn) => { source, result, loaded } \| null` | Route a meta-tool call to the source that owns it. `null` if none does. |
+| `compact` | `(messages: unknown[]) => Promise<unknown[]>` | Fit history to the budget. Returns `messages` unchanged without `history.compact`. |
+| `commit` | `(turn: Turn) => Promise<Array<{ source: string; loaded: Loaded }>>` | Run write-backs after the turn. |
+
+#### `Budget`
+
+> **Experimental.** May change in a minor release.
+
+The budget every source and history compaction draws from.
+
+```ts
+interface Budget {
+  maxTokens: number
+  reserve: number                    // kept for the model's output
+  count: (text: string) => number    // your token counter
+}
+```
+
+#### `Turn`
+
+> **Experimental.** May change in a minor release.
+
+What a source knows about the current request.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `messages` | `unknown[]` | The conversation, in the provider's message shape. |
+| `lastUserText` | `string` | The latest user message as plain text; the default recall and search query. |
+| `assistantText` | `string` | Optional. The assistant's text, set before `commit`. |
+| `signal` | `AbortSignal` | Optional. |
+
+#### `PreparedContext`
+
+> **Experimental.** May change in a minor release.
+
+What `prepare` returns to the agent loop.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `system` | `string` | Text to add to the system prompt: menus and recalled blocks. |
+| `tools` | `unknown[]` | Tool defs to send from the first call: meta-tools and pinned tools. |
+| `ownsTools` | `boolean` | True if a source supplied initial tools; the caller's own tools are then not sent. |
+| `nameMap` | `Map<string, string>` | Sanitized tool name to original name. |
+| `metaNames` | `Set<string>` | Meta-tool names to route to `handle` instead of executing. |
+| `selected` | `Array<{ source: string; loaded: Loaded }>` | What each source selected, for emitting context parts. |
+
+#### `ContextSource`
+
+> **Experimental.** May change in a minor release.
+
+The interface a source implements. Every method is optional; implement the ones
+your source needs. `memorySource` and `lazyToolSource` are two implementations.
+
+| Member | Type | Description |
+| --- | --- | --- |
+| `name` | `string` | Shown as `source` in context parts. |
+| `initialTools` | `() => unknown[]` | Tool defs exposed from the first call. Returning any makes this source own the tool list. |
+| `systemText` | `() => string` | Always-on system text, such as a tool menu. |
+| `nameMap` | `() => Iterable<[string, string]>` | Sanitized-to-original tool name pairs. |
+| `metaNames` | `() => string[]` | Meta-tools this source handles. |
+| `select` | `(turn: Turn) => Promise<Loaded \| null>` | Pick content before the model runs (e.g. memory recall). Its `text` counts against the budget. |
+| `handle` | `(name: string, input: unknown, turn: Turn) => { result: unknown; loaded: Loaded } \| null` | Answer a meta-tool call. Return `null` if the name isn't yours. `result` goes to the model. |
+| `commit` | `(turn: Turn) => Promise<Loaded \| null>` | Write-backs after the turn. |
+
+#### `Loaded`
+
+> **Experimental.** May change in a minor release.
+
+Content a source pulled into the turn.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `text` | `string` | Optional. System text to inject. |
+| `tools` | `unknown[]` | Optional. Tool defs to add to the callable set. |
+| `records` | `MemoryRecord[]` | Optional. Records to show in a context part. |
+
+## Sources
+
+### `memorySource(memory, opts?)`
+
+> **Experimental.** May change in a minor release.
+
+A source backed by a `MemoryStore`, named `'memory'`. Before the model runs it
+recalls matching records and adds them to the system prompt (via
+[`recallMemory`](#recallmemorymemory-query-opts)); after the turn it saves what your
+`remember` function returns (via [`rememberFacts`](#rememberfactsmemory-facts-opts)).
+It never decides on its own what to save.
+
+```ts
+function memorySource(memory: MemoryStore, opts?: MemorySourceOptions): ContextSource
+```
+
+#### `MemorySourceOptions`
+
+> **Experimental.** May change in a minor release.
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `recall` | `false \| { k?, minScore?, kind?, query? }` | `{ k: 6 }` | Recall settings, or `false` for none. `query(turn)` builds the search string (default: `turn.lastUserText`). |
+| `remember` | `(turn: { text: string; messages: unknown[] }) => string[] \| Promise<string[]>` | — | Return the facts to save after the turn. `text` is the assistant text. Omit for read-only memory. |
+
+### `lazyToolSource(tools, opts?)`
+
+> **Experimental.** May change in a minor release.
+
+A source named `'tools'` that defers a formatted toolset behind a `search_tools`
+meta-tool. It wraps [`lazyToolset`](#lazytoolsettools-opts): the menu goes in the
+system prompt, and tools load when the model searches for them. Each load yields a
+`{ type: 'context', source: 'tools', op: 'loaded' }` part.
+
+```ts
+function lazyToolSource(tools: unknown[], opts?: LazyToolSourceOptions): ContextSource
+```
+
+Because it supplies initial tools, it owns the tool list: the `tools` passed to
+`runAgent` aren't sent. Pin the ones that must always be loaded.
+
+#### `LazyToolSourceOptions`
+
+> **Experimental.** May change in a minor release.
+
+The same options as [`LazyToolsetOptions`](#lazytoolsetoptions).
+
+```ts
+type LazyToolSourceOptions = LazyToolsetOptions
+```
+
+### `toolSource(tools, opts?)`
+
+> **Deprecated.** Use `lazyToolSource` (from `dendra`). Removed in 0.13.
+
+The old name of `lazyToolSource`, renamed because it was easy to confuse with
+`toToolSource`.
+
+#### `ToolSourceOptions`
+
+> **Deprecated.** Use `LazyToolSourceOptions` (from `dendra`). Removed in 0.13.
+
+## Lazy toolset
+
+### `lazyToolset(tools, opts?)`
+
+> **Experimental.** May change in a minor release.
+
+Wraps a formatted toolset (the `tools` from `toToolset` or `mergeToolsets`) so its
+schemas stay out of context until needed. The model gets a `search_tools`
+meta-tool, any pinned tools, and a short menu of the rest. When it searches, the
+best matches become callable. Pass the result as `runAgent({ lazyToolset })`, or
+use [`lazyToolSource`](#lazytoolsourcetools-opts) with a context manager.
+
+```ts
+function lazyToolset(tools: unknown[], opts?: LazyToolsetOptions): LazyToolset
+```
+
+```ts
+import { lazyToolset } from 'dendra'
+
+const lazy = lazyToolset(merged.tools, { pin: local.names, k: 6 })
+
+for await (const part of runAgent({ client, model, tools: merged.tools, execute: merged.execute, prompt, lazyToolset: lazy })) {
+  // the model calls search_tools({ query: 'create invoice' }), then the tool it found
+}
+```
+
+Tool names are sanitized to `[a-zA-Z0-9_-]` (dots become `_`), and `nameMap` maps
+each one back. Search scores tools by keyword overlap with their name and
+description, and never returns a tool that's already loaded or pinned. A
+`search_tools` result looks like
+`{ found: [{ name, description }], note }`, with `found` empty when nothing matched.
+
+Throws an `Error` if two tool names sanitize to the same name (for example `a.b`
+and `a_b`).
+
+#### `LazyToolsetOptions`
+
+> **Experimental.** May change in a minor release.
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `pin` | `string[]` | `[]` | Tools to load from the start. Dotted names are fine. |
+| `k` | `number` | `6` | Most tools one `search_tools` call loads. |
+| `format` | `ToolFormat` | `'anthropic'` | Format of the tools you pass, and of the meta-tool. |
+| `metaName` | `string` | `'search_tools'` | The meta-tool's name. |
+| `includeMenu` | `boolean` | `true` | Put a `name — description` menu of the deferred tools in `menu`. Turn off for a very large toolset. |
+
+#### `LazyToolset`
+
+> **Experimental.** May change in a minor release.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `tools` | `unknown[]` | What to send on the first call: the meta-tool and pinned tools, with sanitized names. |
+| `menu` | `string` | The menu of deferred tools for the system prompt, or `''`. |
+| `metaName` | `string` | The meta-tool's name. |
+| `nameMap` | `Map<string, string>` | Sanitized name to original name, for every tool. |
+| `handle` | `(name: string, input: unknown) => { result: unknown; loaded: unknown[] } \| null` | Handle a call by its sanitized name. For the meta-tool, returns the result for the model and the newly loaded tool defs; returns `null` for any other tool. |
+
+## Memory
+
+From `dendra/memory`. The `MemoryStore` interface plus a small in-process reference
+store and the helpers `runAgent` and `memorySource` use. For production, implement
+`MemoryStore` over a vector store (pgvector, SQLite with embeddings, Redis, a
+managed service); callers don't change.
+
+> **Deprecated.** `createMemoryStore`, `recallMemory`, `rememberFacts` and
+> `formatMemoryBlock` are also exported from `dendra`. Import them from
+> `dendra/memory`; the `dendra` exports are removed in 0.13. The `MemoryStore`,
+> `MemoryRecord` and `RecallOptions` types are exported from both and aren't
+> deprecated.
+
+### `createMemoryStore(seed?)`
+
+> **Experimental.** May change in a minor release.
+
+A zero-dependency `MemoryStore` that keeps records in process memory and scores
+them by word overlap. Fine for demos, tests and small apps; records are lost on
+restart. `seed` preloads records.
+
+```ts
+function createMemoryStore(seed?: MemoryRecord[]): MemoryStore
+```
+
+```ts
+import { createMemoryStore } from 'dendra/memory'
+
+const memory = createMemoryStore()
+await memory.save('The user prefers metric units', { kind: 'preference' })
+const hits = await memory.search('which units?', { k: 3 })
+```
+
+`save` gives each record a random `id` and a `createdAt` of `Date.now()`. `search`
+returns up to `k` records (default `5`) whose score is above `minScore` (default
+`0`), best first, filtered by `kind` if given; an empty query returns `[]`.
+
+### `recallMemory(memory, query, opts?)`
+
+> **Experimental.** May change in a minor release.
+
+Searches the store and returns the hits plus a block of text ready to add to a
+system prompt (see [`formatMemoryBlock`](#formatmemoryblockrecords)). An empty
+`query` searches nothing and returns no records.
+
+```ts
+function recallMemory(
+  memory: MemoryStore,
+  query: string,
+  opts?: RecallOptions,
+): Promise<{ records: MemoryRecord[]; block: string }>
+```
+
+### `rememberFacts(memory, facts, opts?)`
+
+> **Experimental.** May change in a minor release.
+
+Saves each fact, one at a time, and returns the saved records. Facts are trimmed;
+empty ones are skipped. `kind` defaults to `'fact'`.
+
+```ts
+function rememberFacts(
+  memory: MemoryStore,
+  facts: string[],
+  opts?: { kind?: string },
+): Promise<MemoryRecord[]>
+```
+
+### `formatMemoryBlock(records)`
+
+> **Experimental.** May change in a minor release.
+
+Formats records as a context block: `''` for no records, otherwise the line
+`Relevant memory (use if helpful):` followed by one `- text` line per record.
+
+```ts
+function formatMemoryBlock(records: MemoryRecord[]): string
+```
+
+#### `MemoryStore`
+
+The interface a memory backend implements. Exported from `dendra` (to type
+`ctx.memory`) and `dendra/memory`. This type is covered by the stability
+guarantee.
+
+```ts
+interface MemoryStore {
+  save(text: string, opts?: { kind?: string; meta?: Record<string, unknown> }): Promise<MemoryRecord>
+  search(query: string, opts?: { k?: number; kind?: string; minScore?: number }): Promise<MemoryRecord[]>
+  forget(id: string): Promise<boolean>   // false if no record had that id
+  all?(): Promise<MemoryRecord[]>        // optional; omit if the store can't list
+}
+```
+
+`search` should return records with `score` set, higher meaning more relevant.
+
+#### `MemoryRecord`
+
+One remembered item. Exported from `dendra` and `dendra/memory`. This type is
+covered by the stability guarantee.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | `string` | |
+| `text` | `string` | |
+| `kind` | `string` | Optional. A bucket such as `'fact'`, `'preference'` or `'summary'`. |
+| `score` | `number` | Optional. Relevance from `search`, roughly 0 to 1. Unset on `save`. |
+| `meta` | `Record<string, unknown>` | Optional. |
+| `createdAt` | `number` | Optional. Milliseconds since the epoch. |
+
+#### `RecallOptions`
+
+> **Experimental.** May change in a minor release.
+
+Options for `recallMemory`. Exported from `dendra` and `dendra/memory`.
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `k` | `number` | `6` | Most records to return. |
+| `minScore` | `number` | — | Passed to `search`. |
+| `kind` | `string` | — | Only records of this kind. |

@@ -1,0 +1,401 @@
+---
+title: Server
+description: 'Serve a dendra router over HTTP: fetch, Node, Next.js and REST handlers, the OpenAPI document, Server Component helpers, and the wire protocol.'
+---
+
+# Server
+
+A router becomes an HTTP endpoint through one of the handlers below. They all
+share the same dispatch: input validation, `.use()` middleware, the handler and
+`.after()` hooks run the same way whichever doorway a call comes through. For
+the concepts, see [Features → REST + OpenAPI 3.1](/features#rest--openapi-31)
+and [Features → Security: CSRF by default](/features#security-csrf-by-default).
+
+```ts
+import { toFetchHandler, toNodeHandler, toRestHandler, toNextHandler, toOpenApiDocument } from 'dendra'
+import { createServerCaller, orPage } from 'dendra/next'
+```
+
+## Handlers
+
+### `toFetchHandler(router, opts?)`
+
+The runtime-agnostic RPC handler. It takes a Web `Request` and returns a Web
+`Response`, so it runs on Next.js route handlers, Hono, Bun, Deno and
+Cloudflare Workers. Every other HTTP handler here is built on it or shares its
+code. See [Wire protocol](#wire-protocol) for what it answers.
+
+```ts
+function toFetchHandler<Ctx>(router: object, opts?: ServerOptions<Ctx>): (req: Request) => Promise<Response>
+```
+
+```ts
+const handler = toFetchHandler(appRouter, { prefix: '/rpc/', createContext })
+
+Bun.serve({ fetch: handler })
+```
+
+A request whose path doesn't start with `prefix` gets a `404` with
+`{ error: { code: 'NOT_FOUND', message: 'No such route' } }`, so mount it where
+only RPC traffic reaches it, or route by path first.
+
+### `toNodeHandler(router, opts?)`
+
+A bridge for the classic `node:http` server. It converts the Node request into
+a Web `Request` and passes it to [`toFetchHandler`](#tofetchhandlerrouter-opts),
+then writes the `Response` back.
+
+```ts
+function toNodeHandler<Ctx>(
+  router: object,
+  opts?: ServerOptions<Ctx>,
+): (req: IncomingMessage, res: ServerResponse) => Promise<void>
+```
+
+```ts
+import { createServer } from 'node:http'
+
+createServer(toNodeHandler(appRouter, { createContext })).listen(3000)
+```
+
+- The request body is streamed through untouched (binary uploads survive), and
+  the `maxBodyBytes` cap stops reading early. Whatever the handler didn't read is
+  drained after the response is written, so keep-alive keeps working.
+- The request's `signal` aborts when the response closes before it finished
+  (the client went away). That stops stream handlers.
+- Each response chunk is followed by `res.flush()` when it exists, so
+  compression middleware such as Express `compression` doesn't hold streams back.
+- The `Request` URL is built as `http://localhost` plus the Node request's URL,
+  so `createContext` should read the host from headers, not from `req.url`.
+
+### `toNextHandler(router, opts?)`
+
+The handler for a Next.js App Router route. It returns `toFetchHandler`'s handler
+as both `GET` and `POST`; the RPC protocol answers no other method.
+
+```ts
+function toNextHandler<Ctx>(
+  router: object,
+  opts?: ServerOptions<Ctx>,
+): Record<'GET' | 'POST', (req: Request) => Promise<Response>>
+```
+
+```ts
+// app/rpc/[...path]/route.ts
+export const { GET, POST } = toNextHandler(appRouter, { prefix: '/rpc/', createContext })
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+```
+
+For REST verbs in Next.js, export `toRestHandler(router, opts)` as each method
+instead.
+
+### `toRestHandler(router, opts?)`
+
+A plain REST front-end for procedures that declared a path with
+`.get(path)`, `.post(path)`, `.put(path)`, `.patch(path)` or `.delete(path)`.
+Procedures without a path aren't reachable through it. It returns the result
+itself, not RPC's `{ result }` envelope, so the responses line up with the
+[OpenAPI document](#toopenapidocumentrouter-opts).
+
+```ts
+function toRestHandler<Ctx>(router: object, opts?: ServerOptions<Ctx>): (req: Request) => Promise<Response>
+```
+
+```ts
+const notes = {
+  get: route.get('/notes/:id').input(s.object({ id: s.integer() })).handler(/* … */),
+}
+const rest = toRestHandler({ notes }, { prefix: '/api', createContext })
+// GET /api/notes/42 → 200, body is the note
+```
+
+How it differs from the RPC handler:
+
+- `prefix` defaults to `''`, not `'/rpc/'`. When set, it's stripped from the
+  path before matching.
+- A route matches on method and path. `:name` segments match one path segment
+  each, and a trailing `/` is allowed. No match (including a wrong method, and
+  any `HEAD`) is a `404` `NOT_FOUND`, not a `405`.
+- The input is one object built from the JSON body (for non-GET methods), then
+  the query string, then the path params; a later source wins a shared key.
+  String values are coerced to numbers or booleans where the input schema's
+  property has type `number`, `integer` or `boolean`.
+- Only `POST` gets the CSRF check (PUT, PATCH and DELETE always preflight
+  cross-site). Multipart and form bodies are read as on the RPC handler.
+- The success body is the JSON result (`200`), a [file response](#file-responses),
+  or a stream in the same NDJSON or SSE format as RPC. Errors use the same
+  `{ error }` envelope and status codes.
+
+### `ServerOptions`
+
+Options shared by `toFetchHandler`, `toNodeHandler`, `toNextHandler` and
+`toRestHandler`.
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `prefix` | `string` | `'/rpc/'` (`''` for `toRestHandler`) | URL prefix the procedure paths live under. |
+| `createContext` | `(req: Request) => Ctx \| Promise<Ctx>` | none (ctx is `{}`) | Builds the per-request context: auth, tenant, db handles. A `DendraError` it throws becomes the response with its status; anything else is a `500` `INTERNAL`. |
+| `allowFormPosts` | `boolean` | `false` | Accept plain HTML form posts: `application/x-www-form-urlencoded`, or multipart without the `X-Dendra` header. Browsers send these cross-site with no preflight, so with this on, CSRF protection is your job (for example a token checked in `.use()`). |
+| `maxBodyBytes` | `number` | `10485760` (10 MB) | Cap on multipart and form request bodies, in bytes. Over it is a `413` `PAYLOAD_TOO_LARGE`. |
+| `heartbeatMs` | `number` | `15_000` | How often an SSE stream sends a `: ping` comment so proxies and load balancers don't close it. `0` turns heartbeats off. |
+
+## OpenAPI
+
+### `toOpenApiDocument(router, opts)`
+
+Builds an OpenAPI 3.1 document from the router, with no extra annotations. Feed
+it to Swagger UI, or to `openapi-typescript` or `openapi-generator` to make
+clients in other languages. Only procedures with a REST path are included.
+
+```ts
+function toOpenApiDocument(router: object, opts: OpenApiOptions): Record<string, unknown>
+```
+
+```ts
+const spec = toOpenApiDocument(appRouter, {
+  info: { title: 'Notes API', version: '1.0.0' },
+  servers: [{ url: 'https://api.example.com' }],
+})
+```
+
+What each operation contains:
+
+- **Path:** the procedure's path with `:id` written as `{id}`. The method is the
+  procedure's method.
+- **`operationId`:** the dotted router path, such as `notes.get`. `summary` is
+  the `.describe()` text, or the `operationId` when there is none. `tags` is the
+  first segment of the router path.
+- **Parameters:** each path param, as a required `string`. For a GET, every other
+  input property becomes a query parameter, required when the input schema
+  requires it.
+- **Request body:** for other methods with an input schema, a required body:
+  `application/json`, or `multipart/form-data` when the input has `s.file()`
+  fields (documented as binary strings).
+- **Responses:** `200` with the `.output()` schema (or `{}` without one) as
+  `application/json`, and `400` for validation errors.
+- Stream procedures get `x-dendra-streaming: true`.
+
+The returned object is `{ openapi: '3.1.0', info, servers?, paths }`; `servers`
+appears only when you pass it.
+
+#### `OpenApiOptions`
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `info` | `OpenApiInfo` | required | The document's `info` object. |
+| `servers` | `Array<{ url: string; description?: string }>` | none | The document's `servers` list. Left out of the document when not given. |
+
+#### `OpenApiInfo`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `title` | `string` | API title. |
+| `version` | `string` | API version. |
+| `description` | `string` (optional) | Longer description. |
+
+## Next.js Server Components
+
+These come from `dendra/next`. They need `next` (an optional peer dependency).
+
+### `createServerCaller(router, createContext)`
+
+Makes an in-process caller for Server Components, with `ctx` built from the
+incoming request by the same `createContext` your route handler uses. It returns
+a function; call it in each render to get a [`Caller`](/reference/client).
+
+```ts
+function createServerCaller<R extends object, Ctx>(
+  router: R,
+  createContext: (req: Request) => Ctx | Promise<Ctx>,
+): () => Promise<Caller<R>>
+```
+
+```ts
+// server/caller.ts
+export const serverCaller = createServerCaller(appRouter, createContext)
+
+// app/notes/[id]/page.tsx
+const api = await serverCaller()
+const note = await orPage(api.notes.get({ id }), { signIn: '/sign-in' })
+```
+
+- `createContext` gets a `Request` carrying the incoming headers (cookies
+  included). Its URL is the request's origin with path `/`: the host comes from
+  `x-forwarded-host`, else `host`, else `localhost`; the protocol from
+  `x-forwarded-proto`, else `http`. Server Components don't see the path.
+- It reads `headers()`, so the page renders dynamically.
+- Inside Next, the context is built once per request (with React's `cache`),
+  however many layouts and pages call it. Where `cache` isn't available (React 18
+  outside Next), each call builds its own context.
+
+### `orPage(call, opts?)`
+
+Awaits a procedure call in a Server Component and turns dendra errors into
+pages, so a missing record renders a 404 instead of crashing the render.
+
+```ts
+function orPage<T>(call: PromiseLike<T>, opts?: OrPageOptions): Promise<T>
+```
+
+```ts
+const note = await orPage(api.notes.get({ id }), { signIn: '/sign-in' })
+```
+
+| Error code | Result |
+| --- | --- |
+| `NOT_FOUND`, `BAD_REQUEST` | `notFound()` (a bad id in the URL is a missing page) |
+| `UNAUTHORIZED` | `redirect(signIn)` when `signIn` is set; rethrown otherwise |
+| anything else | rethrown, for the nearest `error.tsx` |
+
+It works with a `DendraError` (from a caller) and a `DendraClientError` (from
+the client). They're matched by the error's `name`, not `instanceof`, so a copy of
+the class from another bundle entry still counts.
+
+#### `OrPageOptions`
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `signIn` | `string` | none | Where `UNAUTHORIZED` redirects. Without it, `UNAUTHORIZED` is rethrown. |
+
+## Wire protocol
+
+What `toFetchHandler` (and so `toNodeHandler` and `toNextHandler`) does with a
+request, in order. The typed client speaks this for you; it's here for other
+clients, proxies and tests.
+
+### Paths and methods
+
+- A procedure's URL is the prefix plus its dotted router path:
+  `notes.create` is `/rpc/notes.create`.
+- A path outside the prefix is a `404` `NOT_FOUND`. So is a path that doesn't
+  name a procedure.
+- `POST` reaches every procedure. `GET` and `HEAD` reach only procedures declared
+  with `.get()`. Any other combination (a GET on a non-read, or PUT, PATCH, DELETE
+  on anything) is a `405` `METHOD_NOT_ALLOWED`.
+- The context is built (`createContext`) after the CSRF check and before the
+  procedure is looked up, so a failing `createContext` answers before a `404`.
+
+### Request body and input
+
+- **POST, JSON.** The body is parsed as JSON and becomes the input. An empty body
+  is `undefined` input. Invalid JSON is a `400` `BAD_REQUEST`
+  (`Invalid JSON body`).
+- **GET.** The `$input` query parameter, when present, is parsed as JSON and is
+  the whole input (this is what `urlFor` builds). Without it, the query string
+  becomes an object of strings, with no number or boolean coercion. Invalid JSON
+  in `$input` is a `400`.
+- **Multipart and form posts.** dendra's client sends non-file fields as one JSON
+  part named `$input` and each file as its own part. A plain form without `$input`
+  contributes its string fields as they are. String fields are then coerced to
+  numbers or booleans where the input schema's property has type `number`,
+  `integer` or `boolean`. A malformed form is a `400`, as is invalid JSON in
+  `$input`.
+- Input that fails the schema is a `400` `BAD_REQUEST` with message
+  `Input validation failed` and the issues in `details`.
+
+### CSRF and content types
+
+Checked for every POST before anything else runs. A cross-site page can only send
+GET, or POST with a form or text content type, without a CORS preflight, so:
+
+| POST with | Result |
+| --- | --- |
+| `Content-Type: application/json` | accepted |
+| `multipart/form-data` and `X-Dendra: 1` | accepted |
+| `multipart/form-data` without the header | `403` `FORBIDDEN`, unless `allowFormPosts` |
+| `application/x-www-form-urlencoded` | `415` `UNSUPPORTED_MEDIA_TYPE`, unless `allowFormPosts` |
+| any other content type, or none | `415` `UNSUPPORTED_MEDIA_TYPE` |
+
+Only the media type is compared; parameters such as `; charset=utf-8` are ignored.
+
+### Body size
+
+Multipart and form bodies are capped at `maxBodyBytes` (default 10 MB). A
+declared `Content-Length` over the cap is refused before reading, and the count
+is enforced while reading, so a chunked upload can't slip past. Over the cap is a
+`413` `PAYLOAD_TOO_LARGE`. JSON bodies aren't read through this cap.
+
+### Responses and errors
+
+- A unary success is `200` with `{ "result": … }`.
+- A failure is `{ "error": { "code", "message", "details"? } }` with the status
+  for the code (for example `401` for `UNAUTHORIZED`, `404` for `NOT_FOUND`).
+- Only a `DendraError` reaches the client as itself. Anything else thrown (a
+  driver error, a `TypeError`) is logged on the server and sent as `500`
+  `{ code: 'INTERNAL', message: 'Internal error' }`.
+
+### Batch requests
+
+`POST <prefix>__batch` runs several unary calls under one context. The body is a
+JSON array of `{ path, input }`, with `path` the dotted procedure path. A body
+that isn't an array is a `400` (`Batch body must be an array`). The client adds
+`?p=a,b` naming the procedures for logs and network mocks; the server ignores it.
+
+```json
+[{ "path": "notes.get", "input": { "id": 1 } }, { "path": "add", "input": { "a": 1, "b": 2 } }]
+```
+
+- Each call settles on its own. A path that isn't a unary procedure gets a
+  `NOT_FOUND` error entry; it doesn't fail the batch.
+- With `Accept: application/x-ndjson`, the reply streams one line per call as it
+  settles, tagged with its index: `{"i":1,"result":3}` or
+  `{"i":0,"error":{…}}`. A slow call doesn't hold back a quick one.
+- Without it, the reply is one `200` JSON array, in request order, of
+  `{ result }` or `{ error }`.
+- Batched calls can't return files: a `file()` result fails with
+  `NOT_IMPLEMENTED`.
+
+### Streams (NDJSON)
+
+A `.stream()` procedure answers `200` with `Content-Type: application/x-ndjson`
+unless the request accepts `text/event-stream`. Each yielded value is one JSON
+line.
+
+If the handler throws after the response started, the last line is an error
+frame and the stream ends:
+
+```json
+{"$error":{"code":"FORBIDDEN","message":"Not your workspace"}}
+```
+
+The frame carries `code` and `message` only (no `details`), and unexpected errors
+are masked as `INTERNAL` as above. Input validation and `.use()` guards run when
+the stream starts, so on a stream their failures also arrive as this frame,
+after a `200`.
+
+### Streams (SSE)
+
+When `Accept` includes `text/event-stream`, the same stream is sent as
+Server-Sent Events with `Content-Type: text/event-stream`:
+
+- each value is a plain `data:` event holding its JSON;
+- a failure is an `event: error` whose data is `{ code, message }`, then the
+  stream closes;
+- a normal end is an `event: done` with data `null`, so an `EventSource` can
+  `close()` instead of reconnecting and re-running the subscription;
+- a `: ping` comment goes out every `heartbeatMs` (default 15 s) until the
+  stream ends.
+
+A bare `EventSource` sends GET, so it only works on a `.get()` procedure.
+
+Both stream formats send `Cache-Control: no-cache` and `X-Accel-Buffering: no`
+(which turns off nginx response buffering). A stream ends when the request is
+aborted or the response body is cancelled; either aborts the handler's `signal`.
+For proxy and timeout settings, see "Deploying streams" in the README.
+
+### File responses
+
+A handler that returns `file(body, options)` gets a raw response instead of JSON,
+on the RPC and REST handlers:
+
+- `Content-Type` is the file's `type`; `X-Content-Type-Options: nosniff` and
+  `X-Dendra: file` are always set (the client uses the latter to return a `Blob`).
+- `Cache-Control` defaults to `private, no-store`.
+- `Content-Disposition` is `attachment`, with the sanitized `filename` when one
+  is given. With `inline: true` it's `inline` plus the filename, or left out when
+  there's no filename. HTML, SVG and XML types are never sent inline unless
+  `allowUnsafeInline` is set.
+- With an `etag`, a request whose `If-None-Match` matches gets a bodiless `304`.
+- Extra `headers` can't override `Content-Type`, `Content-Disposition`,
+  `X-Content-Type-Options` or `X-Dendra`.

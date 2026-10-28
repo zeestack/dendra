@@ -1,0 +1,220 @@
+---
+title: Client
+description: 'Call a dendra router: the typed HTTP client, urlFor, the in-process caller, per-call options, and how results are typed after JSON.'
+---
+
+# Client
+
+Two ways to call a router with full types and no codegen: `createClient` over
+HTTP, and `createCaller` in the same process. Both read their types from
+`typeof appRouter`. For the concepts, see
+[Features → In-process caller](/features#in-process-caller) and
+[Features → Request batching](/features#request-batching).
+
+```ts
+import { createClient, urlFor, createCaller } from 'dendra'
+import type { Client, Caller, CallOptions, ClientOptions, Jsonify } from 'dendra'
+```
+
+## HTTP client
+
+### `createClient(baseUrl, opts?)`
+
+Makes a typed client for a router served by
+[`toFetchHandler`](/reference/server) or `toNextHandler`. Property access
+follows the router's shape; calling a procedure sends the request.
+
+```ts
+function createClient<R extends object>(baseUrl: string, opts?: ClientOptions): Client<R>
+```
+
+```ts
+import type { AppRouter } from '@/server/router'
+
+export const api = createClient<AppRouter>('', { prefix: '/rpc/' })
+
+const sum = await api.add({ a: 1, b: 2 })        // Promise<number>
+for await (const ev of api.notes.watch()) { /* … */ }
+```
+
+- `baseUrl` is the server's origin (a trailing `/` is dropped); `''` means the
+  current origin in a browser. The request URL is `baseUrl + prefix + dotted path`.
+- Every call is a `POST`, including `.get()` reads. Use
+  [`urlFor`](#urlforprocedure-input) when you need a GET URL.
+- Requests send `Content-Type: application/json` and `X-Dendra: 1`, then your
+  `headers` (which can override them).
+- A call is lazy: nothing is sent until it's awaited (any `.then`, `.catch` or
+  `.finally`) or iterated. The returned object is a real `Promise` and is also
+  async-iterable; the `Client` type tells you which use fits each procedure.
+
+**Errors.** A failed call rejects (or a stream throws) with a `DendraClientError`
+carrying the server's `code`, `message` and `details`. Unexpected server errors
+arrive as `INTERNAL` with message `Internal error`. A network failure rejects with
+the `fetch` error itself.
+
+**Streams.** Iterating a `.stream()` procedure reads NDJSON, or SSE when
+`streamFormat` is `'sse'` (it handles whichever format the server answered
+with). An error frame from the server throws a `DendraClientError` and ends the
+loop; an SSE `done` event ends it normally. Breaking out of the `for await`
+cancels the response body, which closes the connection so the server stops the
+handler.
+
+**Files.** If any top-level input field is a `Blob` or `File`, the call is sent
+as `multipart/form-data`: each file is its own part, and the other fields go in
+one JSON part named `$input`, so numbers and nested objects keep their types. A
+procedure that returns `file(...)` resolves to a `Blob` (the client recognises the
+server's `X-Dendra: file` header, not the content type, so a JSON file still
+arrives as a `Blob`).
+
+```ts
+const blob = await api.reports.export({ month: '2026-09' })   // Blob
+await api.avatars.upload({ userId: 7, image: fileInput.files[0] })
+```
+
+**Batching.** With `batch: true`, unary calls made in the same tick (flushed on a
+`setTimeout(0)`) go out as one `POST <prefix>__batch?p=a,b` request. Each result
+resolves as soon as its line arrives, in the order calls settle on the server.
+Streaming calls and calls with file inputs always go on their own, and
+`{ batch: false }` on a call sends it alone. If the batch request fails, every
+call in it rejects with that error. A call the response never answered rejects
+with an `INTERNAL` `DendraClientError`.
+
+**Aborting.** Pass `{ signal }` as the second argument. A call whose signal is
+already aborted throws at once. For a direct unary call the fetch is aborted and
+the promise rejects with the signal's reason. A batched call can't be pulled out
+of its batch, so an abort only stops waiting for it. A stream cancels its body
+and the loop throws the signal's reason.
+
+```ts
+const ac = new AbortController()
+const note = api.notes.get({ id: 1 }, { signal: ac.signal })
+ac.abort()
+```
+
+#### `ClientOptions`
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `prefix` | `string` | `'/rpc/'` | Must match the server's `prefix`. |
+| `headers` | `Record<string, string>` | none | Sent on every request, after the defaults. |
+| `fetch` | `typeof fetch` | global `fetch` | The `fetch` to use: for tests, or to add credentials or tracing. |
+| `batch` | `boolean` | `false` | Batch unary calls made in the same tick into one request. |
+| `streamFormat` | `'ndjson' \| 'sse'` | `'ndjson'` | Wire format for `.stream()` procedures. SSE passes through more proxies and CDNs unbuffered. Iteration, errors and cancellation work the same either way. |
+
+### `urlFor(procedure, input)`
+
+Returns the GET URL for a read, for `<img src>`, download links or prefetching.
+Only procedures declared with `.get()` are accepted: anything else is a type
+error, and the server would answer `405`. A URL anyone can embed must never
+trigger a mutation.
+
+```ts
+function urlFor<In>(procedure: ((input: In) => Promise<unknown>) & ReadBrand, input: In): string
+```
+
+```ts
+<img src={urlFor(api.avatars.get, { userId: 7 })} />
+// → /rpc/avatars.get?$input=%7B%22userId%22%3A7%7D
+```
+
+The input is sent JSON-encoded in the `$input` query parameter, so numbers and
+booleans keep their types. It throws a `TypeError` when `procedure` doesn't come
+from `createClient`.
+
+## In-process caller
+
+### `createCaller(router, ctx?)`
+
+Calls procedures directly in the same process, with no HTTP and no
+serialization. Use it in Server Components (see `createServerCaller` in
+[Server](/reference/server)), scripts and tests. Each call still validates input
+and runs `.use()` middleware and `.after()` hooks, with transport `'caller'`.
+
+```ts
+function createCaller<R extends object>(router: R, ctx?: unknown): Caller<R>
+```
+
+```ts
+const caller = createCaller(appRouter, { user, db })
+
+const note = await caller.notes.get({ id: 1 })   // a Date stays a Date
+for await (const ev of caller.notes.watch()) { /* … */ }
+```
+
+- `ctx` defaults to `{}`. It's passed to every call as is; `createContext` isn't
+  run.
+- Errors are thrown as they are: a `DendraError` from a guard or handler stays a
+  `DendraError`, and other errors aren't masked as `INTERNAL` the way they are
+  over HTTP.
+- A `file()` result resolves to a `Blob`, matching the HTTP client.
+- `{ signal }` works as on the client. A unary handler takes no signal, so an
+  abort only stops waiting for it; a stream handler's `signal` aborts, and the
+  loop then throws the signal's reason.
+
+### `CallOptions`
+
+The optional second argument of every procedure call, on the client and the caller.
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `signal` | `AbortSignal` | none | Abort the call: a pending result rejects, and a stream ends, with the signal's reason. |
+| `batch` | `boolean` | none | Only for an HTTP client created with `batch: true`: `false` sends this call on its own. Ignored elsewhere. |
+
+## Types
+
+### `Client`
+
+The type of `createClient(...)` (and of the WebSocket clients). It mirrors the
+router: each procedure becomes a function whose results are typed as what
+arrives after JSON, via `Jsonify`.
+
+```ts
+type Client<R> = {
+  // unary:  (input: In, opts?: CallOptions) => Promise<Jsonify<Out>>
+  //         (Promise<Blob> when the handler returns file(...))
+  // stream: (input: In, opts?: CallOptions) => AsyncIterable<Jsonify<Out>>
+  // nested routers and class-controller instances map recursively
+}
+```
+
+`.get()` procedures also carry a read brand, which is what lets `urlFor` accept
+them.
+
+### `Caller`
+
+The type of `createCaller(...)`. The same shape as `Client`, but results keep the
+handler's own types: a `Date` stays a `Date`.
+
+```ts
+type Caller<R> = {
+  // unary:  (input: In, opts?: CallOptions) => Promise<Out>   (Blob for file results)
+  // stream: (input: In, opts?: CallOptions) => AsyncIterable<Out>
+}
+```
+
+### `Jsonify`
+
+The type a value has after `JSON.stringify` then `JSON.parse`. The client uses it
+for results, so the types match what actually arrives. Don't cast results back
+(say, to `Date`); parse them.
+
+```ts
+type Jsonify<T>
+```
+
+| Value in `T` | Becomes |
+| --- | --- |
+| an object with `toJSON()` (such as `Date`) | `Jsonify` of what `toJSON` returns (`Date` → `string`) |
+| `string`, `number`, `boolean`, `null` | itself |
+| `undefined`, a function or a symbol, as an object property | dropped; a `T \| undefined` property becomes optional |
+| `undefined`, a function or a symbol, in an array | `null` |
+| `Map`, `Set` | `{}` |
+| `bigint` | `never` (`JSON.stringify` throws on it) |
+| a class instance | a plain object of its data properties (methods dropped) |
+| `any`, `unknown` | unchanged |
+
+```ts
+type Note = { id: number; createdAt: Date; draft?: string; tags: Set<string> }
+type Wire = Jsonify<Note>
+// { id: number; createdAt: string; draft?: string; tags: {} }
+```

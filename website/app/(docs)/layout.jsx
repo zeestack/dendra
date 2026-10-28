@@ -1,5 +1,7 @@
 import { Footer, Layout, Navbar } from 'nextra-theme-docs'
+import { Banner } from 'nextra/components'
 import { getPageMap } from 'nextra/page-map'
+import { VersionSwitcher } from '../../components/version-switcher'
 
 function Logo() {
   return (
@@ -53,7 +55,21 @@ function Logo() {
 export default async function DocsLayout({ children }) {
   return (
     <Layout
-      navbar={<Navbar logo={<Logo />} projectLink="https://github.com/zeestack/dendra" />}
+      navbar={
+        <Navbar logo={<Logo />} projectLink="https://github.com/zeestack/dendra">
+          <VersionSwitcher />
+        </Navbar>
+      }
+      banner={
+        process.env.DOCS_ARCHIVED ? (
+          <Banner dismissible={false}>
+            These are the docs for dendra {process.env.DOCS_LABEL}.{' '}
+            <a href="/dendra/" style={{ textDecoration: 'underline' }}>
+              Read the latest docs
+            </a>
+          </Banner>
+        ) : undefined
+      }
       footer={<Footer>MIT © dendra</Footer>}
       pageMap={await getPageMap()}
       docsRepositoryBase="https://github.com/zeestack/dendra/tree/main/website"

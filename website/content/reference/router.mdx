@@ -1,0 +1,676 @@
+---
+title: Router
+description: 'API reference for defining procedures in dendra: initDendra, every route builder method, middleware, after-hooks, inspectRouter, errors and file results.'
+---
+
+# Router
+
+A router is a plain object whose leaves are procedures. You build each procedure
+with the `route` builder from `initDendra()`, and the same router then serves RPC,
+REST, WebSockets, the in-process caller and AI/MCP tools. For the concepts, see
+[Features → Middleware & auth](/features#middleware--auth) and
+[Features → After-hooks](/features#after-hooks-audit-usage-metrics).
+
+```ts
+import { initDendra, inspectRouter, DendraError, DendraClientError, file } from 'dendra'
+import type { RouterRecord, Middleware, AfterHook, RouteInfo, ErrorCode } from 'dendra'
+```
+
+## Defining a router
+
+### `initDendra()`
+
+Binds the context type (and optionally a metadata type) and returns the `route`
+builder. Call it once per app and define every procedure off `route`.
+
+```ts
+function initDendra<Ctx = Record<string, never>, Meta extends object = Record<string, unknown>>(): {
+  route: Builder<Ctx, void>
+}
+```
+
+`route` starts with no input, no path and the method `POST`. Every builder method
+returns a new builder and never changes the one it was called on, so you can keep
+a partly built builder (say, one with an auth guard) and reuse it as a base.
+
+```ts
+import type { Ctx } from './context'
+
+type Meta = { restricted: 'approver' | 'admin' }
+const { route } = initDendra<Ctx, Meta>()
+
+const authed = route.use(function requireUser({ ctx }) {
+  if (!ctx.user) throw new DendraError('UNAUTHORIZED', 'Sign in')
+  return { user: ctx.user }
+})
+```
+
+`Meta` types the argument of [`.meta()`](#metameta): each call accepts a
+`Partial<Meta>`.
+
+#### `RouterRecord`
+
+The shape of a router: an object of procedures and nested routers. Nested keys
+become dotted paths (`notes.create`). Use `satisfies RouterRecord` to check a
+plain-object router without widening its type.
+
+```ts
+interface RouterRecord {
+  [k: string]: AnyProc | RouterRecord
+}
+```
+
+```ts
+export const appRouter = {
+  add: route.input(s.object({ a: s.number(), b: s.number() })).handler(({ input }) => input.a + input.b),
+  notes: { list: route.get('/notes').handler(({ ctx }) => ctx.db.notes.all()) },
+} satisfies RouterRecord
+
+export type AppRouter = typeof appRouter
+```
+
+### Class controllers
+
+A class whose fields are procedures works as a sub-router: put an *instance* in
+the router. Keep injected dependencies in `#private` fields. They aren't
+enumerable, so they never show up as router keys, and they stay out of the
+public type the client sees.
+
+```ts
+export class UsersController {
+  #db: Db
+  constructor(db: Db) { this.#db = db }
+
+  list = route.get('/users').handler(() => this.#db.users.all())
+  create = route
+    .post('/users')
+    .input(s.object({ name: s.string() }))
+    .ai({ description: 'Create a user' })
+    .handler(({ input }) => this.#db.users.insert(input))
+}
+
+export const appRouter = { users: new UsersController(db) }
+```
+
+A router that contains a class instance can't use `satisfies RouterRecord`. The
+functions that take a router (`toNextHandler`, `createCaller`, `inspectRouter`,
+`toToolset` and so on) accept any `object`, and `Client<AppRouter>` checks the
+shape instead. `inspectRouter` lists class-controller procedures like any others.
+
+## Route builder
+
+Each method below is called on `route` (or on a builder derived from it). Calls
+that configure the procedure come first; the chain ends with `.handler()`,
+`.stream()` or `.background()`, which return the procedure.
+
+### `.get(path?)`
+
+Declares a read. Only `.get()` procedures answer HTTP GET (and HEAD); everything
+else answers POST only, and a GET to it gets `405`. With a path, the procedure is
+also a REST route; without one it's an RPC-only read. A `.get()` procedure is
+branded with [`ReadBrand`](#readbrand), which `urlFor` requires.
+
+```ts
+get(path?: string): Builder
+```
+
+```ts
+cover: route.get().input(s.object({ id: s.integer() })).handler(({ input }) => file(bytes, { type: 'image/webp', inline: true }))
+```
+
+### `.post(path)`
+
+Sets the method to `POST` and the REST path. `POST` is already the default, so
+you only need this to give the procedure a REST route.
+
+```ts
+post(path: string): Builder
+```
+
+### `.put(path)`
+
+Sets the method to `PUT` and the REST path. Over RPC the procedure is still
+called with POST.
+
+```ts
+put(path: string): Builder
+```
+
+### `.patch(path)`
+
+Sets the method to `PATCH` and the REST path. Over RPC the procedure is still
+called with POST.
+
+```ts
+patch(path: string): Builder
+```
+
+### `.delete(path)`
+
+Sets the method to `DELETE` and the REST path. Over RPC the procedure is still
+called with POST.
+
+```ts
+delete(path: string): Builder
+```
+
+```ts
+remove: route.delete('/notes/:id').input(s.object({ id: s.string() })).handler(({ input, ctx }) => ctx.db.notes.remove(input.id))
+```
+
+### `.describe(description)`
+
+A human description of the procedure. It's the operation `summary` in OpenAPI,
+and the tool description when `.ai()` doesn't give one.
+
+```ts
+describe(description: string): Builder
+```
+
+### `.ai(config?)`
+
+Exposes the procedure to LLMs and MCP clients as a tool. Tools are opt-in: only
+`.ai()` procedures appear in `toToolset`, `mcpToolDefinitions` and the tool
+executor. The tool's description is `config.description`, else the
+`.describe()` text, else the procedure path.
+
+```ts
+ai(config?: { description?: string; confirm?: boolean }): Builder
+```
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `description` | `string` | the `.describe()` text, else the path | What the model reads to decide when to call the tool. |
+| `confirm` | `boolean` | `false` | A tool call only proposes the action; it runs after a person approves it. See `createApprovals` in [AI](/reference/ai). |
+
+```ts
+create: route
+  .post('/notes')
+  .input(s.object({ title: s.string(), body: s.string() }))
+  .ai({ description: 'Create a note' })
+  .handler(({ input, ctx }) => ctx.db.notes.insert(input))
+```
+
+Throws an `Error` where the procedure is defined if it is also `.noAi()`, or if
+its input has an `s.file()` field (models can't send files through tool calls).
+The file check runs when `.handler()`, `.stream()` or `.background()` builds the
+procedure.
+
+### `.noAi()`
+
+Marks a procedure a model must never call. Adding `.ai()` to it (before or after)
+throws an `Error` where the procedure is defined. `inspectRouter` reports it as
+`noAi: true`.
+
+```ts
+noAi(): Builder
+```
+
+### `.meta(meta)`
+
+Attaches metadata for `inspectRouter`, such as `{ restricted: 'approver' }`.
+The argument is typed as `Partial<Meta>` from `initDendra<Ctx, Meta>()`. Repeated
+calls merge shallowly; a later value wins a shared key. dendra itself never reads
+it.
+
+```ts
+meta(meta: Partial<Meta>): Builder
+```
+
+### `.use(middleware, opts?)`
+
+Adds a middleware. Middlewares run in the order they were added, before the
+handler, on every transport: RPC, REST, the in-process caller, WebSocket and
+AI/MCP tool calls.
+
+```ts
+use<CtxAdd extends Record<string, unknown> | void>(
+  middleware: Middleware<Ctx, In, CtxAdd>,
+  opts?: { name?: string },
+): Builder // ctx is now Ctx & CtxAdd
+```
+
+- To reject the call, throw (a `DendraError` for a message the caller should see).
+- To enrich the context, return an object. It's shallow-merged into `ctx` for
+  every later middleware and the handler, and the type of `ctx` downstream
+  includes it.
+- Returning nothing (or a non-object) leaves `ctx` unchanged.
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `name` | `string` | the function's `name`, else `'anonymous'` | How `inspectRouter` lists this middleware. |
+
+```ts
+const tenant = authed
+  .input(s.object({ workspaceId: s.integer() }))
+  .use(async function requireMember({ ctx, input }) {
+    const role = await ctx.db.members.role(input.workspaceId, ctx.user.id)
+    if (!role) throw new DendraError('FORBIDDEN', 'Not a member')
+    return { role }
+  })
+```
+
+Input is validated before any middleware runs, so a failed validation never
+reaches a middleware. A middleware receives the whole validated input, but its
+`input` type only includes what was declared with `.input()` above it. See
+[`.input()`](#inputschema) for declaring input a guard needs.
+
+### `.after(hook)`
+
+Adds an after-hook: it runs once the call settles, on success or failure, on
+every transport (including AI/MCP tool calls). Use it for audit logs, usage
+metering and metrics.
+
+```ts
+after(hook: AfterHook<Ctx, In>): Builder
+```
+
+```ts
+const audited = authed.after(({ ctx, path, transport, ok, code, durationMs }) =>
+  ctx.db.audit.insert({ user: ctx.user.id, path, transport, ok, code, durationMs }),
+)
+```
+
+How it runs:
+
+- **Position matters.** A hook remembers how many middlewares were added before
+  it. It runs only if all of those passed, and it sees `ctx` as it was at that
+  point. Put a hook before an auth guard to also record the calls the guard
+  rejects; put it after the guard to see the guard's additions to `ctx`.
+- **Order.** Hooks run one at a time, in the order they were added, and each is
+  awaited. For a unary call they finish before the result is returned. For a
+  stream they run when the stream ends: when it completes, throws, or the
+  consumer stops early (which counts as success, with `result: undefined`).
+- **Errors in a hook** are logged with `console.error` and skipped. They never
+  change the call's result or stop later hooks.
+- **Invalid input** fails before any middleware runs, so no hook runs for it.
+- **File results** reach the hook as `{ file: { type, filename?, size? } }`,
+  never the bytes. `size` is missing for a stream body.
+
+#### `AfterHook`
+
+The function `.after()` takes.
+
+```ts
+type AfterHook<Ctx, In> = (info: AfterInfo<Ctx, In>) => void | Promise<void>
+```
+
+#### `AfterInfo`
+
+What an after-hook receives. `ok` tells success (with `result`) from failure
+(with `error` and `code`).
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `ctx` | `Ctx` | The context at the hook's position in the chain. |
+| `input` | `In` | The validated input. |
+| `path` | `string` | Dotted procedure path, e.g. `'notes.create'`. |
+| `transport` | `'rpc' \| 'rest' \| 'caller' \| 'ws' \| 'tool'` | Where the call came from. |
+| `durationMs` | `number` | Milliseconds from the start of the middleware chain until the call settled. |
+| `ok` | `boolean` | `true` on success, `false` on failure. |
+| `result` | `unknown` | On success: the handler's return value (file metadata for a file; `undefined` for a stream). |
+| `error` | `unknown` | On failure: what was thrown. |
+| `code` | `ErrorCode` | On failure: the `DendraError`'s code, or `'INTERNAL'` for anything else. |
+| `approval` | `Approval` | Only on `.ai({ confirm: true })` tool calls and the decisions on them. |
+
+### `.input(schema)`
+
+Declares the input schema. Any [Standard Schema](/reference/schema) works: the
+built-in `s.*`, Zod, Valibot or ArkType. The handler's `input` is typed from the
+schema's output, and a call whose input fails validation is rejected with
+`BAD_REQUEST` (message `'Input validation failed'`, `details` = the list of
+issues as `{ message, path }`).
+
+```ts
+input<S extends StandardSchemaV1>(schema: S): Builder // In is now InferOutput<S>
+```
+
+**Chained `.input()`.** Calling `.input()` again *extends* the input instead of
+replacing it. This lets a shared guard declare the fields it needs once:
+
+```ts
+const tenant = route
+  .input(s.object({ workspaceId: s.integer() }))
+  .use(({ ctx, input }) => checkMember(ctx, input.workspaceId))
+
+const rename = tenant
+  .input(s.object({ name: s.string().min(1) }))
+  .handler(({ input }) => input) // { workspaceId: number; name: string }
+```
+
+The rules:
+
+- The first `.input()` can be any schema. After that, both the existing input and
+  the new schema must be objects; anything else is a type error.
+- **The earlier schema wins a shared key.** The new schema only adds keys that
+  aren't there yet, at the type level and at runtime, so a value a guard checked
+  is never swapped out before the handler sees it.
+- **Two built-in `s.object()` schemas** merge into one object schema. If either
+  was `.strict()`, the merged one is strict (so unknown-key checks cover the
+  combined keys); otherwise, if either was `.passthrough()`, it passes unknown
+  keys through; otherwise it strips them.
+- **Any other pair** (a third-party schema on either side) runs both schemas on
+  the raw input and reports every issue from both together. Each must produce a
+  plain object (or the call fails with `'Chained input must be an object'`), and
+  the two outputs are merged, earlier keys winning.
+- **JSON Schema** (for OpenAPI and tools) is the merged object's own schema for
+  two `s.object()`s. Otherwise it's an object combining the `properties` of both
+  (earlier wins) and the union of their `required` keys.
+- Validation always covers the whole chain and runs once, before the first
+  middleware.
+
+### `.output(schema)`
+
+Declares the response shape. It documents the response in OpenAPI and constrains
+the handler's return type to the schema's output type. It does **not** validate
+the returned value at runtime.
+
+```ts
+output<S extends StandardSchemaV1>(schema: S): Builder // handler must return InferOutput<S>
+```
+
+```ts
+get: route
+  .get('/notes/:id')
+  .input(s.object({ id: s.string() }))
+  .output(s.object({ id: s.string(), title: s.string() }))
+  .handler(({ input, ctx }) => ctx.db.notes.get(input.id))
+```
+
+OpenAPI uses the schema's `jsonSchema` property, which every built-in `s.*`
+schema has. A third-party schema without one still types the handler, but the
+response is undocumented (`{}`).
+
+### `.handler(fn)`
+
+Ends the chain with a unary procedure: `fn` returns a value (or a promise of
+one). It receives the validated `input` and the `ctx` after all middlewares.
+
+```ts
+handler<Out>(fn: (o: { input: In; ctx: Ctx }) => Out | Promise<Out>): Proc<Ctx, In, Awaited<Out>>
+```
+
+Return [`file()`](#filebody-options) to send a file download instead of JSON.
+Throw a `DendraError` for an error the caller should read; anything else reaches
+HTTP clients, WebSockets and tools as `INTERNAL: Internal error` and is logged.
+
+### `.stream(fn)`
+
+Ends the chain with a streaming procedure: `fn` returns an async iterable,
+usually an `async function*`. Each yielded value is sent as it's produced (NDJSON
+or SSE over HTTP, frames over WebSocket); the client consumes it with
+`for await`.
+
+```ts
+stream<Out>(fn: (o: { input: In; ctx: Ctx; signal: AbortSignal }) => AsyncIterable<Out>): Proc<Ctx, In, Out, 'stream'>
+```
+
+`signal` aborts when the consumer goes away: the client disconnects, breaks out
+of its loop, unsubscribes, or aborts its own `{ signal }`. It's also aborted once
+the stream ends. Pass it to `pubsub.subscribe(topic, { signal })`, or check it in
+long work, so the stream stops with its consumer.
+
+```ts
+watch: route.stream(async function* ({ ctx, signal }) {
+  for await (const ev of ctx.pubsub.subscribe('notes', { signal })) yield ev
+})
+```
+
+### `.background(job, map?)`
+
+Ends the chain with a procedure that enqueues a background job and returns
+`{ jobId }` right away. The input is validated and the middlewares run first, as
+for any procedure. The job runs later with its own context (from
+`createJobs({ context })`), not the request's, so use `map` to pass what it needs
+from this call, such as a tenant or user id. Without `map`, the procedure's input
+is the job's input.
+
+```ts
+background(job: Job<In>): Proc<Ctx, In, { jobId: string }>
+background<J>(job: Job<J>, map: (o: { input: In; ctx: Ctx }) => J | Promise<J>): Proc<Ctx, In, { jobId: string }>
+```
+
+`job` is anything with `enqueue(input)` returning `Promise<{ jobId: string }>`,
+such as a job from `jobs.define()` (see [Jobs](/reference/jobs)).
+
+```ts
+summarize: authed
+  .input(s.object({ docId: s.string() }))
+  .background(summarizeJob, ({ input, ctx }) => ({ docId: input.docId, userId: ctx.user.id }))
+```
+
+## Types
+
+#### `HttpMethod`
+
+The method a procedure answers on its REST route. `GET` comes from `.get()`;
+`POST` is the default.
+
+```ts
+type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
+```
+
+#### `Middleware`
+
+The function `.use()` takes. It may throw to reject, return an object to merge
+into `ctx`, or return nothing.
+
+```ts
+type Middleware<Ctx, In, CtxAdd> = (opts: { ctx: Ctx; input: In }) => CtxAdd | void | Promise<CtxAdd | void>
+```
+
+#### `ReadBrand`
+
+A type-level marker on procedures declared with `.get()`: reads, safe to reach
+by a link or `<img src>`. `urlFor` only accepts procedures that carry it.
+
+```ts
+type ReadBrand = { readonly _read: true }
+```
+
+#### `AiConfig`
+
+How a procedure is exposed as a tool, as stored by `.ai()`.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `expose` | `boolean` | `true` once `.ai()` is called. |
+| `description` | `string` | The `.ai({ description })` text, if given. |
+| `confirm` | `boolean` | Tool calls wait for a person's approval. |
+
+#### `Approval`
+
+Where an `.ai({ confirm: true })` call stands. After-hooks see it as
+`info.approval`. `pending` means the model proposed the call and the handler
+didn't run; `approved` and `rejected` mean a person decided.
+
+```ts
+interface Approval {
+  id: string
+  status: 'pending' | 'approved' | 'rejected'
+  reason?: string
+}
+```
+
+## Inspecting a router
+
+### `inspectRouter(router)`
+
+Lists every procedure in a router (class-controller instances included) as plain
+data. Use it in a test to fail the build when a procedure lacks its guard, or
+when a restricted procedure is a tool.
+
+```ts
+function inspectRouter<Meta = Record<string, unknown>>(router: object): RouteInfo<Meta>[]
+```
+
+```ts
+import { expect, it } from 'vitest'
+
+it('guards every workspace procedure', () => {
+  for (const r of inspectRouter(appRouter)) {
+    if (r.path.startsWith('workspace.')) expect(r.middlewares).toContain('requireMember')
+    if (r.meta.restricted) expect(r.ai).toBe(false)
+  }
+})
+```
+
+Name inline arrow middlewares with `.use(mw, { name })`; otherwise they're listed
+as `'anonymous'`.
+
+#### `RouteInfo`
+
+One entry from `inspectRouter`.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `path` | `string` | Dotted router path, e.g. `'notes.create'`. |
+| `kind` | `'unary' \| 'stream'` | `.handler()`/`.background()` or `.stream()`. |
+| `method` | `HttpMethod` | `'GET'` for `.get()`, else the method set, default `'POST'`. |
+| `restPath` | `string` | The REST route, only when the procedure declared one. |
+| `middlewares` | `string[]` | Middleware names in run order. |
+| `ai` | `boolean` | Exposed as a tool with `.ai()`. |
+| `confirm` | `boolean` | `.ai({ confirm: true })`. |
+| `noAi` | `boolean` | Marked `.noAi()`. |
+| `meta` | `Meta` | Merged `.meta()` values; `{}` when none were set. |
+
+## Errors
+
+### `DendraError`
+
+The error to throw from a handler or middleware when the caller (a person or a
+model) should read the message. It crosses the wire as
+`{ code, message, details }` with the HTTP status for its code. Any other thrown
+value reaches HTTP clients, WebSockets, job snapshots and tools as
+`{ code: 'INTERNAL', message: 'Internal error' }`, and the original is logged.
+
+```ts
+class DendraError extends Error {
+  constructor(code: ErrorCode, message: string, status?: number, details?: unknown)
+  readonly code: ErrorCode
+  readonly status: number   // `status` if given, else the code's status (table below)
+  readonly details?: unknown
+}
+```
+
+```ts
+throw new DendraError('NOT_FOUND', 'No such note')
+throw new DendraError('CONFLICT', 'Title taken', undefined, { field: 'title' })
+```
+
+`details` is sent to the caller as-is, so only put in what they may see.
+
+### `DendraClientError`
+
+What the typed client throws when a call fails. It carries the server's `code`,
+`message` and `details`, so error handling looks the same on both sides.
+
+```ts
+class DendraClientError extends Error {
+  readonly code: string     // the server's ErrorCode; 'INTERNAL' if none was sent
+  readonly details?: unknown
+}
+```
+
+The message is `'Request failed'` when the server sent none.
+
+```ts
+try {
+  await api.notes.create({ title, body })
+} catch (e) {
+  if (e instanceof DendraClientError && e.code === 'BAD_REQUEST') showIssues(e.details)
+}
+```
+
+#### `ErrorCode`
+
+Every error code, with the HTTP status a `DendraError` gets when you don't pass
+one.
+
+| Code | Status |
+| --- | --- |
+| `BAD_REQUEST` | 400 |
+| `UNAUTHORIZED` | 401 |
+| `FORBIDDEN` | 403 |
+| `NOT_FOUND` | 404 |
+| `METHOD_NOT_ALLOWED` | 405 |
+| `CONFLICT` | 409 |
+| `PAYLOAD_TOO_LARGE` | 413 |
+| `UNSUPPORTED_MEDIA_TYPE` | 415 |
+| `UNPROCESSABLE` | 422 |
+| `TOO_MANY_REQUESTS` | 429 |
+| `INTERNAL` | 500 |
+| `NOT_IMPLEMENTED` | 501 |
+| `BAD_GATEWAY` | 502 |
+
+## File results
+
+### `file(body, options)`
+
+Returns a file from a handler. The server sends it as a raw HTTP response, not
+JSON. The typed client and `createCaller` both resolve it to a `Blob`. To use it
+in an `<img src>` or link, declare the procedure with `.get()` and build the URL
+with `urlFor`.
+
+```ts
+function file(body: FileBody, options: FileOptions): FileResult
+```
+
+```ts
+report: route
+  .get()
+  .input(s.object({ id: s.string() }))
+  .handler(async ({ input, ctx }) =>
+    file(await ctx.db.reports.csv(input.id), { type: 'text/csv', filename: `report-${input.id}.csv` }),
+  )
+```
+
+What the response carries:
+
+- `Content-Type` from `type`, `X-Content-Type-Options: nosniff`, and
+  `Cache-Control` from `cacheControl`.
+- `Content-Disposition: attachment` (with the sanitized `filename` when given),
+  or `inline` when `inline` is set and the type isn't active content. HTML,
+  XHTML, SVG, XML and any `+xml` type are sent as attachments even with
+  `inline`, unless `allowUnsafeInline` is set.
+- With `etag`, an `ETag` header; a request whose `If-None-Match` matches gets an
+  empty `304`.
+
+A file can't be sent over a batch, a WebSocket or as a tool result: those calls
+fail with `NOT_IMPLEMENTED` (and after-hooks record the failure).
+
+#### `FileOptions`
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `type` | `string` | (required) | The response's `Content-Type`. |
+| `filename` | `string` | none | Download name for `Content-Disposition`. Quotes, backslashes and control characters are dropped from the ASCII fallback; the exact name is sent as `filename*`. |
+| `inline` | `boolean` | `false` | Show in the browser instead of downloading. Ignored for HTML/SVG/XML unless `allowUnsafeInline` is set. |
+| `cacheControl` | `string` | `'private, no-store'` | The `Cache-Control` header. The default keeps tenant data out of shared caches. |
+| `etag` | `string` | none | Sent as a quoted `ETag`; a matching `If-None-Match` gets a bodiless `304`. |
+| `allowUnsafeInline` | `boolean` | `false` | Allow `inline` for HTML, SVG and XML. Only for content you fully control. |
+| `headers` | `Record<string, string>` | none | Extra headers. Can't override `Content-Type`, `Content-Disposition`, `X-Content-Type-Options` or `X-Dendra`. |
+
+#### `FileResult`
+
+What `file()` returns. Servers send it as a raw response; clients and callers
+see a `Blob`; after-hooks see `{ file: { type, filename?, size? } }`.
+
+```ts
+interface FileResult {
+  readonly _dendraFile: true
+  readonly body: FileBody
+  readonly options: FileOptions
+}
+```
+
+#### `FileBody`
+
+The bodies `file()` accepts. A `ReadableStream` is streamed as-is (its size
+isn't known up front).
+
+```ts
+type FileBody = Blob | ReadableStream<Uint8Array> | ArrayBuffer | Uint8Array | string
+```
+
+For file *uploads*, see [`s.file()`](/reference/schema).
