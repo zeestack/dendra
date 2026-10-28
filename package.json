@@ -16,35 +16,88 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./anthropic": {
-      "types": "./dist/anthropic.d.ts",
-      "import": "./dist/anthropic.js",
-      "require": "./dist/anthropic.cjs"
+      "import": {
+        "types": "./dist/anthropic.d.ts",
+        "default": "./dist/anthropic.js"
+      },
+      "require": {
+        "types": "./dist/anthropic.d.cts",
+        "default": "./dist/anthropic.cjs"
+      }
     },
     "./react": {
-      "types": "./dist/react.d.ts",
-      "import": "./dist/react.js",
-      "require": "./dist/react.cjs"
+      "import": {
+        "types": "./dist/react.d.ts",
+        "default": "./dist/react.js"
+      },
+      "require": {
+        "types": "./dist/react.d.cts",
+        "default": "./dist/react.cjs"
+      }
     },
     "./memory": {
-      "types": "./dist/memory.d.ts",
-      "import": "./dist/memory.js",
-      "require": "./dist/memory.cjs"
+      "import": {
+        "types": "./dist/memory.d.ts",
+        "default": "./dist/memory.js"
+      },
+      "require": {
+        "types": "./dist/memory.d.cts",
+        "default": "./dist/memory.cjs"
+      }
     },
     "./next": {
-      "types": "./dist/next.d.ts",
-      "import": "./dist/next.js",
-      "require": "./dist/next.cjs"
+      "import": {
+        "types": "./dist/next.d.ts",
+        "default": "./dist/next.js"
+      },
+      "require": {
+        "types": "./dist/next.d.cts",
+        "default": "./dist/next.cjs"
+      }
     },
     "./adapter": {
-      "types": "./dist/adapter.d.ts",
-      "import": "./dist/adapter.js",
-      "require": "./dist/adapter.cjs"
+      "import": {
+        "types": "./dist/adapter.d.ts",
+        "default": "./dist/adapter.js"
+      },
+      "require": {
+        "types": "./dist/adapter.d.cts",
+        "default": "./dist/adapter.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "anthropic": [
+        "./dist/anthropic.d.ts"
+      ],
+      "react": [
+        "./dist/react.d.ts"
+      ],
+      "memory": [
+        "./dist/memory.d.ts"
+      ],
+      "next": [
+        "./dist/next.d.ts"
+      ],
+      "adapter": [
+        "./dist/adapter.d.ts"
+      ]
     }
+  },
+  "engines": {
+    "node": ">=18"
   },
   "files": [
     "dist",
@@ -75,7 +128,8 @@
     "test:watch": "vitest",
     "demo": "node examples/demo.ts",
     "demo:restws": "node examples/rest-ws-demo.ts",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "check:package": "publint --strict && attw --pack ."
   },
   "keywords": [
     "rpc",
@@ -95,6 +149,7 @@
   ],
   "devDependencies": {
     "@anthropic-ai/sdk": "^0.30.1",
+    "@arethetypeswrong/cli": "^0.18.5",
     "@types/node": "^22.7.0",
     "@types/pg": "^8.23.1",
     "@types/react": "^18.3.11",
@@ -103,6 +158,7 @@
     "arktype": "^2.2.8",
     "next": "^16.4.2",
     "pg": "^8.23.1",
+    "publint": "^0.3.25",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-test-renderer": "^18.3.1",
