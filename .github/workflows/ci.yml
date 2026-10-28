@@ -27,6 +27,8 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
+      # The built package as users install it: exports map, types for CJS and ESM.
+      - run: npm run check:package
       - run: npm test
 
   # The example app against this commit's package, packed the way npm ships
