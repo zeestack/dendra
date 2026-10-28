@@ -1,0 +1,16 @@
+{
+  "node": "v22.22.3",
+  "platform": "darwin-arm64",
+  "values": {
+    "bundle.client": 4459,
+    "bundle.server": 7458,
+    "bundle.full": 24862,
+    "throughput.unary": 1.118,
+    "latency.unary.p50": 1.157,
+    "throughput.get": 1.222,
+    "latency.get.p50": 1.357,
+    "throughput.stream": 1.606,
+    "latency.stream.p50": 1.603,
+    "coldStart": 1.07
+  }
+}

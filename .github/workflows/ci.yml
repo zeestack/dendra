@@ -63,3 +63,18 @@ jobs:
       # The whole project, including tests and the standalone servers.
       - run: npx tsc --noEmit
         working-directory: examples/nextjs-app
+
+  # Performance baselines (bench/README.md): fails if bundle size, throughput,
+  # latency or cold start regress past bench/baseline.json.
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npx tsc -p bench
+      - run: npm run bench

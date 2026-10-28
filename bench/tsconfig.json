@@ -1,0 +1,6 @@
+// Type-checks the benchmarks against the built package (dist), so it runs
+// after `npm run build`: `npx tsc -p bench`.
+{
+  "extends": "../tsconfig.json",
+  "include": ["."]
+}

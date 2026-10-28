@@ -129,7 +129,8 @@
     "demo": "node examples/demo.ts",
     "demo:restws": "node examples/rest-ws-demo.ts",
     "prepublishOnly": "npm run build",
-    "check:package": "publint --strict && attw --pack ."
+    "check:package": "publint --strict && attw --pack .",
+    "bench": "node bench/run.ts"
   },
   "keywords": [
     "rpc",
