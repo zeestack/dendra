@@ -2,8 +2,9 @@
 // speaks the Web Fetch `Request`/`Response` standard, so the SAME handler runs
 // on Next route handlers, Hono, Bun, Deno and Cloudflare Workers. `toNodeHandler`
 // is a thin bridge for the classic `node:http` server. Streaming responses use
-// NDJSON over a Web ReadableStream, with a reserved error frame for failures
-// that happen after headers are already sent.
+// NDJSON over a Web ReadableStream (or Server-Sent Events when the client
+// accepts `text/event-stream`), with a reserved error frame for failures that
+// happen after headers are already sent.
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AnyProc, CallSite, HttpMethod, RouterRecord } from "./core.ts";
@@ -26,6 +27,11 @@ export interface ServerOptions<Ctx> {
   allowFormPosts?: boolean;
   /** Cap on multipart / form request bodies, in bytes. Default 10 MB. */
   maxBodyBytes?: number;
+  /**
+   * How often an idle SSE stream sends a `: ping` comment, so proxies and load
+   * balancers don't close it. Default 15 s; `0` turns heartbeats off.
+   */
+  heartbeatMs?: number;
 }
 
 // CSRF guard for POST. A cross-site page can only send "simple" requests
@@ -200,7 +206,7 @@ export function toFetchHandler<Ctx>(
     const site = { path: dotted, transport: "rpc" as const };
     try {
       if (proc.kind === "stream") {
-        return streamResponse(proc, raw, ctx, site, req);
+        return streamResponse(proc, raw, ctx, site, req, opts);
       }
       const result = await invokeUnary(proc, raw, ctx, site);
       if (isFileResult(result)) return fileResponse(result, req);
@@ -244,6 +250,8 @@ export function toNodeHandler<Ctx>(
         const { done, value } = await reader.read();
         if (done) break;
         res.write(value);
+        // Compression middleware (Express `compression`) buffers until flushed.
+        (res as { flush?: () => void }).flush?.();
       }
     }
     res.end();
@@ -399,7 +407,7 @@ export function toRestHandler<Ctx>(
     const site = { path: matched.name, transport: "rest" as const };
     try {
       if (matched.proc.kind === "stream") {
-        return streamResponse(matched.proc, input, ctx, site, req);
+        return streamResponse(matched.proc, input, ctx, site, req, opts);
       }
       const result = await invokeUnary(matched.proc, input, ctx, site);
       if (isFileResult(result)) return fileResponse(result, req);
@@ -489,23 +497,40 @@ async function* inSettleOrder(
 
 // A stream ends when the request is aborted (the runtime noticed the client
 // leave) or the response body is cancelled (the reader stopped) — whichever
-// comes first aborts the handler's signal.
+// comes first aborts the handler's signal. The wire format follows `Accept`:
+// SSE for `text/event-stream`, NDJSON otherwise.
 function streamResponse(
   proc: AnyProc,
   raw: unknown,
   ctx: unknown,
   site: CallSite,
   req: Request,
+  opts: ServerOptions<unknown>,
 ): Response {
   const ac = new AbortController();
   const stop = () => ac.abort();
   if (req.signal.aborted) stop();
   else req.signal.addEventListener("abort", stop, { once: true });
   const frames = invokeStream(proc, raw, ctx, { ...site, signal: ac.signal });
-  return ndjsonResponse(frames, () => {
+  const onCancel = () => {
     req.signal.removeEventListener("abort", stop);
     stop();
-  });
+  };
+  if ((req.headers.get("accept") ?? "").includes("text/event-stream")) {
+    return sseResponse(frames, onCancel, opts.heartbeatMs ?? 15_000);
+  }
+  return ndjsonResponse(frames, onCancel);
+}
+
+// Streamed responses must reach the client as they're written: `no-cache`
+// stops caches holding them, and `X-Accel-Buffering: no` turns off nginx's
+// response buffering for this response.
+const streamHeaders = { "cache-control": "no-cache", "x-accel-buffering": "no" };
+
+function streamError(e: unknown): { code: string; message: string } {
+  return e instanceof DendraError
+    ? { code: e.code, message: e.message }
+    : { code: "INTERNAL", message: e instanceof Error ? e.message : "stream error" };
 }
 
 // Pull-based, so a slow reader applies backpressure to the generator. On
@@ -523,14 +548,7 @@ function ndjsonResponse(iterable: AsyncIterable<unknown>, onCancel: () => void):
         else controller.enqueue(enc.encode(JSON.stringify(value) + "\n"));
       } catch (e) {
         if (cancelled) return;
-        const err =
-          e instanceof DendraError
-            ? { code: e.code, message: e.message }
-            : {
-                code: "INTERNAL",
-                message: e instanceof Error ? e.message : "stream error",
-              };
-        controller.enqueue(enc.encode(JSON.stringify({ $error: err }) + "\n"));
+        controller.enqueue(enc.encode(JSON.stringify({ $error: streamError(e) }) + "\n"));
         controller.close();
       }
     },
@@ -542,6 +560,56 @@ function ndjsonResponse(iterable: AsyncIterable<unknown>, onCancel: () => void):
   });
   return new Response(stream, {
     status: 200,
-    headers: { "content-type": "application/x-ndjson" },
+    headers: { "content-type": "application/x-ndjson", ...streamHeaders },
+  });
+}
+
+// The same stream as Server-Sent Events: each value is a `data:` event, a
+// failure is an `error` event carrying `{ code, message }`, and a normal end is
+// a `done` event — so an `EventSource` can close() instead of reconnecting and
+// re-running the subscription. While the handler is idle, a `: ping` comment
+// goes out every `heartbeatMs`.
+function sseResponse(
+  iterable: AsyncIterable<unknown>,
+  onCancel: () => void,
+  heartbeatMs: number,
+): Response {
+  const it = iterable[Symbol.asyncIterator]();
+  let cancelled = false;
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
+  const event = (name: string, data: unknown) =>
+    enc.encode((name ? `event: ${name}\n` : "") + `data: ${JSON.stringify(data)}\n\n`);
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      if (heartbeatMs > 0) {
+        heartbeat = setInterval(() => controller.enqueue(enc.encode(": ping\n\n")), heartbeatMs);
+      }
+    },
+    async pull(controller) {
+      try {
+        const { done, value } = await it.next();
+        if (cancelled) return;
+        if (done) {
+          clearInterval(heartbeat);
+          controller.enqueue(event("done", null));
+          controller.close();
+        } else controller.enqueue(event("", value ?? null));
+      } catch (e) {
+        if (cancelled) return;
+        clearInterval(heartbeat);
+        controller.enqueue(event("error", streamError(e)));
+        controller.close();
+      }
+    },
+    async cancel() {
+      cancelled = true;
+      clearInterval(heartbeat);
+      onCancel();
+      await it.return?.();
+    },
+  });
+  return new Response(stream, {
+    status: 200,
+    headers: { "content-type": "text/event-stream", ...streamHeaders },
   });
 }

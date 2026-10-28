@@ -20,7 +20,8 @@ RPC-only read.
 ## Streaming & real-time
 
 `route.stream(async function* () { … })` — streaming is just an async generator,
-delivered as NDJSON over HTTP. Pair it with a pub/sub (`createInMemoryPubSub`,
+delivered as NDJSON over HTTP, or as Server-Sent Events with
+`createClient(url, { streamFormat: "sse" })` when a proxy buffers NDJSON. Pair it with a pub/sub (`createInMemoryPubSub`,
 `createRedisPubSub`, or `createPgPubSub` on Postgres `LISTEN/NOTIFY`) for live
 subscriptions. On the client, `for await (…)` over
 the same typed method.
