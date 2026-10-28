@@ -1,16 +1,16 @@
 {
-  "node": "v22.22.3",
-  "platform": "darwin-arm64",
+  "node": "v22.23.4",
+  "platform": "linux-x64",
   "values": {
     "bundle.client": 4459,
     "bundle.server": 7458,
     "bundle.full": 24862,
-    "throughput.unary": 1.118,
-    "latency.unary.p50": 1.157,
-    "throughput.get": 1.222,
-    "latency.get.p50": 1.357,
-    "throughput.stream": 1.606,
-    "latency.stream.p50": 1.603,
-    "coldStart": 1.07
+    "throughput.unary": 1.126,
+    "latency.unary.p50": 1.24,
+    "throughput.get": 1.206,
+    "latency.get.p50": 1.408,
+    "throughput.stream": 1.441,
+    "latency.stream.p50": 1.769,
+    "coldStart": 1.077
   }
 }
