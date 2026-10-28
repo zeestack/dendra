@@ -11,7 +11,9 @@ import type { AppRouter } from "@/server/router";
 const KEY_STORAGE = "dendra-anthropic-key";
 const headers: Record<string, string> = {};
 
-export const api = createClient<AppRouter>("", { prefix: "/rpc/", headers });
+// Streams use Server-Sent Events, which proxies and CDNs pass through
+// unbuffered more reliably than NDJSON.
+export const api = createClient<AppRouter>("", { prefix: "/rpc/", headers, streamFormat: "sse" });
 
 /** Set (or clear) the user's Anthropic key — kept in this browser only. */
 export function setAnthropicKey(key: string | null): void {

@@ -24,6 +24,7 @@ import {
 import type { McpServerInfo, ConnectResult } from "./mcp-tools.ts";
 import type { ChatPart } from "../lib/chat-types.ts";
 import { UsersController } from "./users.controller.ts";
+import { digest, ensureJobsStarted, jobStore } from "./jobs.ts";
 
 const { route } = initDendra<Ctx>();
 
@@ -70,14 +71,33 @@ const coreRouter = {
         return { deleted: true, id: input.id };
       }),
 
-    // Subscription: live note stream for this tenant
-    watch: route.stream(async function* ({ ctx }): AsyncGenerator<NoteEvent> {
-      for await (const ev of ctx.pubsub.subscribe(`notes:${ctx.tenantId}`, {
-        signal: ctx.signal,
-      })) {
+    // Subscription: live note stream for this tenant. `signal` aborts when
+    // the client goes away, which ends the pub/sub subscription.
+    watch: route.stream(async function* ({ ctx, signal }): AsyncGenerator<NoteEvent> {
+      for await (const ev of ctx.pubsub.subscribe(`notes:${ctx.tenantId}`, { signal })) {
         yield ev as NoteEvent;
       }
     }),
+
+    // Background job: count the workspace's notes and words. Returns
+    // { jobId } at once; the tenant goes into the job's input, since a job
+    // never sees the request's ctx.
+    digest: route.background(digest, ({ ctx }) => {
+      ensureJobsStarted();
+      return { tenantId: ctx.tenantId };
+    }),
+
+    // The job's status, then each change, until it succeeds or fails. Another
+    // tenant's job id gets NOT_FOUND, the same as an unknown one.
+    digestStatus: route
+      .input(s.object({ jobId: s.string() }))
+      .use(async ({ input, ctx }) => {
+        const job = await jobStore.get(input.jobId);
+        if ((job?.input as { tenantId?: string } | undefined)?.tenantId !== ctx.tenantId) {
+          throw new DendraError("NOT_FOUND", "No such job");
+        }
+      })
+      .stream(({ input, signal }) => digest.watch(input.jobId, { signal })),
   },
 
   // Long-term memory — the same define-once procedure, now over ctx.memory
@@ -184,8 +204,8 @@ const coreRouter = {
     // Streaming chat — real LLM tokens (falls back to an echo without a key).
     chat: route
       .input(s.object({ prompt: s.string() }))
-      .stream(async function* ({ input, ctx }): AsyncGenerator<string> {
-        yield* streamChat(input.prompt, ctx.signal, ctx.anthropicKey);
+      .stream(async function* ({ input, ctx, signal }): AsyncGenerator<string> {
+        yield* streamChat(input.prompt, signal, ctx.anthropicKey);
       }),
 
     // Generative-UI assistant: the model calls the notes tools; the stream yields
@@ -201,7 +221,7 @@ const coreRouter = {
           ),
         }),
       )
-      .stream(async function* ({ input, ctx }): AsyncGenerator<ChatPart> {
+      .stream(async function* ({ input, ctx, signal }): AsyncGenerator<ChatPart> {
         // Local tools (this app's procedures) + tools from every connected
         // EXTERNAL MCP server, merged into one flat toolset. The model can't
         // tell them apart; mergeToolsets routes each call to the owning source.
@@ -223,7 +243,7 @@ const coreRouter = {
           lazyToolset: lazy,
           system:
             "You help the user manage notes and navigate the app. Use notes.list/notes.create for notes, users.list/users.create for users, and ui.navigate to move around (paths: '/', '/demo', '/chat', '/assistant'). You have durable MEMORY of the user across sessions: call memory.recall whenever the user asks about themselves or refers to something they told you before (e.g. their name, preferences, where they live), and call memory.remember to save a new durable fact when they tell you one (\"remember that…\", \"my name is…\", \"I prefer…\"); memory.list shows everything saved, memory.forget removes one by id. You may also have MORE tools from connected external servers that are NOT loaded yet. If you need a capability you don't already see in your available tools (e.g. weather, time, or anything from a connected service), call search_tools with a short query to find and load the right tool, THEN call it — never claim you searched unless you actually call search_tools. IMPORTANT: every tool result is ALREADY shown to the user as a rich UI component (a notes list, a weather card, etc.), so DO NOT repeat, re-list, or summarize the tool's data in your text. After a tool runs, either say nothing or add at most one short sentence of context — never restate what the component already displays.",
-          signal: ctx.signal,
+          signal,
           apiKey: ctx.anthropicKey,
         });
       }),

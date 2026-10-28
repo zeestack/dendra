@@ -29,17 +29,29 @@ jobs:
       - run: npm run build
       - run: npm test
 
+  # The example app against this commit's package, packed the way npm ships
+  # it — so it catches what the unit tests can't (exports, CJS/ESM, Next).
   example:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: examples/nextjs-app
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: examples/nextjs-app/package-lock.json
+          cache-dependency-path: |
+            package-lock.json
+            examples/nextjs-app/package-lock.json
       - run: npm ci
+      - run: npm run build
+      - run: npm pack --pack-destination "$RUNNER_TEMP"
+      - run: npm ci
+        working-directory: examples/nextjs-app
+      - run: npm install --no-save --no-audit --no-fund "$RUNNER_TEMP"/dendra-*.tgz
+        working-directory: examples/nextjs-app
+      - run: npx tsc --noEmit
+        working-directory: examples/nextjs-app
       - run: npm test
+        working-directory: examples/nextjs-app
+      - run: npx next build
+        working-directory: examples/nextjs-app

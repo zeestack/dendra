@@ -11,6 +11,7 @@ import { createCaller } from "dendra";
 import { appRouter } from "@/server/router";
 import { directContext, tenantFromHost } from "@/server/context";
 import { NotesClient } from "./notes-client";
+import { Digest } from "./digest";
 import u from "./ui.module.css";
 
 export default async function Page() {
@@ -35,6 +36,7 @@ export default async function Page() {
         </p>
       </div>
       <NotesClient initial={notes} />
+      <Digest />
     </main>
   );
 }
