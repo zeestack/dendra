@@ -91,7 +91,7 @@ compaction and write-backs, and they show up as `{ type: 'context' }` parts; the
 | `client` | `AnthropicClientLike` | required | `new Anthropic()`, or `new AnthropicBedrock()` from `@anthropic-ai/bedrock-sdk`. |
 | `model` | `string` | required | The model id. |
 | `tools` | `unknown[]` | required | Tool schemas in Anthropic format, e.g. `mergeToolsets(…).tools`. Not sent when `lazyToolset` is set, or when a `context` source owns the tool list (`lazyToolSource`). |
-| `execute` | `(name: string, args: unknown) => Promise<unknown>` | required | Runs a tool the model chose, e.g. `mergeToolsets(…).execute`. Gets the original (unsanitized) name. |
+| `execute` | `(name: string, args: unknown, call?: { signal?: AbortSignal }) => Promise<unknown>` | required | Runs a tool the model chose, e.g. `mergeToolsets(…).execute`. Gets the original (unsanitized) name, and the run's `signal`: aborting the run cancels a call in flight and ends the run with the signal's reason. |
 | `messages` | `Anthropic.MessageParam[]` | — | The conversation so far. Takes precedence over `prompt`. |
 | `prompt` | `string` | — | A single user message, used when `messages` is omitted. |
 | `system` | `string` | — | System prompt. Recalled memory and tool menus are appended to it. |

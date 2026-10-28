@@ -147,6 +147,10 @@ export interface AiConfig {
   description?: string;
   /** Tool calls propose a pending action; a person approves before it runs. */
   confirm?: boolean;
+  /** Streaming tools: stop collecting after this many chunks. Default 1,000. */
+  maxItems?: number;
+  /** Streaming tools: stop collecting after this long, in ms. Default 30 s. */
+  timeoutMs?: number;
 }
 
 export interface RouterRecord {
@@ -174,8 +178,11 @@ interface State<Ctx, In> {
 // ever fail. Refuse it where it's defined rather than ship a broken tool.
 // Likewise a tool whose input has no JSON Schema: the model would see no
 // parameters and could only guess.
-function assertAiCompatible<Ctx, In>(s: State<Ctx, In>): void {
+function assertAiCompatible<Ctx, In>(s: State<Ctx, In>, kind: ProcedureKind): void {
   if (!s.ai?.expose) return;
+  if (kind !== "stream" && (s.ai.maxItems !== undefined || s.ai.timeoutMs !== undefined)) {
+    throw new Error(".ai({ maxItems, timeoutMs }) only applies to .stream() procedures");
+  }
   if (s.inputJsonMissing) {
     throw new Error(
       `An AI tool needs a JSON Schema for its input, so the model knows the parameters. ` +
@@ -345,11 +352,28 @@ class Builder<
    * Expose this procedure to LLMs as a callable tool (opt-in, never default).
    * With `confirm: true`, a tool call only proposes the action: it's stored as
    * pending, and the handler runs when a person approves it (`createApprovals`).
+   * A `.stream()` tool's chunks are collected into one result, up to `maxItems`
+   * (default 1,000) or `timeoutMs` (default 30 s), so a subscription can't hang
+   * the agent; then the handler's signal aborts.
    */
-  ai(cfg: { description?: string; confirm?: boolean } = {}) {
+  ai(
+    cfg: { description?: string; confirm?: boolean; maxItems?: number; timeoutMs?: number } = {},
+  ) {
     if (this.state.noAi) throw new Error("A .noAi() procedure can't also be .ai()");
+    for (const key of ["maxItems", "timeoutMs"] as const) {
+      const v = cfg[key];
+      if (v !== undefined && !(Number.isInteger(v) && v > 0)) {
+        throw new Error(`.ai({ ${key} }) must be a positive integer, got ${v}`);
+      }
+    }
     return this.next<In>({
-      ai: { expose: true, description: cfg.description, confirm: cfg.confirm === true },
+      ai: {
+        expose: true,
+        description: cfg.description,
+        confirm: cfg.confirm === true,
+        ...(cfg.maxItems !== undefined ? { maxItems: cfg.maxItems } : {}),
+        ...(cfg.timeoutMs !== undefined ? { timeoutMs: cfg.timeoutMs } : {}),
+      },
     });
   }
   /**
@@ -442,7 +466,7 @@ class Builder<
       : DOut | Promise<DOut>,
   ): Branded<Proc<Ctx, In, [DOut] extends [never] ? Awaited<Out> : DOut, "unary">, Rd> {
     const s = this.state;
-    assertAiCompatible(s);
+    assertAiCompatible(s, "unary");
     return {
       _dendra: true,
       kind: "unary",
@@ -470,7 +494,7 @@ class Builder<
     fn: (o: { input: In; ctx: Ctx; signal: AbortSignal }) => AsyncIterable<Out>,
   ): Branded<Proc<Ctx, In, Out, "stream">, Rd> {
     const s = this.state;
-    assertAiCompatible(s);
+    assertAiCompatible(s, "stream");
     return {
       _dendra: true,
       kind: "stream",

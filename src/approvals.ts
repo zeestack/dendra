@@ -152,8 +152,9 @@ export function createApprovals<Ctx>(
       const site = { path: action.tool, transport: "tool" as const, approval };
       return invokeWith(proc, action.input, ctx, site, async (input, ctx2) => {
         await take(id);
-        const out = proc.handler(input, ctx2);
-        return proc.kind === "stream" ? collect(out as AsyncIterable<unknown>) : out;
+        if (proc.kind !== "stream") return proc.handler(input, ctx2);
+        const stop = new AbortController();
+        return collect(proc, proc.handler(input, ctx2, stop.signal) as AsyncIterable<unknown>, stop);
       });
     },
 
@@ -201,9 +202,41 @@ export function createApprovals<Ctx>(
   return approvals;
 }
 
-/** Collect a streaming tool's chunks: joined if all strings, else the array. */
-export async function collect(stream: AsyncIterable<unknown>): Promise<unknown> {
+/** A streaming tool stops after this many chunks, or this long, by default. */
+export const STREAM_TOOL_LIMITS = { maxItems: 1000, timeoutMs: 30_000 };
+
+/**
+ * Collect a streaming tool's chunks into one result: joined if all strings,
+ * else the array. A subscription never ends on its own, so collection stops at
+ * the tool's `maxItems` or `timeoutMs` and answers with what arrived. `stop` is
+ * the handler's signal: it aborts when collection ends, so the handler stops
+ * too, even while it waits for its next chunk.
+ */
+export async function collect(
+  proc: AnyProc,
+  stream: AsyncIterable<unknown>,
+  stop: AbortController,
+): Promise<unknown> {
+  const maxItems = proc.ai?.maxItems ?? STREAM_TOOL_LIMITS.maxItems;
+  const timeoutMs = proc.ai?.timeoutMs ?? STREAM_TOOL_LIMITS.timeoutMs;
+  const it = stream[Symbol.asyncIterator]();
   const chunks: unknown[] = [];
-  for await (const chunk of stream) chunks.push(chunk);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const ended = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), timeoutMs);
+    stop.signal.addEventListener("abort", () => resolve(null), { once: true });
+  });
+  try {
+    while (chunks.length < maxItems) {
+      const next = await Promise.race([it.next(), ended]);
+      if (next === null || next.done) break;
+      chunks.push(next.value);
+    }
+  } finally {
+    clearTimeout(timer);
+    stop.abort();
+    // Don't wait: a handler that ignores its signal would hold the result back.
+    void it.return?.(undefined)?.catch(() => {});
+  }
   return chunks.every((c) => typeof c === "string") ? chunks.join("") : chunks;
 }

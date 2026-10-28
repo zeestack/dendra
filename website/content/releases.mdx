@@ -35,6 +35,17 @@ From the AI/MCP security review
   Zod input showed the model no parameters. **Breaking:** an `.ai()` procedure
   whose input has no JSON Schema (Zod 3, plain Valibot, a `z.date()`) now throws
   where it's defined.
+- **Streaming tools are bounded and cancellable.** A `.stream()` procedure
+  exposed with `.ai()` stops collecting after 1,000 chunks or 30 s, set per tool
+  with `.ai({ maxItems, timeoutMs })`. It answers with what arrived and aborts
+  the handler's `signal`, so a subscription can't hang an agent or grow without
+  limit ([#57](https://github.com/zeestack/dendra/issues/57)). Tool executors
+  take `execute(name, args, { signal })`; `runAgent` passes its `signal`, so
+  aborting a run cancels the call in flight. `mergeToolsets`, `ToolSource` and
+  `createMcpBridge().callTool` pass the signal through. `createMcpToolSource`
+  stops waiting but can't cancel the remote call. **Behaviour change:** a
+  streaming tool that ran longer than 30 s used to wait for its end; raise
+  `timeoutMs` if it needs longer.
 - A stream that yields `undefined` sends `null` over NDJSON and WebSockets, as
   SSE already did. NDJSON used to write the line `undefined`, which made the
   client throw. A tool that returns `undefined` gives the MCP bridge and

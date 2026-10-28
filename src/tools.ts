@@ -85,8 +85,8 @@ export interface ToolSource {
   tools: unknown[];
   /** The tool names this source answers to (for routing). */
   names: string[];
-  /** Run one of this source's tools by name. */
-  execute(name: string, args: unknown): Promise<unknown>;
+  /** Run one of this source's tools by name. `signal` cancels the call. */
+  execute(name: string, args: unknown, call?: { signal?: AbortSignal }): Promise<unknown>;
 }
 
 /** Wrap a dendra router + ctx as a `ToolSource` (the local tools). */
@@ -114,7 +114,7 @@ export function toToolSource<Ctx>(
  */
 export function mergeToolsets(...sources: ToolSource[]): {
   tools: unknown[];
-  execute: (name: string, args: unknown) => Promise<unknown>;
+  execute: (name: string, args: unknown, call?: { signal?: AbortSignal }) => Promise<unknown>;
 } {
   const owner = new Map<string, ToolSource>();
   for (const src of sources) {
@@ -129,10 +129,10 @@ export function mergeToolsets(...sources: ToolSource[]): {
   }
   return {
     tools: sources.flatMap((s) => s.tools),
-    execute: (name, args) => {
+    execute: (name, args, call) => {
       const src = owner.get(name);
       if (!src) throw new DendraError("NOT_FOUND", `Tool '${name}' not found`);
-      return src.execute(name, args);
+      return src.execute(name, args, call);
     },
   };
 }
@@ -148,8 +148,10 @@ export function createToolExecutor<Ctx>(
   router: object,
   ctx: Ctx,
   opts: { approvals?: Approvals<Ctx> } = {},
-): (name: string, args: unknown) => Promise<unknown> {
-  return async (name: string, args: unknown) => {
+): (name: string, args: unknown, call?: { signal?: AbortSignal }) => Promise<unknown> {
+  return async (name, args, call = {}) => {
+    const { signal } = call;
+    signal?.throwIfAborted();
     const proc = resolveProc(router as RouterRecord, name.split("."));
     // The same answer for a missing procedure and one without `.ai()`, so the
     // model can't probe for procedures it wasn't given.
@@ -165,16 +167,39 @@ export function createToolExecutor<Ctx>(
     // Streaming tools: collect the chunks into a single result (join strings,
     // else return the array) so a streaming procedure can be an LLM/MCP tool.
     // Validation runs first in both paths — the guardrail on model output.
+    // `signal` cancels: the call rejects with its reason, like fetch.
     const site = { path: name, transport: "tool" as const };
+    const stop = new AbortController();
+    const cancel = () => stop.abort(signal!.reason);
+    signal?.addEventListener("abort", cancel, { once: true });
     try {
-      if (proc.kind === "stream") return await collect(invokeStream(proc, args, ctx, site));
-      return await invokeUnary(proc, args, ctx, site);
+      const result =
+        proc.kind === "stream"
+          ? collect(proc, invokeStream(proc, args, ctx, { ...site, signal: stop.signal }), stop)
+          : invokeUnary(proc, args, ctx, site);
+      return await untilAborted(result, signal);
     } catch (e) {
+      if (signal?.aborted) throw signal.reason;
       // Whatever loop called us hands the error text to the model, so an
       // unexpected error's message (SQL, paths, hosts) stops here and is logged.
       if (e instanceof DendraError) throw e;
       console.error(`[dendra] tool '${name}' failed:`, e);
       throw new DendraError("INTERNAL", "Internal error");
+    } finally {
+      signal?.removeEventListener("abort", cancel);
     }
   };
+}
+
+// Settle with `work`, or reject with the abort reason as soon as `signal`
+// aborts. The work itself carries on (a unary handler has no signal), but the
+// caller stops waiting for it.
+export function untilAborted<T>(work: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return work;
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    if (signal.aborted) return onAbort();
+    signal.addEventListener("abort", onAbort, { once: true });
+    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
 }
