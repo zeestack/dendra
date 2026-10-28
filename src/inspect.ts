@@ -2,7 +2,7 @@
 // can fail the build when one lacks its tenant guard or a restricted one is an
 // AI tool — without reading builder internals.
 
-import type { AnyProc, HttpMethod, ProcedureKind, RouterRecord } from "./core.ts";
+import { toolAnnotations, type AnyProc, type HttpMethod, type ProcedureKind, type RouterRecord, type ToolAnnotations } from "./core.ts";
 
 export interface RouteInfo<Meta = Record<string, unknown>> {
   /** Dotted router path, e.g. "notes.create". */
@@ -19,6 +19,8 @@ export interface RouteInfo<Meta = Record<string, unknown>> {
   confirm: boolean;
   /** `.noAi()`: may never be a tool. */
   noAi: boolean;
+  /** The MCP annotations the tool is listed with (`{}` when none apply). */
+  annotations: ToolAnnotations;
   /** Merged `.meta()` values; `{}` when none were set. */
   meta: Meta;
 }
@@ -42,6 +44,7 @@ export function inspectRouter<Meta = Record<string, unknown>>(
           ai: proc.ai?.expose === true,
           confirm: proc.ai?.confirm === true,
           noAi: proc.noAi === true,
+          annotations: proc.ai?.expose ? toolAnnotations(proc) : {},
           meta: { ...proc.meta } as Meta,
         });
       } else {

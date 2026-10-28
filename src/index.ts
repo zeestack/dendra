@@ -28,6 +28,7 @@ export type {
   ReadBrand,
   Approval,
   AiConfig,
+  ToolAnnotations,
 } from "./core.ts";
 
 // Moved to `dendra/adapter` in 0.12. These aliases go in 0.13.

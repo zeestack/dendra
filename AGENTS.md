@@ -112,7 +112,7 @@ UNAUTHORIZED a sign-in redirect. Don't rebuild a `Request` from `headers()` by h
   (incl. AI tools). Awaited; throws are logged, not returned. It only sees calls
   that passed the `.use()`s before it — place it before auth to record rejections.
 - **Assert guards in a test.** `inspectRouter(appRouter)` → `[{ path, kind,
-  method, restPath?, middlewares, ai, confirm, noAi, meta }]`. Middlewares are listed by
+  method, restPath?, middlewares, ai, confirm, noAi, annotations, meta }]`. Middlewares are listed by
   `.use(mw, { name })`, else the function's name (inline arrows: `"anonymous"`).
   Tag procedures with `.meta({ restricted: "approver" })`, typed by
   `initDendra<Ctx, Meta>()`. Don't read `proc.middlewares` internals.
@@ -142,6 +142,10 @@ UNAUTHORIZED a sign-in redirect. Don't rebuild a `Request` from `headers()` by h
   succeeded/failed — don't poll or hand-roll that loop. A job's ctx comes from
   `createJobs({ context })`, never the request — pass tenant/user ids via `map`.
   Call `jobs.start()` in processes that run jobs.
+- **MCP hints:** `.ai({ annotations: { readOnlyHint, destructiveHint,
+  idempotentHint, openWorldHint, title } })` over the defaults (`.get()` is
+  read-only, confirm tools destructive). Hints only — use `confirm` to require
+  a person.
 - **`.ai()` is opt-in.** Only `.ai()`-marked procedures are exposed as tools.
   Mark ones a model must never call `.noAi()` (throws if `.ai()` is added). For
   tools a person must approve, `.ai({ confirm: true })` + `createApprovals(router,

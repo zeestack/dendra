@@ -7,7 +7,7 @@
 import { createToolExecutor, formatTool, toToolset, untilAborted } from "./tools.ts";
 import type { ToolFormat, ToolSource } from "./tools.ts";
 import type { JSONSchema } from "./schema.ts";
-import { initDendra, resolveProc, type AnyProc, type RouterRecord } from "./core.ts";
+import { initDendra, resolveProc, toolAnnotations, type AnyProc, type RouterRecord, type ToolAnnotations } from "./core.ts";
 import type { Approvals } from "./approvals.ts";
 import { DendraError, publicError } from "./errors.ts";
 
@@ -15,8 +15,8 @@ export interface McpToolDef {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
-  /** Set for `.get()` reads and `.ai({ confirm: true })` tools. */
-  annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean };
+  /** From `.ai({ annotations })`, over the defaults for `.get()` and confirm tools. */
+  annotations?: ToolAnnotations;
 }
 
 export interface McpCallResult {
@@ -28,12 +28,8 @@ export interface McpCallResult {
 export function mcpToolDefinitions(router: object): McpToolDef[] {
   return (toToolset(router, { format: "plain" }) as McpToolDef[]).map((def) => {
     const proc = resolveProc(router as RouterRecord, def.name.split("."));
-    // A read can't change anything; a confirm tool is one a person must approve.
-    if (proc?.method === "GET") return { ...def, annotations: { readOnlyHint: true } };
-    if (proc?.ai?.confirm) {
-      return { ...def, annotations: { readOnlyHint: false, destructiveHint: true } };
-    }
-    return def;
+    const annotations = proc ? toolAnnotations(proc) : {};
+    return Object.keys(annotations).length ? { ...def, annotations } : def;
   });
 }
 

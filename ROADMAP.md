@@ -186,9 +186,10 @@ the progressive-disclosure loop inside `runAgent`. See
 - [ ] **Vercel AI SDK interop** — a thin adapter exposing `mergeToolsets()` output as
   AI SDK `tools`, so dendra is the API/tool layer *under* whatever model stack you
   already use. Complement, not compete (see Positioning).
-- [ ] **MCP tool annotations** — mark tools `readOnly` / `destructive` and emit the
+- [x] **MCP tool annotations** — mark tools `readOnly` / `destructive` and emit the
   corresponding MCP hints, with a **confirmation / human-in-the-loop hook** for
-  dangerous calls.
+  dangerous calls. (Confirm tools in 0.7; per-tool `.ai({ annotations })` after
+  0.12, #59.)
 - [ ] **MCP resources & prompts** — expose read-only data as MCP *resources* and
   reusable *prompts*, not just tools — a complete MCP server, not tools-only.
   (Skills can surface as MCP prompts — see the context layer above.)

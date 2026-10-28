@@ -223,13 +223,26 @@ descriptions and schemas are the same as `toToolset(router, { format: 'plain' })
 function mcpToolDefinitions(router: object): McpToolDef[]
 ```
 
-Annotations are added from the procedure:
+Each tool's annotations start from defaults derived from the procedure, and
+[`.ai({ annotations })`](/reference/router) sets any of them over the defaults:
 
-| Procedure | `annotations` |
+| Procedure | Default `annotations` |
 | --- | --- |
 | `.get()` | `{ readOnlyHint: true }` (this wins over `confirm`) |
 | `.ai({ confirm: true })` | `{ readOnlyHint: false, destructiveHint: true }` |
-| anything else | none, which MCP treats as possibly destructive |
+| anything else | none, which MCP treats as possibly destructive and open-world |
+
+```ts
+search: route.post('/search').input(query)
+  .ai({ annotations: { readOnlyHint: true } })          // a POST that only reads
+  .handler(…),
+saveContact: route.input(contact)
+  .ai({ annotations: { idempotentHint: true, destructiveHint: false, openWorldHint: true } })
+  .handler(…),
+```
+
+Clients use these hints to decide what to ask the user about. They're hints, not
+enforcement: to make a person approve a call, use `confirm`.
 
 #### `McpToolDef`
 
@@ -238,8 +251,8 @@ interface McpToolDef {
   name: string
   description: string
   inputSchema: Record<string, unknown>
-  /** Set for .get() reads and .ai({ confirm: true }) tools. */
-  annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean }
+  /** Defaults for .get() and confirm tools, then .ai({ annotations }). Left out when empty. */
+  annotations?: ToolAnnotations
 }
 ```
 
