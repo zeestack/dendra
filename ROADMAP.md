@@ -309,7 +309,8 @@ has to step outside dendra to stay safe.
 
 Tracked in the [1.0 milestone](https://github.com/zeestack/dendra/milestone/1) (#38–#43).
 
-APIs may change before 1.0; breaking changes will be called out in release notes.
+APIs may change before 1.0. What counts as breaking, and how deprecations are handled, is in the
+[versioning policy](https://products.techfoundry.io/dendra/versioning).
 
 ---
 

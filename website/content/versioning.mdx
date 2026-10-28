@@ -1,0 +1,121 @@
+---
+title: Versioning and deprecations
+description: 'What dendra treats as a breaking change, how deprecations are marked and removed, which APIs are experimental, and what each release tells you.'
+---
+
+# Versioning and deprecations
+
+dendra follows [semantic versioning](https://semver.org). This page says what
+that means in practice: what counts as breaking, how long a deprecated API keeps
+working, and which parts are outside the guarantee.
+
+## Before and after 1.0
+
+| | Breaking changes ship in | Deprecated APIs last |
+|---|---|---|
+| **0.x (now)** | a minor release (0.12 → 0.13) | at least one minor release |
+| **1.0 and later** | a major release only (1.x → 2.0) | until the next major release |
+
+Patch releases (0.12.0 → 0.12.1) only fix bugs and never break anything.
+
+## What counts as breaking
+
+A change is breaking if code or a deployment that followed the docs stops
+working, or starts behaving differently, after the upgrade. That covers:
+
+- **Exports:** removing or renaming anything exported from `dendra`, `dendra/next`,
+  `dendra/react`, `dendra/anthropic` or `dendra/memory`, or moving it to another
+  subpath.
+- **Types:** a change that makes code which type-checked before fail to
+  type-check. Examples: a required option added, an accepted type narrowed, or a
+  client or caller result type changed.
+- **Runtime behaviour:** a change to documented behaviour, such as middleware
+  order, which ctx a call runs with, an error code, the HTTP status for a
+  case, a default value, or which procedures become tools.
+- **Wire formats:** the RPC envelope, batch protocol, NDJSON frames, SSE events
+  (`data`, `error`, `done`), the WebSocket protocol, REST paths and the OpenAPI
+  document, and the tool names and schemas generated for AI and MCP. A client and
+  server on the same major version always work together, even when their minor
+  versions differ.
+- **Supported environments:** dropping a Node.js version, TypeScript version or
+  peer dependency range that the release notes list as supported.
+
+These are **not** breaking:
+
+- Anything marked experimental (below), anything marked `@internal`, and files
+  under `dist/` other than through the documented entry points.
+- Error message text. Match on `error.code`, never on `message`.
+- Adding exports, optional options, optional fields in results or wire frames, or
+  new error codes. Code that switches over error codes should have a default
+  case.
+- Fixing a bug where behaviour contradicted the docs, including a type that
+  accepted code which always failed at runtime. The release notes call out such
+  fixes when they might affect working code.
+
+## How deprecations work
+
+When an API is replaced:
+
+1. The old name keeps working, usually as an alias for the new one.
+2. It gets a `@deprecated` JSDoc tag that names the replacement and the release
+   that removes it, e.g.
+   `@deprecated Import from "dendra/adapter". Removed in 0.13.` Editors
+   strike it through and show that message.
+3. The release notes list it under **Deprecated**, with the upgrade step.
+4. It's removed no sooner than the release named in its tag, and the release
+   notes for that release list the removal under **Breaking**.
+
+dendra doesn't print warnings for deprecated imports, because the type checker
+and editor already flag them and warnings would clutter production logs. A
+deprecated *behaviour* that types can't show (for example, a default that will
+change) logs one `console.warn` per process, naming the option that keeps the
+old behaviour.
+
+## Experimental APIs
+
+These are marked `@experimental` in their JSDoc and in the docs. They're
+outside the guarantee: they can change or be removed in a **minor** release,
+with a note in the release notes.
+
+- `dendra/adapter`: `resolveProc`, `invokeUnary`, `invokeStream` and their
+  types. Middleware order, after-hook timing and the `CallSite` shape may still
+  change.
+- The agent and context layer: `runAgent` (`dendra/anthropic`), `useAssistant`
+  (`dendra/react`), `createContextManager`, `memorySource`, `lazyToolSource`,
+  `lazyToolset`, and the `dendra/memory` helpers.
+
+These change with model APIs, so they stay experimental after 1.0. When an
+experimental API becomes stable, the release notes say so, and from then on it
+follows the rules above. The tool-shaping core (`.ai()`, `toToolset`,
+`createToolExecutor`, MCP and approvals) is stable.
+
+## Supported environments
+
+- **Node.js:** the versions in active or maintenance LTS. CI runs the tests on
+  each one. When a version reaches end-of-life, support for it is dropped in
+  the next minor release (before 1.0) or major release (after), and `engines` in
+  `package.json` is raised to match.
+- **TypeScript:** the version CI tests with, stated in the release notes.
+  Raising it follows the same rule as Node.js.
+- **Peer dependencies** (`next`, `react`, `@anthropic-ai/sdk`): the ranges in
+  `package.json`.
+
+Today that's Node.js 22 and 24, and TypeScript 5.9. `engines` still says
+Node.js 18 or later; 0.13 raises it to 22, since 18 and 20 are past
+end-of-life.
+
+## What release notes contain
+
+Every release has notes on the [release notes](/releases) page and in its
+GitHub release, grouped as:
+
+- **Breaking:** what changed, who it affects, and the upgrade step, with code
+  before and after.
+- **Deprecated:** the old and new names, and the release that removes the old
+  one.
+- **Experimental:** changes to experimental APIs, including any that became
+  stable.
+- Everything else: new features and fixes.
+
+Each major release from 2.0 also gets its own upgrade guide that covers every
+breaking change in one place.

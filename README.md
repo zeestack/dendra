@@ -281,7 +281,7 @@ const { items, input, setInput, busy, send } = useAssistant({
 
 Neither is required — bring your own loop/UI and just use `mergeToolsets`.
 
-`runAgent`, `useAssistant` and the context layer (`createContextManager`, `memorySource`, `lazyToolSource`, `lazyToolset`) are **experimental**: outside the 1.0 stability guarantee, so they may change in a minor release as model APIs move. The tool-shaping core (`.ai()`, `toToolset`, `createToolExecutor`, MCP, approvals) is stable.
+`runAgent`, `useAssistant` and the context layer (`createContextManager`, `memorySource`, `lazyToolSource`, `lazyToolset`, `dendra/memory`) are **experimental**: outside the 1.0 stability guarantee, so they may change in a minor release as model APIs move. The tool-shaping core (`.ai()`, `toToolset`, `createToolExecutor`, MCP, approvals) is stable. See the [versioning policy](https://products.techfoundry.io/dendra/versioning).
 
 **Amazon Bedrock:** `runAgent`'s client type is structural, so Claude on Bedrock
 drops in with no cast — pass an `AnthropicBedrock` client from
@@ -972,8 +972,8 @@ git push --follow-tags
 
 ## Status
 
-**Pre-1.0 (v0.9.0) — experimental, but broad.** Implemented and tested
-(over 260 tests, runtime + type-level, plus Postgres integration tests in CI): builder/router/dispatch, a batteries-included
+**Pre-1.0 — experimental, but broad.** Implemented and tested
+(over 390 tests, runtime + type-level, plus Postgres integration tests in CI): builder/router/dispatch, a batteries-included
 Standard Schema validator set (literals, enums, unions, nullable, record, and
 fluent string/number/array constraints), Next/Fetch/Node adapters, REST +
 OpenAPI, inferred client (unary + streaming), NDJSON streaming with cancellation,
@@ -993,8 +993,9 @@ and a WebSocket server and browser connection with safe defaults.
 Published on npm as [`dendra`](https://www.npmjs.com/package/dendra). Docs:
 [products.techfoundry.io/dendra](https://products.techfoundry.io/dendra/) —
 what changed in each version is in the
-[release notes](https://products.techfoundry.io/dendra/releases/). APIs may
-change before 1.0. What's planned next is in [`ROADMAP.md`](https://github.com/zeestack/dendra/blob/main/ROADMAP.md).
+[release notes](https://products.techfoundry.io/dendra/releases/). Before 1.0,
+breaking changes ship in minor releases, and deprecated names keep working for at
+least one; see the [versioning policy](https://products.techfoundry.io/dendra/versioning). What's planned next is in [`ROADMAP.md`](https://github.com/zeestack/dendra/blob/main/ROADMAP.md).
 
 ## License
 
