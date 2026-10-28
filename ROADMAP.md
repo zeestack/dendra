@@ -99,7 +99,7 @@ Each item links the issue with the evidence.
 Carried over from 0.9:
 - [ ] **Job status on the client** ([#27](https://github.com/zeestack/dendra/issues/27)) — a hook that follows a job over the subscription instead of polling
   (folds in `useProcedure` / `dendra/react-query`).
-- [ ] **`inspectRouter`** ([#28](https://github.com/zeestack/dendra/issues/28)) — moved up from Field requests: fail the build when a procedure lacks its tenant or role check.
+- [x] **`inspectRouter`** ([#28](https://github.com/zeestack/dendra/issues/28)) — moved up from Field requests: fail the build when a procedure lacks its tenant or role check.
 - [ ] **Safe-by-default AI** ([#29](https://github.com/zeestack/dendra/issues/29)) — moved up from Field requests (`.noAi()`, `.ai({ confirm: true })`): a security item.
 
 ### Then
@@ -268,7 +268,7 @@ has to step outside dendra to stay safe.
 - [x] ⭐ **After-handler hooks** (shipped 0.6.0) — `.after(({ ctx, input, result, error, durationMs,
   path }) => …)` on every transport (RPC, REST, caller, WebSocket, AI/MCP); errors
   in the hook are logged, not returned. _The primitive "Observability hooks" builds on._
-- [ ] **`inspectRouter(appRouter)`** _(scheduled for 0.10, [#28](https://github.com/zeestack/dendra/issues/28))_ — `[{ path, kind, method, restPath,
+- [x] **`inspectRouter(appRouter)`** _(lands in 0.10, [#28](https://github.com/zeestack/dendra/issues/28))_ — `[{ path, kind, method, restPath,
   middlewares, ai, meta }]`, plus named middleware and typed `.meta()`, so a test
   can fail the build when a procedure lacks its tenant or role check.
 - [ ] **Safe-by-default AI** _(scheduled for 0.10, [#29](https://github.com/zeestack/dendra/issues/29))_ — `.noAi()` (build-time error if `.ai()` is also set)
