@@ -96,6 +96,10 @@ UNAUTHORIZED a sign-in redirect. Don't rebuild a `Request` from `headers()` by h
   workspaceId: s.integer() })).use(({ input }) => …)` — `input` is typed and
   validated. A later `.input()` *extends* it (objects only; the earlier schema
   wins a shared key). Don't re-parse raw input in a guard or repeat the field.
+- **Errors the user or model should read are `DendraError`s.** Anything else
+  (a DB driver's error, a `TypeError`) reaches HTTP clients, WebSockets, job
+  snapshots and tools as `INTERNAL: Internal error`, and is logged. Don't send
+  raw error text to clients or the model yourself.
 - **Reads are `.get()`.** Only `.get()` procedures (path optional) answer GET;
   others get 405. POST must be JSON (415 otherwise). The client handles this.
 - **Files:** `s.file({ types, maxBytes })` in the input (handler gets a `File`;

@@ -27,7 +27,7 @@
 import type { PubSub } from "./pubsub.ts";
 import { enqueueDueSchedules, nextOccurrence, validateCalendar, type JobCalendar, type JobScheduleStore, type ScheduleRecord } from "./job-schedules.ts";
 import type { InferOutput, StandardSchemaV1 } from "./schema.ts";
-import { DendraError, type ErrorCode } from "./errors.ts";
+import { DendraError, publicError, type ErrorCode } from "./errors.ts";
 
 export type JobStatus = "queued" | "running" | "succeeded" | "failed";
 
@@ -358,8 +358,15 @@ function snapshot<O>(r: JobRecord): JobSnapshot<O> {
   } as JobSnapshot<O>;
 }
 
-// Same shape the HTTP handler sends for a thrown error.
+// Same shape the HTTP handler sends for a thrown error: snapshots reach
+// browsers, so an unexpected error's message stays out (`onError` has it).
 function toJobError(e: unknown): JobError {
+  const { code, message } = publicError(e);
+  return { code, message };
+}
+
+// For `stop()`'s result, which goes to the operator: the full message.
+function operatorError(e: unknown): JobError {
   if (e instanceof DendraError) return { code: e.code, message: e.message };
   return { code: "INTERNAL", message: e instanceof Error ? e.message : "Internal error" };
 }
@@ -441,7 +448,7 @@ export function createJobs<Ctx>(opts: JobsOptions<Ctx>): Jobs<Ctx> {
           publish(settled);
         }
       }, (error) => {
-        unsettled.set(rec.id, toJobError(error));
+        unsettled.set(rec.id, operatorError(error));
         report(error, meta);
       });
     };

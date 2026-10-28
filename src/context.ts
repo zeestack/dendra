@@ -88,6 +88,10 @@ export function lazyToolset(
     const orig = nameOf(tool);
     if (!orig) continue;
     const safe = sanitizeName(orig);
+    // `a.b` and `a_b` both become `a_b`: a call would run whichever came last.
+    if (nameMap.has(safe)) {
+      throw new Error(`lazyToolset: tools '${nameMap.get(safe)}' and '${orig}' both become '${safe}'; rename one`);
+    }
     nameMap.set(safe, orig);
     defBySafe.set(safe, withSafeName(tool, safe, format));
     const description = descOf(tool);

@@ -10,6 +10,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { AgentPart } from "./agent.ts";
 import { isPendingResult } from "./approvals.ts";
+import { DendraError, publicError } from "./errors.ts";
 import { recallMemory, rememberFacts, type MemoryStore } from "./memory.ts";
 import type { ContextManager } from "./context-manager.ts";
 
@@ -306,7 +307,10 @@ export async function* runAgent(opts: RunAgentOptions): AsyncGenerator<AgentPart
       try {
         result = await execute(original, tu.input);
       } catch (e) {
-        result = (e as Error).message;
+        // The model sees a DendraError's message; anything else is masked, since
+        // its text can carry internals, and logged here instead.
+        if (!(e instanceof DendraError)) console.error(`[dendra] tool '${original}' failed:`, e);
+        result = publicError(e).message;
         isError = true;
       }
       // The generative-UI event: the client renders a component for it. Use the

@@ -256,6 +256,11 @@ const external = await createMcpToolSource(mcpClient, {
 const { tools, execute } = mergeToolsets(local, external);
 ```
 
+Treat an external server like any untrusted input: its tool descriptions and
+results go to your model as written, so they can carry instructions. Connect only
+servers you trust, keep only the tools you need with `filter`, and use a `prefix`.
+A remote tool's error reaches the model as `BAD_GATEWAY` with the server's text.
+
 ### Optional helpers: the agentic loop + a React hook
 
 Core stays zero-dependency, but two **optional subpath exports** remove the
@@ -320,6 +325,13 @@ Middlewares **stack** and **throw a `DendraError` to reject**. Because an AI/MCP
 tool runs through the same dispatch path, a procedure behind `.use(auth)` is
 authorization-guarded for the model too — it inherits the user's permissions, it
 can't bypass them.
+
+**What callers see of an error.** A `DendraError`'s code and message reach the
+client (and, for tools, the model) as written. Any other error, such as a
+database driver's, reaches them as `INTERNAL: Internal error`, because its message
+can carry SQL, hostnames or credentials; the original is logged with
+`console.error`, and after-hooks get it as `error`. Throw a `DendraError` for
+anything a user or model should read.
 
 ### Input a middleware needs (tenant guards)
 

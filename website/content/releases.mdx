@@ -8,6 +8,29 @@ description: 'dendra release notes: what changed in each version, including brea
 What counts as breaking, and how long deprecated APIs last, is in the
 [versioning policy](/versioning).
 
+## Unreleased
+
+From the AI/MCP security review
+([#42](https://github.com/zeestack/dendra/issues/42),
+[`docs/security-review-ai-mcp.md`](https://github.com/zeestack/dendra/blob/main/docs/security-review-ai-mcp.md)).
+
+- **Unexpected errors are masked.** An error that isn't a `DendraError` used to
+  reach clients and the model with its own message, which can carry SQL,
+  hostnames or credentials. It now arrives as `INTERNAL: Internal error` over
+  HTTP, streams, WebSockets, job snapshots, the MCP bridge and tool calls, and
+  the original is logged with `console.error`. After-hooks still get the
+  original. If clients relied on such a message, throw a `DendraError` instead.
+- `createToolExecutor` only throws `DendraError`s, so a hand-written agent loop
+  can pass the message to the model. A tool without `.ai()` answers
+  `NOT_FOUND`, like a missing one, so the model can't probe for procedures.
+- `createMcpToolSource` throws a remote tool's error as a new `BAD_GATEWAY` (502)
+  code, with the server's text.
+- `lazyToolset` throws when two tools sanitize to the same name (`a.b` and
+  `a_b`), which used to route calls to the wrong one.
+- The example app's stdio MCP server only calls tools it listed and leaves out
+  confirm tools; its agent route builds ctx from the request instead of a user
+  id in the body.
+
 ## 0.12.1 — packaging fixes
 
 Upgrade from 0.12.0 if you load dendra with `require()` or use TypeScript with

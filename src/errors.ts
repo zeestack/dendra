@@ -14,7 +14,8 @@ export type ErrorCode =
   | "UNPROCESSABLE"
   | "TOO_MANY_REQUESTS"
   | "INTERNAL"
-  | "NOT_IMPLEMENTED";
+  | "NOT_IMPLEMENTED"
+  | "BAD_GATEWAY";
 
 const STATUS_BY_CODE: Record<ErrorCode, number> = {
   BAD_REQUEST: 400,
@@ -29,6 +30,7 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   TOO_MANY_REQUESTS: 429,
   INTERNAL: 500,
   NOT_IMPLEMENTED: 501,
+  BAD_GATEWAY: 502,
 };
 
 export class DendraError extends Error {
@@ -58,4 +60,19 @@ export class DendraClientError extends Error {
     this.code = e.code ?? "INTERNAL";
     this.details = e.details;
   }
+}
+
+/**
+ * What a caller (a browser, a WebSocket client, an MCP client, the model) sees
+ * of a thrown error. A `DendraError` is the app's deliberate message and passes
+ * through; anything else becomes a bare INTERNAL, since its message can carry
+ * internals (SQL, file paths, hostnames, keys). Callers log the original.
+ */
+export function publicError(e: unknown): { code: ErrorCode; message: string; details?: unknown } {
+  if (e instanceof DendraError) {
+    return e.details === undefined
+      ? { code: e.code, message: e.message }
+      : { code: e.code, message: e.message, details: e.details };
+  }
+  return { code: "INTERNAL", message: "Internal error" };
 }

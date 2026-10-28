@@ -82,7 +82,11 @@ const authed = route.use(({ ctx }) => {
 ```
 
 A tool behind `.use(auth)` is auth-guarded for the model too — it inherits the
-user's permissions.
+user's permissions. Build the tool executor's ctx from the request
+(`createContext(req)`), never from a user id in the body.
+
+Throw a `DendraError` for anything a user or model should read: any other error
+reaches clients and tools as `INTERNAL: Internal error` (and is logged).
 
 A guard that needs input (e.g. a tenant id) declares it before `.use()`; later
 `.input()` calls extend it rather than replace it:

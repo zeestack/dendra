@@ -9,6 +9,7 @@ import type { AnyProc, RouterRecord } from "./core.ts";
 import type { JSONSchema } from "./schema.ts";
 import { invokeStream, invokeUnary, resolveProc } from "./core.ts";
 import { collect, proposers, type Approvals } from "./approvals.ts";
+import { DendraError } from "./errors.ts";
 
 /** Appended to a confirm tool's description, so the model knows what to expect. */
 const CONFIRM_NOTE =
@@ -130,7 +131,7 @@ export function mergeToolsets(...sources: ToolSource[]): {
     tools: sources.flatMap((s) => s.tools),
     execute: (name, args) => {
       const src = owner.get(name);
-      if (!src) throw new Error(`Tool '${name}' not found in any source`);
+      if (!src) throw new DendraError("NOT_FOUND", `Tool '${name}' not found`);
       return src.execute(name, args);
     },
   };
@@ -139,7 +140,9 @@ export function mergeToolsets(...sources: ToolSource[]): {
 /**
  * Execute a tool call the model requested, by name, with the same safety as
  * HTTP. A confirm tool (`.ai({ confirm: true })`) is only proposed, via
- * `approvals`; without them it fails closed and never runs.
+ * `approvals`; without them it fails closed and never runs. It only throws
+ * `DendraError`s, so the message is safe to show the model: anything else is
+ * logged and becomes INTERNAL.
  */
 export function createToolExecutor<Ctx>(
   router: object,
@@ -148,11 +151,12 @@ export function createToolExecutor<Ctx>(
 ): (name: string, args: unknown) => Promise<unknown> {
   return async (name: string, args: unknown) => {
     const proc = resolveProc(router as RouterRecord, name.split("."));
-    if (!proc) throw new Error(`Tool '${name}' not found`);
-    if (!proc.ai?.expose) throw new Error(`Tool '${name}' is not exposed to AI`);
+    // The same answer for a missing procedure and one without `.ai()`, so the
+    // model can't probe for procedures it wasn't given.
+    if (!proc?.ai?.expose) throw new DendraError("NOT_FOUND", `Tool '${name}' not found`);
     if (proc.ai.confirm) {
       if (!opts.approvals) {
-        throw new Error(`Tool '${name}' needs approval; pass { approvals } to run it`);
+        throw new DendraError("FORBIDDEN", `Tool '${name}' needs approval; pass { approvals } to run it`);
       }
       const propose = proposers.get(opts.approvals as Approvals<never>);
       if (!propose) throw new Error("approvals must come from createApprovals()");
@@ -162,7 +166,15 @@ export function createToolExecutor<Ctx>(
     // else return the array) so a streaming procedure can be an LLM/MCP tool.
     // Validation runs first in both paths — the guardrail on model output.
     const site = { path: name, transport: "tool" as const };
-    if (proc.kind === "stream") return collect(invokeStream(proc, args, ctx, site));
-    return invokeUnary(proc, args, ctx, site);
+    try {
+      if (proc.kind === "stream") return await collect(invokeStream(proc, args, ctx, site));
+      return await invokeUnary(proc, args, ctx, site);
+    } catch (e) {
+      // Whatever loop called us hands the error text to the model, so an
+      // unexpected error's message (SQL, paths, hosts) stops here and is logged.
+      if (e instanceof DendraError) throw e;
+      console.error(`[dendra] tool '${name}' failed:`, e);
+      throw new DendraError("INTERNAL", "Internal error");
+    }
   };
 }

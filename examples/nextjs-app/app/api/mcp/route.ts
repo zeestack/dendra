@@ -88,8 +88,9 @@ export async function POST(req: Request): Promise<Response> {
       case "tools/call": {
         const name = m.params?.name as string;
         const args = (m.params?.arguments as unknown) ?? {};
-        const original = safeToOriginal.get(name) ?? name;
+        const original = safeToOriginal.get(name);
         try {
+          if (!original) throw new Error(`Tool '${name}' not found`);
           const result = await execute(original, args);
           return reply({ content: [{ type: "text", text: JSON.stringify(result) }] });
         } catch (e) {

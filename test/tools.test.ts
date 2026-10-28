@@ -40,7 +40,7 @@ describe("AI tools", () => {
   it("refuses to execute non-exposed procedures", async () => {
     const execute = createToolExecutor(router, {});
     await expect(execute("secret", { x: "hi" })).rejects.toThrow(
-      /not exposed/,
+      /not found/,
     );
   });
 });
