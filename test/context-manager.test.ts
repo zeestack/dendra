@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   createContextManager,
   memorySource,
-  toolSource,
-  createMemoryStore,
+  lazyToolSource,
 } from "../src/index.ts";
+import { createMemoryStore } from "../src/memory.ts";
 import { runAgent } from "../src/anthropic.ts";
 import type { AgentPart } from "../src/agent.ts";
 
@@ -30,7 +30,7 @@ describe("createContextManager — prepare", () => {
     ]);
     const cm = createContextManager({
       budget: { maxTokens: 100_000, count: len },
-      sources: [toolSource(TOOLS), memorySource(mem, { recall: { k: 3 } })],
+      sources: [lazyToolSource(TOOLS), memorySource(mem, { recall: { k: 3 } })],
     });
 
     const prep = await cm.prepare({
@@ -85,7 +85,7 @@ describe("createContextManager — handle & commit", () => {
   it("routes a search_tools call to the tool source", async () => {
     const cm = createContextManager({
       budget: { maxTokens: 100_000, count: len },
-      sources: [toolSource(TOOLS)],
+      sources: [lazyToolSource(TOOLS)],
     });
     const h = cm.handle("search_tools", { query: "create a note" }, {
       messages: [],
@@ -177,7 +177,7 @@ describe("runAgent with a ContextManager", () => {
     const cm = createContextManager({
       budget: { maxTokens: 100_000, count: len },
       sources: [
-        toolSource(TOOLS),
+        lazyToolSource(TOOLS),
         memorySource(mem, {
           recall: { k: 3 },
           remember: async () => ["Made a Groceries note"],

@@ -14,19 +14,12 @@
 import type { ServerOptions } from "./server.ts";
 import { toFetchHandler } from "./server.ts";
 
+// Only GET and POST: the RPC protocol answers nothing else (a 405). For REST
+// verbs over Next, export `toRestHandler(router, opts)` as each method instead.
 export function toNextHandler<Ctx>(
   router: object,
   opts: ServerOptions<Ctx> = {},
-): Record<
-  "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
-  (req: Request) => Promise<Response>
-> {
+): Record<"GET" | "POST", (req: Request) => Promise<Response>> {
   const handler = toFetchHandler(router, opts);
-  return {
-    GET: handler,
-    POST: handler,
-    PUT: handler,
-    PATCH: handler,
-    DELETE: handler,
-  };
+  return { GET: handler, POST: handler };
 }

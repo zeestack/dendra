@@ -5,7 +5,8 @@ public surface as of 0.11.0 and proposes, for each part, whether to **keep** it,
 **rename** it, mark it **experimental** (outside the 1.0 guarantee), or
 **remove** it. Breaking changes land in 0.x, before 1.0.
 
-Status: **proposal.** The decisions marked _open_ need the maintainer.
+Status: **decided 2026-10-28.** The maintainer accepted every recommendation
+below; they shipped in 0.12.0. Deprecated aliases (2, 3, 7) are removed in 0.13.
 
 ## Summary of proposed changes
 
@@ -22,7 +23,7 @@ Status: **proposal.** The decisions marked _open_ need the maintainer.
 
 Everything else is proposed **keep as is**.
 
-## 1. `approvals.approve(id, ctx)`: whose ctx? _(open)_
+## 1. `approvals.approve(id, ctx)`: whose ctx?
 
 **Today:** guards re-run with the **approver's** ctx, and the handler runs with
 it. #29 asked for the **proposer's** ctx (the user the model was acting for).

@@ -203,7 +203,10 @@ const appRouter = {
     .handler(({ input, ctx }) => ctx.db.posts.publish(input.postId)),
 };
 
-const approvals = createApprovals<Ctx>(appRouter, { scope: (ctx) => ctx.tenantId });
+const approvals = createApprovals<Ctx>(appRouter, {
+  scope: (ctx) => ctx.tenantId,   // who may see and decide it
+  proposer: (ctx) => ctx.user.id, // recorded as action.proposedBy
+});
 const execute = createToolExecutor(appRouter, ctx, { approvals });
 await execute("publish", { postId: "p1" });
 // → { status: "pending_approval", actionId, message } — the handler hasn't run
@@ -215,8 +218,11 @@ await approvals.reject(actionId, ctx, "wrong post");
 ```
 
 - Without `{ approvals }`, a confirm tool fails closed — it never runs.
-- `approve` re-runs the guards with the approver's ctx; if they reject, the action
-  stays pending. Each action is decided once.
+- `approve` runs with the **approver's** ctx, by design: the guards re-run against
+  the approver (if they reject, the action stays pending), and the handler sees the
+  approver as the caller. The proposer's ctx can't be stored (it holds sessions and
+  db handles), so `proposer(ctx)` records who the model was acting for as
+  `action.proposedBy`, for your handler and audit log. Each action is decided once.
 - `scope(ctx)` (e.g. the tenant) is recorded with the proposal; other scopes get
   `NOT_FOUND`. Set it in multi-tenant apps.
 - After-hooks see the proposal and the decision, with `approval: { id, status:
@@ -274,6 +280,8 @@ const { items, input, setInput, busy, send } = useAssistant({
 ```
 
 Neither is required — bring your own loop/UI and just use `mergeToolsets`.
+
+`runAgent`, `useAssistant` and the context layer (`createContextManager`, `memorySource`, `lazyToolSource`, `lazyToolset`) are **experimental**: outside the 1.0 stability guarantee, so they may change in a minor release as model APIs move. The tool-shaping core (`.ai()`, `toToolset`, `createToolExecutor`, MCP, approvals) is stable.
 
 **Amazon Bedrock:** `runAgent`'s client type is structural, so Claude on Bedrock
 drops in with no cast — pass an `AnthropicBedrock` client from
@@ -459,8 +467,10 @@ CORS-with-credentials for untrusted origins.
 **WebSockets are the exception:** browsers apply no CORS to them, and any site
 can open one to your server with the user's cookies. Serve them with
 `attachWsServer`, which requires `allowedOrigins` and refuses a foreign or
-missing `Origin` with 403 before the socket opens. If you use the lower-level
-`attachWs` on a socket you accepted yourself, that check is yours.
+missing `Origin` with 403 before the socket opens. The low-level pieces
+(`attachWs`, `connectWs`, `createWsSession`, `createWsClient`) are for runtimes
+without the `ws` package (Bun, Deno, Workers): they have no Origin check, size
+limits, heartbeats or reconnect, so on a socket you accepted yourself, those are yours.
 
 ### WebSockets with Next.js
 

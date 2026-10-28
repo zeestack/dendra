@@ -18,6 +18,8 @@ export interface PendingAction {
   input: unknown;
   /** From `scope(ctx)` at proposal time; decisions must match it. */
   scope?: string;
+  /** From `proposer(ctx)` at proposal time: who the model was acting for. */
+  proposedBy?: string;
   createdAt: number;
 }
 
@@ -79,6 +81,12 @@ export interface ApprovalsOptions<Ctx> {
    * actions whose scope matches the caller's. Set it in multi-tenant apps.
    */
   scope?: (ctx: Ctx) => string | undefined;
+  /**
+   * Who the model is acting for, from ctx (e.g. the user id), recorded on the
+   * action as `proposedBy`. Approval runs with the approver's ctx, so this is
+   * how a handler or after-hook can name both people.
+   */
+  proposer?: (ctx: Ctx) => string | undefined;
 }
 
 export interface Approvals<Ctx> {
@@ -86,15 +94,21 @@ export interface Approvals<Ctx> {
   list(ctx: Ctx): Promise<PendingAction[]>;
   get(id: string, ctx: Ctx): Promise<PendingAction | null>;
   /**
-   * Run the proposed call. Guards re-run with the approver's ctx; if they
-   * reject, the action stays pending. Returns the handler's result.
+   * Run the proposed call with the approver's ctx: guards re-run against the
+   * approver, and the handler sees the approver, not the proposer (that's
+   * `action.proposedBy`). If the guards reject, the action stays pending.
+   * Returns the handler's result.
    */
   approve(id: string, ctx: Ctx): Promise<unknown>;
   /** Drop the action. After-hooks record it as a FORBIDDEN failure. */
   reject(id: string, ctx: Ctx, reason?: string): Promise<void>;
-  /** @internal Used by the tool executor; apps don't call it. */
-  propose(proc: AnyProc, name: string, args: unknown, ctx: Ctx): Promise<PendingResult>;
 }
+
+type Propose = (proc: AnyProc, name: string, args: unknown, ctx: unknown) => Promise<PendingResult>;
+
+// How the tool executor stores a confirm tool's call. Kept off the `Approvals`
+// interface so it isn't public API; module-internal, not exported from dendra.
+export const proposers = new WeakMap<Approvals<never>, Propose>();
 
 /** Pending-action storage and decisions for a router's confirm tools. */
 export function createApprovals<Ctx>(
@@ -103,6 +117,7 @@ export function createApprovals<Ctx>(
 ): Approvals<Ctx> {
   const store = opts.store ?? createInMemoryApprovalStore();
   const scopeOf = (ctx: Ctx) => opts.scope?.(ctx);
+  const proposerOf = (ctx: Ctx) => opts.proposer?.(ctx);
 
   const find = async (id: string, ctx: Ctx) => {
     const action = await store.get(id);
@@ -122,7 +137,7 @@ export function createApprovals<Ctx>(
     }
   };
 
-  return {
+  const approvals: Approvals<Ctx> = {
     list: (ctx) => store.list(scopeOf(ctx)),
     get: find,
 
@@ -150,31 +165,35 @@ export function createApprovals<Ctx>(
         if (e !== rejection) throw e;
       });
     },
-
-    async propose(proc, name, args, ctx) {
-      const actionId = crypto.randomUUID();
-      const site = {
-        path: name,
-        transport: "tool" as const,
-        approval: { id: actionId, status: "pending" as const },
-      };
-      return invokeWith(proc, args, ctx, site, async () => {
-        const scope = scopeOf(ctx);
-        await store.add({
-          id: actionId,
-          tool: name,
-          input: args,
-          ...(scope !== undefined ? { scope } : {}),
-          createdAt: Date.now(),
-        });
-        return {
-          status: "pending_approval",
-          actionId,
-          message: "Waiting for a person to approve this action. It has not run yet.",
-        } satisfies PendingResult;
-      }) as Promise<PendingResult>;
-    },
   };
+
+  const propose = async (proc: AnyProc, name: string, args: unknown, ctx: Ctx) => {
+    const actionId = crypto.randomUUID();
+    const site = {
+      path: name,
+      transport: "tool" as const,
+      approval: { id: actionId, status: "pending" as const },
+    };
+    return invokeWith(proc, args, ctx, site, async () => {
+      const scope = scopeOf(ctx);
+      const proposedBy = proposerOf(ctx);
+      await store.add({
+        id: actionId,
+        tool: name,
+        input: args,
+        ...(scope !== undefined ? { scope } : {}),
+        ...(proposedBy !== undefined ? { proposedBy } : {}),
+        createdAt: Date.now(),
+      });
+      return {
+        status: "pending_approval",
+        actionId,
+        message: "Waiting for a person to approve this action. It has not run yet.",
+      } satisfies PendingResult;
+    }) as Promise<PendingResult>;
+  };
+  proposers.set(approvals as Approvals<never>, propose as Propose);
+  return approvals;
 }
 
 /** Collect a streaming tool's chunks: joined if all strings, else the array. */

@@ -118,6 +118,12 @@ export interface ContextManagerOptions {
   };
 }
 
+/**
+ * One token budget over memory recall, lazy tools and history; pass it as
+ * `runAgent({ context })`.
+ *
+ * @experimental Outside the 1.0 stability guarantee; may change in a minor release.
+ */
 export function createContextManager(opts: ContextManagerOptions): ContextManager {
   const budget: Budget = {
     maxTokens: opts.budget.maxTokens,
@@ -235,7 +241,11 @@ export interface MemorySourceOptions {
   }) => string[] | Promise<string[]>;
 }
 
-/** A context source backed by a `MemoryStore`: select = recall, commit = remember. */
+/**
+ * A context source backed by a `MemoryStore`: select = recall, commit = remember.
+ *
+ * @experimental Outside the 1.0 stability guarantee; may change in a minor release.
+ */
 export function memorySource(
   memory: MemoryStore,
   opts: MemorySourceOptions = {},
@@ -265,16 +275,20 @@ export function memorySource(
   };
 }
 
-export type ToolSourceOptions = LazyToolsetOptions;
+export type LazyToolSourceOptions = LazyToolsetOptions;
+/** @deprecated Renamed `LazyToolSourceOptions`. Removed in 0.13. */
+export type ToolSourceOptions = LazyToolSourceOptions;
 
 /**
  * A context source that defers a formatted toolset behind `search_tools`
  * (wraps `lazyToolset`). The model loads tools on demand; only the chosen
  * schemas enter context.
+ *
+ * @experimental Outside the 1.0 stability guarantee; may change in a minor release.
  */
-export function toolSource(
+export function lazyToolSource(
   tools: unknown[],
-  opts: ToolSourceOptions = {},
+  opts: LazyToolSourceOptions = {},
 ): ContextSource {
   const lazy = lazyToolset(tools, opts);
   return {
@@ -290,3 +304,9 @@ export function toolSource(
     },
   };
 }
+
+/**
+ * @deprecated Renamed `lazyToolSource` (it was easy to confuse with
+ * `toToolSource`, which builds `{ tools, execute }` from a router). Removed in 0.13.
+ */
+export const toolSource = lazyToolSource;
