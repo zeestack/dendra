@@ -351,7 +351,7 @@ that isn't an array is a `400` (`Batch body must be an array`). The client adds
 
 A `.stream()` procedure answers `200` with `Content-Type: application/x-ndjson`
 unless the request accepts `text/event-stream`. Each yielded value is one JSON
-line.
+line; `undefined` is sent as `null`, as in SSE and over WebSockets.
 
 If the handler throws after the response started, the last line is an error
 frame and the stream ends:

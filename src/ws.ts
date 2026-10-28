@@ -116,7 +116,7 @@ export function createWsSession(
               signal: ac.signal,
             })) {
               if (ac.signal.aborted) break;
-              out({ id: msg.id, type: "next", value });
+              out({ id: msg.id, type: "next", value: value ?? null }); // as over HTTP
             }
             if (!ac.signal.aborted) out({ id: msg.id, type: "complete" });
           } catch (e) {

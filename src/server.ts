@@ -540,7 +540,8 @@ function ndjsonResponse(iterable: AsyncIterable<unknown>, onCancel: () => void):
         const { done, value } = await it.next();
         if (cancelled) return;
         if (done) controller.close();
-        else controller.enqueue(enc.encode(JSON.stringify(value) + "\n"));
+        // `undefined` isn't JSON; send `null`, as SSE does.
+        else controller.enqueue(enc.encode(JSON.stringify(value ?? null) + "\n"));
       } catch (e) {
         if (cancelled) return;
         controller.enqueue(enc.encode(JSON.stringify({ $error: streamError(e) }) + "\n"));

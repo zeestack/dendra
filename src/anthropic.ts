@@ -328,7 +328,7 @@ export async function* runAgent(opts: RunAgentOptions): AsyncGenerator<AgentPart
       toolResults.push({
         type: "tool_result",
         tool_use_id: tu.id,
-        content: JSON.stringify(result),
+        content: JSON.stringify(result ?? null),
         is_error: isError,
       });
     }

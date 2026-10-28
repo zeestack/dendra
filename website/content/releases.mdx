@@ -35,6 +35,11 @@ From the AI/MCP security review
   Zod input showed the model no parameters. **Breaking:** an `.ai()` procedure
   whose input has no JSON Schema (Zod 3, plain Valibot, a `z.date()`) now throws
   where it's defined.
+- A stream that yields `undefined` sends `null` over NDJSON and WebSockets, as
+  SSE already did. NDJSON used to write the line `undefined`, which made the
+  client throw. A tool that returns `undefined` gives the MCP bridge and
+  `runAgent` the text `null` instead of no text
+  ([#64](https://github.com/zeestack/dendra/issues/64)).
 - **`maxBodyBytes` caps JSON bodies too.** RPC, batch and REST JSON bodies were
   read whole with no limit; now, like uploads, they're refused past the cap
   (default 10 MB) with `413 PAYLOAD_TOO_LARGE`, while reading
