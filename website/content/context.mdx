@@ -14,6 +14,9 @@ budget.
 
 Two sources ship today, unified by `createContextManager` under one token budget.
 
+> This layer is **experimental**: outside the 1.0 stability guarantee, so it may
+> change in a minor release.
+
 ## Memory — `dendra/memory`
 
 Persistent recall across sessions. Core ships the `MemoryStore` interface + a
@@ -65,7 +68,7 @@ one budget. `runAgent({ context })` then owns recall, lazy tool loading, history
 compaction, and write-backs — emitting a single `{ type: 'context' }` part stream.
 
 ```ts
-import { createContextManager, memorySource, toolSource } from 'dendra'
+import { createContextManager, memorySource, lazyToolSource } from 'dendra'
 
 const context = createContextManager({
   budget: { maxTokens: 100_000, count: (t) => estimateTokens(t) }, // you inject the counter
@@ -74,7 +77,7 @@ const context = createContextManager({
       recall: { k: 6 },                          // select  = recall before the turn
       remember: ({ text }) => extractFacts(text) // commit  = persist after (explicit)
     }),
-    toolSource(merged.tools, { pin: local.names, k: 6 }), // search_tools, deferred schemas
+    lazyToolSource(merged.tools, { pin: local.names, k: 6 }), // search_tools, deferred schemas
   ],
   history: { compact: (msgs, budget) => trimToFit(msgs, budget) }, // optional eviction hook
 })

@@ -8,7 +8,7 @@
 import type { AnyProc, RouterRecord } from "./core.ts";
 import type { JSONSchema } from "./schema.ts";
 import { invokeStream, invokeUnary, resolveProc } from "./core.ts";
-import { collect, type Approvals } from "./approvals.ts";
+import { collect, proposers, type Approvals } from "./approvals.ts";
 
 /** Appended to a confirm tool's description, so the model knows what to expect. */
 const CONFIRM_NOTE =
@@ -154,7 +154,9 @@ export function createToolExecutor<Ctx>(
       if (!opts.approvals) {
         throw new Error(`Tool '${name}' needs approval; pass { approvals } to run it`);
       }
-      return opts.approvals.propose(proc, name, args, ctx);
+      const propose = proposers.get(opts.approvals as Approvals<never>);
+      if (!propose) throw new Error("approvals must come from createApprovals()");
+      return propose(proc, name, args, ctx);
     }
     // Streaming tools: collect the chunks into a single result (join strings,
     // else return the array) so a streaming procedure can be an LLM/MCP tool.

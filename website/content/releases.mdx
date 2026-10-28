@@ -5,6 +5,38 @@ description: 'dendra release notes: what changed in each version, including brea
 
 # Release notes
 
+## 0.12.0 — API cleanup before 1.0
+
+The first round of the 1.0 API review
+([#38](https://github.com/zeestack/dendra/issues/38),
+[`docs/api-review-1.0.md`](https://github.com/zeestack/dendra/blob/main/docs/api-review-1.0.md)).
+Old names keep working as deprecated aliases until 0.13.
+
+- **`dendra/adapter`** (new, experimental) holds the dispatch core:
+  `resolveProc`, `invokeUnary`, `invokeStream`, and the `Proc`, `AnyProc`,
+  `CallSite`, `Transport` and `ProcedureKind` types. It's for writing
+  transports; apps don't need it. Importing these from `dendra` is deprecated.
+- **`lazyToolSource`** replaces the context manager's `toolSource` (and
+  `LazyToolSourceOptions` replaces `ToolSourceOptions`), which was easy to
+  confuse with `toToolSource`.
+- **Memory helpers** (`createMemoryStore`, `recallMemory`, `rememberFacts`,
+  `formatMemoryBlock`) come from `dendra/memory`. Importing them from `dendra` is
+  deprecated; the `MemoryStore` types stay in core.
+- **Approvals:** `approve` running with the approver's ctx is now documented as
+  the design. A new `proposer: (ctx) => string` option records who the model was
+  acting for as `action.proposedBy`.
+- **Experimental:** `runAgent`, `useAssistant`, `createContextManager`,
+  `memorySource`, `lazyToolSource` and `lazyToolset` are marked experimental.
+  They're outside the 1.0 guarantee and may change in a minor release.
+- The low-level WebSocket functions (`attachWs`, `connectWs`, `createWsSession`,
+  `createWsClient`) are documented as such: no Origin check, limits or reconnect.
+
+**Breaking:**
+- `toNextHandler` returns only `GET` and `POST`. The `PUT`, `PATCH` and `DELETE`
+  it used to return could only answer 405. If you destructured them, remove them.
+- `propose` is no longer on the `Approvals` object; it was internal. The tool
+  executor now only accepts approvals made by `createApprovals()`.
+
 ## 0.11.0 — SSE streams and job status on the client
 
 - **Server-Sent Events.** `createClient(url, { streamFormat: "sse" })` streams

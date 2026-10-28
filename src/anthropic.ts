@@ -123,6 +123,8 @@ function lastUserText(messages: Anthropic.MessageParam[]): string {
  * tool part (with its result) each time the model calls a tool. Tool names are
  * sanitized to Anthropic's allowed charset and mapped back on execution, so
  * dotted names like `notes.list` or `ext.weather.get` work transparently.
+ *
+ * @experimental Outside the 1.0 stability guarantee; may change in a minor release.
  */
 export async function* runAgent(opts: RunAgentOptions): AsyncGenerator<AgentPart> {
   const { client, model, execute } = opts;

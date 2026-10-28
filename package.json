@@ -1,6 +1,6 @@
 {
   "name": "dendra",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "private": false,
   "license": "MIT",
   "repository": {
@@ -39,6 +39,11 @@
       "types": "./dist/next.d.ts",
       "import": "./dist/next.js",
       "require": "./dist/next.cjs"
+    },
+    "./adapter": {
+      "types": "./dist/adapter.d.ts",
+      "import": "./dist/adapter.js",
+      "require": "./dist/adapter.cjs"
     }
   },
   "files": [

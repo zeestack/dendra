@@ -51,6 +51,11 @@ export interface UseAssistant {
   reset: () => void;
 }
 
+/**
+ * Headless chat state over an `AgentPart` stream (e.g. from `runAgent`).
+ *
+ * @experimental Outside the 1.0 stability guarantee; may change in a minor release.
+ */
 export function useAssistant(opts: UseAssistantOptions): UseAssistant {
   const { stream, onPart, onDone } = opts;
   const [items, setItems] = useState<AssistantItem[]>(opts.initialItems ?? []);

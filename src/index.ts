@@ -1,20 +1,53 @@
 // Public surface.
-export { initDendra, resolveProc, invokeUnary, invokeStream } from "./core.ts";
+import {
+  resolveProc as resolveProc_,
+  invokeUnary as invokeUnary_,
+  invokeStream as invokeStream_,
+} from "./core.ts";
+import type {
+  Proc as Proc_,
+  AnyProc as AnyProc_,
+  CallSite as CallSite_,
+  Transport as Transport_,
+  ProcedureKind as ProcedureKind_,
+} from "./core.ts";
+import {
+  createMemoryStore as createMemoryStore_,
+  recallMemory as recallMemory_,
+  rememberFacts as rememberFacts_,
+  formatMemoryBlock as formatMemoryBlock_,
+} from "./memory.ts";
+
+export { initDendra } from "./core.ts";
 export type {
-  Proc,
-  AnyProc,
   RouterRecord,
   HttpMethod,
-  ProcedureKind,
   Middleware,
   AfterHook,
   AfterInfo,
-  CallSite,
-  Transport,
   ReadBrand,
   Approval,
   AiConfig,
 } from "./core.ts";
+
+// Moved to `dendra/adapter` in 0.12. These aliases go in 0.13.
+/** @deprecated Import from "dendra/adapter". Removed in 0.13. */
+export const resolveProc = resolveProc_;
+/** @deprecated Import from "dendra/adapter". Removed in 0.13. */
+export const invokeUnary = invokeUnary_;
+/** @deprecated Import from "dendra/adapter". Removed in 0.13. */
+export const invokeStream = invokeStream_;
+/** @deprecated Import from "dendra/adapter". Removed in 0.13. */
+export type Proc<Ctx = unknown, In = unknown, Out = unknown, K extends ProcedureKind_ = "unary"> =
+  Proc_<Ctx, In, Out, K>;
+/** @deprecated Import from "dendra/adapter". Removed in 0.13. */
+export type AnyProc = AnyProc_;
+/** @deprecated Import from "dendra/adapter". Removed in 0.13. */
+export type CallSite = CallSite_;
+/** @deprecated Import from "dendra/adapter". Removed in 0.13. */
+export type Transport = Transport_;
+/** @deprecated Import from "dendra/adapter". Removed in 0.13. */
+export type ProcedureKind = ProcedureKind_;
 
 export {
   createApprovals,
@@ -94,6 +127,7 @@ export type { LazyToolset, LazyToolsetOptions } from "./context.ts";
 export {
   createContextManager,
   memorySource,
+  lazyToolSource,
   toolSource,
 } from "./context-manager.ts";
 export type {
@@ -105,6 +139,7 @@ export type {
   Loaded,
   PreparedContext,
   MemorySourceOptions,
+  LazyToolSourceOptions,
   ToolSourceOptions,
 } from "./context-manager.ts";
 
@@ -165,16 +200,17 @@ export type {
   AgentContextPart,
 } from "./agent.ts";
 
-// Memory: the store interface + a zero-dep reference implementation. The
-// interface lets you type `ctx.memory`; `createMemoryStore` is also re-exported
-// from the `dendra/memory` subpath.
-export {
-  createMemoryStore,
-  recallMemory,
-  rememberFacts,
-  formatMemoryBlock,
-} from "./memory.ts";
+// Memory: the store interface lives here so you can type `ctx.memory`; the
+// functions are in `dendra/memory`. These aliases go in 0.13.
 export type { MemoryStore, MemoryRecord, RecallOptions } from "./memory.ts";
+/** @deprecated Import from "dendra/memory". Removed in 0.13. */
+export const createMemoryStore = createMemoryStore_;
+/** @deprecated Import from "dendra/memory". Removed in 0.13. */
+export const recallMemory = recallMemory_;
+/** @deprecated Import from "dendra/memory". Removed in 0.13. */
+export const rememberFacts = rememberFacts_;
+/** @deprecated Import from "dendra/memory". Removed in 0.13. */
+export const formatMemoryBlock = formatMemoryBlock_;
 
 // Built-in Standard-Schema validators, namespaced as `s`.
 export * as s from "./schema.ts";

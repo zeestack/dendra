@@ -174,6 +174,28 @@ describe(".ai({ confirm: true })", () => {
     expect(await approvals.list(alice)).toHaveLength(1);
   });
 
+  it("records proposedBy from the proposer option", async () => {
+    reset();
+    const approvals = createApprovals<Ctx>(router, { proposer: (ctx) => `${ctx.tenant}/${ctx.role}` });
+    const { actionId } = (await createToolExecutor(router, alice, { approvals })("publish", {
+      postId: "p2",
+    })) as { actionId: string };
+    expect(await approvals.get(actionId, alice)).toMatchObject({ proposedBy: "t1/editor" });
+  });
+
+  it("keeps propose off the public Approvals object", () => {
+    const approvals = createApprovals<Ctx>(router);
+    expect("propose" in approvals).toBe(false);
+  });
+
+  it("rejects approvals not made by createApprovals", async () => {
+    const fake = { list: async () => [], get: async () => null, approve: async () => null, reject: async () => {} };
+    await expect(
+      createToolExecutor(router, alice, { approvals: fake })("publish", { postId: "p" }),
+    ).rejects.toThrow(/createApprovals/);
+    expect(published).not.toContain("t1:p");
+  });
+
   it("collects a streaming confirm tool on approval", async () => {
     const approvals = createApprovals<Ctx>(router);
     const { actionId } = (await createToolExecutor(router, alice, { approvals })("tail", {})) as {

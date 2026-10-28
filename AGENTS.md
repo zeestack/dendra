@@ -139,7 +139,8 @@ UNAUTHORIZED a sign-in redirect. Don't rebuild a `Request` from `headers()` by h
   tools a person must approve, `.ai({ confirm: true })` + `createApprovals(router,
   { scope })` passed as `createToolExecutor(router, ctx, { approvals })`: the call
   returns `{ status: "pending_approval", actionId }`; `approvals.approve(id, ctx)`
-  runs it with the approver's ctx. Don't build your own pending-action flow.
+  runs it with the approver's ctx (by design; `proposer: (ctx) => id` records
+  `action.proposedBy`). Don't build your own pending-action flow.
 - **WebSockets:** `attachWsServer(wss, router, { path, allowedOrigins,
   createContext })` on a `ws` server made with `{ noServer: true, maxPayload:
   1_000_000 }`; call `handleUpgrade` from your HTTP server's `upgrade` event
@@ -149,6 +150,8 @@ UNAUTHORIZED a sign-in redirect. Don't rebuild a `Request` from `headers()` by h
   resubscribes; refetch on `onStatus("connected")`, and `reconnect()` after
   sign-in when a 4401 close stopped it. Don't hand-roll a reconnect loop.
   Next.js can't accept upgrades: put a Node server in front (README recipe).
+  `attachWs`/`connectWs`/`createWsSession`/`createWsClient` are low-level (no
+  Origin check, limits or reconnect) — only for runtimes without `ws`.
 - **Other runtimes:** `toFetchHandler` (Hono/Bun/Deno/Workers), `toNodeHandler`
   (`node:http`), `toRestHandler` (plain REST), `toOpenApiDocument` (3.1 spec).
 - **Class controllers:** a class whose fields are procedures; put an *instance*
@@ -177,18 +180,18 @@ const external = await createMcpToolSource(connectedMcpClient, { prefix: "gh." }
 const merged = mergeToolsets(local, external);               // one { tools, execute }
 ```
 
-Optional helpers (peer deps, opt-in):
+Optional helpers (peer deps, opt-in; **experimental**, may change in a minor release):
 - `dendra/anthropic` → `runAgent({ client, model, tools, execute, prompt, system })`
   runs the model↔tool loop and yields typed `AgentPart`s.
 - `dendra/react` → `useAssistant({ stream, onPart, onDone })` owns the chat thread
   and streaming; you keep rendering.
 
-**Context layer (opt-in).** `createContextManager({ budget, sources })` unifies
+**Context layer (opt-in, experimental).** `createContextManager({ budget, sources })` unifies
 memory recall + lazy tool loading under one token budget; pass it as
 `runAgent({ context })`. Sources: `memorySource(store, { recall, remember })` and
-`toolSource(tools, { pin, k })` (defers schemas behind `search_tools`). Core has
+`lazyToolSource(tools, { pin, k })` (defers schemas behind `search_tools`). Core has
 no tokenizer/embedder — you inject `budget.count`; the embedder lives in your
-`MemoryStore`. Standalone `memory`/`lazyToolset`/`recall`/`remember` options on
+`MemoryStore`; import `createMemoryStore` from `dendra/memory`. Standalone `memory`/`lazyToolset`/`recall`/`remember` options on
 `runAgent` still work when you don't use a manager.
 
 ## The framework ↔ app boundary (important)
@@ -204,6 +207,8 @@ primitives. See [ARCHITECTURE.md](ARCHITECTURE.md) and the worked example in
 
 ## Don't
 
+- Don't import `resolveProc`/`invokeUnary`/`invokeStream` from `dendra` — they're
+  in `dendra/adapter` (experimental), for writing transports, not apps.
 - Don't write codegen or `.d.ts` by hand — the client type comes from `typeof appRouter`.
 - Don't add auth/session logic inside a handler's framework wiring — put it in `ctx`/`.use()`.
 - Don't expose a procedure as a tool unless you add `.ai()`.

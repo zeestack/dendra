@@ -172,7 +172,9 @@ filename, and never render HTML/SVG/XML inline unless you set
 
 **WebSockets bypass CORS:** any site can open one with the user's cookies.
 `attachWsServer` refuses a foreign or missing `Origin` with 403 before the socket
-opens; if you use bare `attachWs`, that check is yours.
+opens. The low-level `attachWs`/`connectWs`/`createWsSession`/`createWsClient`
+are for runtimes without the `ws` package, and have no Origin check, limits or
+reconnect: with them, those are yours.
 
 ## Class controllers (NestJS-style, no decorators)
 
@@ -203,7 +205,8 @@ Opt-in peer-dep subpaths: `dendra/anthropic` (`runAgent` — the model↔tool lo
 `dendra/react` (`useAssistant` — the chat thread + streaming),
 `dendra/memory` (persistent recall), and `dendra/next` (`orPage` — errors as
 Next pages). Use them, or bring your own loop/UI — the
-core tool-shaping primitives are enough on their own.
+core tool-shaping primitives are enough on their own. `runAgent`, `useAssistant`
+and the context layer are experimental: they may change in a minor release.
 
 ## Standard Schema
 

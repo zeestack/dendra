@@ -67,6 +67,8 @@ const tokenize = (s: string): string[] => s.toLowerCase().match(/[a-z0-9]+/g) ??
 /**
  * Wrap a formatted toolset so its schemas load on demand via `search_tools`.
  * Pass the result as `runAgent({ lazyToolset })`.
+ *
+ * @experimental Outside the 1.0 stability guarantee; may change in a minor release.
  */
 export function lazyToolset(
   tools: unknown[],

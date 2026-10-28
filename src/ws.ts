@@ -45,6 +45,11 @@ export interface WsSession {
   handleClose(): void;
 }
 
+/**
+ * Low-level: for runtimes without the `ws` package (Bun, Deno, Workers) or an
+ * in-memory loopback. No Origin check, size limits, heartbeats or reconnect —
+ * on Node use `attachWsServer`, in the browser `createWsConnection`.
+ */
 export function createWsSession(
   router: object,
   send: (data: string) => void,
@@ -195,6 +200,11 @@ function createQueue(): AsyncQueue {
 
 function noop(): void {}
 
+/**
+ * Low-level: for runtimes without the `ws` package (Bun, Deno, Workers) or an
+ * in-memory loopback. No Origin check, size limits, heartbeats or reconnect —
+ * on Node use `attachWsServer`, in the browser `createWsConnection`.
+ */
 export function createWsClient<R extends object>(
   send: (data: string) => void,
 ): WsClient<R> {
@@ -292,6 +302,11 @@ export interface WsLikeSocket {
   on(event: "message", cb: (data: unknown) => void): void;
   on(event: "close", cb: () => void): void;
 }
+/**
+ * Low-level: for runtimes without the `ws` package (Bun, Deno, Workers) or an
+ * in-memory loopback. No Origin check, size limits, heartbeats or reconnect —
+ * on Node use `attachWsServer`, in the browser `createWsConnection`.
+ */
 export function attachWs(
   socket: WsLikeSocket,
   router: object,
@@ -310,6 +325,11 @@ export interface WhatwgSocket {
   addEventListener(event: "message", cb: (e: { data: unknown }) => void): void;
   addEventListener(event: "close", cb: () => void): void;
 }
+/**
+ * Low-level: for runtimes without the `ws` package (Bun, Deno, Workers) or an
+ * in-memory loopback. No Origin check, size limits, heartbeats or reconnect —
+ * on Node use `attachWsServer`, in the browser `createWsConnection`.
+ */
 export function connectWs<R extends object>(
   socket: WhatwgSocket,
 ): Client<R> {
