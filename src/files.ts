@@ -102,7 +102,7 @@ export function fileFields(inputJsonSchema: JSONSchema | undefined): string[] {
 
 // ── Reading uploads ────────────────────────────────────────────────────────
 
-/** Default cap on a multipart or form request body: 10 MB. */
+/** Default cap on a request body (JSON, multipart or form): 10 MB. */
 export const DEFAULT_MAX_BODY_BYTES = 10 * 1024 * 1024;
 
 function tooLarge(max: number): DendraError {
@@ -136,6 +136,11 @@ export async function limitedBytes(req: Request, max: number): Promise<Uint8Arra
     at += c.byteLength;
   }
   return out;
+}
+
+/** A text (JSON) body, under the same cap as `limitedBytes`. */
+export async function limitedText(req: Request, max: number): Promise<string> {
+  return new TextDecoder().decode(await limitedBytes(req, max));
 }
 
 /**

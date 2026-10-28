@@ -72,6 +72,16 @@ throw new Error('Note title already taken')
 throw new DendraError('CONFLICT', 'Note title already taken')
 ```
 
+### JSON bodies are capped
+
+`maxBodyBytes` (default 10 MB) used to cap only uploads and form posts. It now
+caps JSON, batch and REST bodies too, answering `413 PAYLOAD_TOO_LARGE`. If an
+endpoint takes JSON larger than 10 MB, raise it:
+
+```ts
+toNextHandler(appRouter, { prefix: '/rpc/', createContext, maxBodyBytes: 50 * 1024 * 1024 })
+```
+
 ### Tool calls
 
 - `createToolExecutor` answers `NOT_FOUND` for a procedure without `.ai()`, as
