@@ -137,7 +137,7 @@ Options shared by `toFetchHandler`, `toNodeHandler`, `toNextHandler` and
 | `prefix` | `string` | `'/rpc/'` (`''` for `toRestHandler`) | URL prefix the procedure paths live under. |
 | `createContext` | `(req: Request) => Ctx \| Promise<Ctx>` | none (ctx is `{}`) | Builds the per-request context: auth, tenant, db handles. A `DendraError` it throws becomes the response with its status; anything else is a `500` `INTERNAL`. |
 | `allowFormPosts` | `boolean` | `false` | Accept plain HTML form posts: `application/x-www-form-urlencoded`, or multipart without the `X-Dendra` header. Browsers send these cross-site with no preflight, so with this on, CSRF protection is your job (for example a token checked in `.use()`). |
-| `maxBodyBytes` | `number` | `10485760` (10 MB) | Cap on multipart and form request bodies, in bytes. Over it is a `413` `PAYLOAD_TOO_LARGE`. |
+| `maxBodyBytes` | `number` | `10485760` (10 MB) | Cap on every request body (JSON, batch, multipart and form), in bytes. Over it is a `413` `PAYLOAD_TOO_LARGE`. |
 | `heartbeatMs` | `number` | `15_000` | How often an SSE stream sends a `: ping` comment so proxies and load balancers don't close it. `0` turns heartbeats off. |
 
 ## OpenAPI
@@ -311,10 +311,11 @@ Only the media type is compared; parameters such as `; charset=utf-8` are ignore
 
 ### Body size
 
-Multipart and form bodies are capped at `maxBodyBytes` (default 10 MB). A
+Every request body (JSON, batch, multipart and form, on RPC and REST) is capped
+at `maxBodyBytes` (default 10 MB). A
 declared `Content-Length` over the cap is refused before reading, and the count
 is enforced while reading, so a chunked upload can't slip past. Over the cap is a
-`413` `PAYLOAD_TOO_LARGE`. JSON bodies aren't read through this cap.
+`413` `PAYLOAD_TOO_LARGE`.
 
 ### Responses and errors
 

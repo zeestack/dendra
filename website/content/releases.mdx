@@ -27,6 +27,11 @@ From the AI/MCP security review
   code, with the server's text.
 - `lazyToolset` throws when two tools sanitize to the same name (`a.b` and
   `a_b`), which used to route calls to the wrong one.
+- **`maxBodyBytes` caps JSON bodies too.** RPC, batch and REST JSON bodies were
+  read whole with no limit; now, like uploads, they're refused past the cap
+  (default 10 MB) with `413 PAYLOAD_TOO_LARGE`, while reading
+  ([#62](https://github.com/zeestack/dendra/issues/62)). Raise `maxBodyBytes`
+  if you accept larger JSON.
 - `approvals.list(ctx)` only returns actions in the caller's exact scope. When
   `scope(ctx)` returned `undefined` (say, a user with no tenant), it used to
   return every tenant's pending actions

@@ -11,7 +11,7 @@ import type { AnyProc, CallSite, HttpMethod, RouterRecord } from "./core.ts";
 import { invokeStream, invokeUnary, resolveProc } from "./core.ts";
 import type { JSONSchema } from "./schema.ts";
 import { DendraError, publicError } from "./errors.ts";
-import { DEFAULT_MAX_BODY_BYTES, fileResponse, isFileResult, readFormInput } from "./files.ts";
+import { DEFAULT_MAX_BODY_BYTES, fileResponse, isFileResult, limitedText, readFormInput } from "./files.ts";
 
 export interface ServerOptions<Ctx> {
   /** URL prefix that procedure paths live under. Default `/rpc/`. */
@@ -25,7 +25,7 @@ export interface ServerOptions<Ctx> {
    * token checked in `.use()`).
    */
   allowFormPosts?: boolean;
-  /** Cap on multipart / form request bodies, in bytes. Default 10 MB. */
+  /** Cap on request bodies (JSON, batch, multipart, form), in bytes. Default 10 MB. */
   maxBodyBytes?: number;
   /**
    * How often an idle SSE stream sends a `: ping` comment, so proxies and load
@@ -114,9 +114,10 @@ export function toFetchHandler<Ctx>(
     if (dotted === "__batch") {
       let calls: Array<{ path: string; input?: unknown }>;
       try {
-        calls = JSON.parse(await req.text());
+        calls = JSON.parse(await limitedText(req, maxBody));
         if (!Array.isArray(calls)) throw new Error("not an array");
-      } catch {
+      } catch (e) {
+        if (e instanceof DendraError) return errorToResponse(e); // PAYLOAD_TOO_LARGE
         return jsonResponse(
           { error: { code: "BAD_REQUEST", message: "Batch body must be an array" } },
           400,
@@ -192,10 +193,11 @@ export function toFetchHandler<Ctx>(
           const json = url.searchParams.get("$input");
           raw = json !== null ? JSON.parse(json) : Object.fromEntries(url.searchParams);
         } else {
-          const text = await req.text();
+          const text = await limitedText(req, maxBody);
           raw = text ? JSON.parse(text) : undefined;
         }
-      } catch {
+      } catch (e) {
+        if (e instanceof DendraError) return errorToResponse(e); // PAYLOAD_TOO_LARGE
         return jsonResponse(
           { error: { code: "BAD_REQUEST", message: "Invalid JSON body" } },
           400,
@@ -391,9 +393,10 @@ export function toRestHandler<Ctx>(
       }
     } else if (method !== "GET") {
       try {
-        const text = await req.text();
+        const text = await limitedText(req, maxBody);
         if (text) body = JSON.parse(text) as Record<string, unknown>;
-      } catch {
+      } catch (e) {
+        if (e instanceof DendraError) return errorToResponse(e); // PAYLOAD_TOO_LARGE
         return jsonResponse(
           { error: { code: "BAD_REQUEST", message: "Invalid JSON body" } },
           400,
