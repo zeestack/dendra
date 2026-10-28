@@ -555,9 +555,10 @@ const appRouter = {
   `version` that goes up with each change, so a client can also drop stale ones.
 - **`watch` doesn't check access.** Job ids are random UUIDs, but guard the
   procedure anyway, as above: `store.get(id)` returns the job's input to check.
-- **Survives crashes.** A worker holds a lease on a running job and renews it; if
-  the process dies, the lease runs out and another worker retries. `stop()`
-  aborts `job.signal` and requeues running jobs without using an attempt.
+- **Survives crashes.** A worker holds a lease on a running job and renews it.
+  By default, an expired lease allows retry, and `stop()` aborts `job.signal`
+  and requeues running jobs without using an attempt. Set `onInterrupt: "fail"`
+  for work that must not replay after a crash, shutdown or execution deadline.
 - **Snapshots:** `{ id, name, status, attempt, maxAttempts, progress, result, error }`,
   where `status` is `"queued" | "running" | "succeeded" | "failed"` and `error` is
   `{ code, message }`. A retrying job is `"queued"` with the last error.
@@ -565,6 +566,67 @@ const appRouter = {
   `store.schema` into a migration). Workers claim with `FOR UPDATE SKIP LOCKED`,
   so any number of processes share the queue. Finished rows stay until you
   delete them.
+
+### Execution deadlines and shutdown
+
+Use explicit policies for work that charges an external provider:
+
+```ts
+const generate = jobs.define("generate-v2", {
+  retries: 0,
+  timeoutMs: 20 * 60_000,
+  onInterrupt: "fail",
+  concurrency: 2,
+  run: ({ input, job }) => generateImage(input, { signal: job.signal }),
+});
+
+const stopped = await jobs.stop({ graceMs: 6_000, timeoutMs: 8_000 });
+if (!stopped.drained) console.error("Unfinished jobs", stopped.pending, stopped.errors);
+```
+
+The deadline is persisted when an attempt is claimed. Late progress and results
+cannot overwrite its terminal outcome. A handler that ignores cancellation keeps
+its local concurrency slot until it actually exits. JavaScript cannot cancel a
+provider's completed charge or guarantee exactly-once external side effects;
+use provider idempotency keys where available. `onInterrupt: "fail"` prevents
+automatic replay of an interrupted job; ordinary error retries still follow
+`retries`.
+
+`stop({ graceMs, timeoutMs })` stops taking work, allows the grace period, aborts
+remaining handlers and waits only within the total budget. Its result reports
+unfinished work or failed settlement instead of claiming a successful drain.
+The no-argument `stop()` keeps immediate cancellation and its `Promise<void>`
+signature, but rejects if work does not drain within 30 seconds.
+
+Apply the updated `store.schema` as the database owner before deploying workers;
+it adds policy columns to existing tables. Stop old workers before enabling new
+policies, since 0.9 workers do not understand them. Custom stores must advertise
+and implement `capabilities.executionPolicies` to accept these options.
+
+### Durable daily and weekly schedules
+
+```ts
+await sync.schedule("daily-search-sync", { workspaceId: 13 },
+  { kind: "daily", hourUTC: 2, minuteUTC: 0 });
+await rankCheck.schedule("weekly-rank-check", { workspaceId: 13 },
+  { kind: "weekly", weekdayUTC: 1, hourUTC: 3, minuteUTC: 0 });
+await jobs.unschedule("weekly-rank-check");
+```
+
+Schedules use UTC; weekdays run from Sunday (`0`) through Saturday (`6`). Input
+is validated using the job's schema. Re-registering an unchanged schedule keeps
+its next occurrence. Updating or removing a schedule invalidates stale scheduler
+reads. Removing a schedule does not cancel work already enqueued.
+
+Workers atomically enqueue each occurrence and advance its cursor, so concurrent
+workers cannot create duplicate occurrences. Missed occurrences coalesce into
+one catch-up job, followed by the next future occurrence; a restart does not
+replay the entire backlog. Existing active-key deduplication still applies.
+Arbitrary cron expressions and local-time/DST scheduling are not supported.
+
+The Postgres schema adds a companion schedules table and revision sequence.
+After owner-run migration, grant the runtime role table DML and sequence USAGE.
+Custom stores need `capabilities.schedules` and the `JobScheduleStore` methods.
 
 ## Class-based controllers (NestJS-style, no decorators)
 

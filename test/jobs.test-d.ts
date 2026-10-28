@@ -56,3 +56,16 @@ route
 const api = createClient<typeof router>("");
 expectTypeOf(api.mapped).returns.resolves.toEqualTypeOf<{ jobId: string }>();
 expectTypeOf(api.mapped).parameter(0).toEqualTypeOf<{ docId: string }>();
+
+// Execution policy options and bounded shutdown preserve inference and the legacy signature.
+const paid = jobs.define("paid", { input: s.object({ id: s.string() }), timeoutMs: 1000, onInterrupt: "fail", retries: 0,
+  run: ({ input, job }) => { expectTypeOf(job.signal).toEqualTypeOf<AbortSignal>(); return input.id; },
+});
+expectTypeOf(paid.enqueue).parameter(0).toEqualTypeOf<{ id: string }>();
+expectTypeOf(jobs.stop()).toEqualTypeOf<Promise<void>>();
+expectTypeOf(jobs.stop({ graceMs: 10, timeoutMs: 20 })).resolves.toMatchTypeOf<{ drained: boolean; pending: number }>();
+paid.schedule("daily", { id: "one" }, { kind: "daily", hourUTC: 2, minuteUTC: 0 });
+// @ts-expect-error schedule input is the job's validated input
+paid.schedule("daily", { id: 1 }, { kind: "daily", hourUTC: 2, minuteUTC: 0 });
+// @ts-expect-error invalid interruption policy
+jobs.define("bad-policy", { onInterrupt: "refund", run: () => null });

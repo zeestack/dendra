@@ -127,7 +127,10 @@ export type {
   JobRecord,
   NewJob,
   JobSettlement,
+  JobStopOptions,
+  JobStopResult,
 } from "./jobs.ts";
+export type { JobCalendar, NewSchedule, ScheduleRecord, JobScheduleStore } from "./job-schedules.ts";
 export { createPgJobStore } from "./pg-job-store.ts";
 export type { PgJobStore, PgQueryable } from "./pg-job-store.ts";
 
