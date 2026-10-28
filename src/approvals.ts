@@ -138,7 +138,12 @@ export function createApprovals<Ctx>(
   };
 
   const approvals: Approvals<Ctx> = {
-    list: (ctx) => store.list(scopeOf(ctx)),
+    // Match exactly, as `find` does: a store treats an undefined scope as "all",
+    // and a ctx without one must not see other scopes' actions.
+    async list(ctx) {
+      const scope = scopeOf(ctx);
+      return (await store.list(scope)).filter((a) => a.scope === scope);
+    },
     get: find,
 
     async approve(id, ctx) {

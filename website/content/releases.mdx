@@ -27,6 +27,10 @@ From the AI/MCP security review
   code, with the server's text.
 - `lazyToolset` throws when two tools sanitize to the same name (`a.b` and
   `a_b`), which used to route calls to the wrong one.
+- `approvals.list(ctx)` only returns actions in the caller's exact scope. When
+  `scope(ctx)` returned `undefined` (say, a user with no tenant), it used to
+  return every tenant's pending actions
+  ([#63](https://github.com/zeestack/dendra/issues/63)).
 - The example app's stdio MCP server only calls tools it listed and leaves out
   confirm tools; its agent route builds ctx from the request instead of a user
   id in the body.
