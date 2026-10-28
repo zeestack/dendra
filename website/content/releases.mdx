@@ -5,6 +5,24 @@ description: 'dendra release notes: what changed in each version, including brea
 
 # Release notes
 
+## 0.12.1 — packaging fixes
+
+Upgrade from 0.12.0 if you load dendra with `require()` or use TypeScript with
+CommonJS. No API changes.
+
+- **CommonJS shares one copy of core.** Each `require()` subpath
+  (`dendra/next`, `dendra/adapter`, …) used to bundle its own copy, so
+  `instanceof DendraError` failed across them, `orPage` missed core's
+  `NOT_FOUND`, and `.after()` hooks reported a guard's error as `INTERNAL`.
+- **CommonJS types.** TypeScript projects compiling to CommonJS got the ESM
+  types for every entry; they now get `.d.cts` files. Older
+  `moduleResolution: "node"` setups resolve the subpaths too.
+- `dendra/package.json` is exported, and `engines` declares Node 18 or later.
+- **`followJob` and `useJob`** retry as soon as the browser comes back online,
+  instead of waiting out the backoff.
+- The package is checked with `publint` and `are-the-types-wrong` in CI, and the
+  example app is built and tested against each commit.
+
 ## 0.12.0 — API cleanup before 1.0
 
 The first round of the 1.0 API review
