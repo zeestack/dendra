@@ -1,0 +1,91 @@
+---
+title: Upgrading
+description: 'Upgrade guides for each major dendra release: every breaking change and the steps to move your app across.'
+---
+
+# Upgrading
+
+Each major release gets a guide here that covers every breaking change in one
+place, with the upgrade step for each. Smaller changes are in the
+[release notes](/releases), and what counts as breaking is in the
+[versioning policy](/versioning).
+
+## Upgrading to 1.0
+
+> **1.0 isn't released yet.** This guide lists the breaking changes already
+> decided for 1.0 and grows as they land. It's final when 1.0 ships.
+
+It assumes you're on 0.12. If you're on an older release, read the
+**Breaking** and **Upgrading** notes for each release in between first; most
+apps only need the [0.12.0](/releases#0120--api-cleanup-before-10) steps.
+
+Before you start, upgrade to the latest 0.12 and fix every deprecation warning
+your editor shows. Each `@deprecated` tag names its replacement, and those
+names are the ones removed below.
+
+### Node.js 22 or later
+
+`engines` goes from Node.js 18 to 22, because 18 and 20 are past end-of-life.
+CI tests Node.js 22 and 24. Upgrade your runtime and your CI image, and your
+Next.js deployment target if you set one.
+
+### Deprecated aliases are removed
+
+These names were moved or renamed in 0.12 and are gone from `dendra`:
+
+| Removed from `dendra` | Use instead |
+| --- | --- |
+| `resolveProc`, `invokeUnary`, `invokeStream` | the same names from `dendra/adapter` |
+| types `Proc`, `AnyProc`, `CallSite`, `Transport`, `ProcedureKind` | the same names from `dendra/adapter` |
+| `createMemoryStore`, `recallMemory`, `rememberFacts`, `formatMemoryBlock` | the same names from `dendra/memory` |
+| `toolSource` | `lazyToolSource` |
+| type `ToolSourceOptions` | `LazyToolSourceOptions` |
+
+Most of these are import changes:
+
+```ts
+// before
+import { createMemoryStore, invokeUnary } from 'dendra'
+// after
+import { createMemoryStore } from 'dendra/memory'
+import { invokeUnary } from 'dendra/adapter'
+```
+
+The memory types (`MemoryStore`, `MemoryRecord`, `RecallOptions`) stay in
+`dendra`.
+
+### Unexpected errors reach clients as `INTERNAL`
+
+An error that isn't a `DendraError`, such as a database driver's error or a
+`TypeError`, used to reach the client or model with its own message. It now
+arrives as `INTERNAL: Internal error` over HTTP, streams, WebSockets, job
+snapshots, the MCP bridge and tool calls, and the original is logged with
+`console.error`. After-hooks still see the original error.
+
+If a client or model needs to read a message, throw a `DendraError` with that
+message:
+
+```ts
+// before: the client saw "Note title already taken"
+throw new Error('Note title already taken')
+// after
+throw new DendraError('CONFLICT', 'Note title already taken')
+```
+
+### Tool calls
+
+- `createToolExecutor` answers `NOT_FOUND` for a procedure without `.ai()`, as
+  it does for one that doesn't exist, so a model can't probe for procedures.
+  It only throws `DendraError`s.
+- `createMcpToolSource` throws a remote tool's error as `BAD_GATEWAY` (502),
+  with the server's text. Code that matched another code for remote failures
+  should match `BAD_GATEWAY`.
+- `lazyToolset` throws when two tool names become the same once sanitized
+  (`a.b` and `a_b`). It used to route calls to the wrong tool. Rename one of
+  them.
+
+### After upgrading
+
+Run your type checker first: removed names fail to compile, so it finds every
+import to change. Then run your tests, paying attention to any that assert an
+error's message rather than its `code`.

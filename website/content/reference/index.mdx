@@ -1,0 +1,54 @@
+---
+title: API reference
+description: 'Every public dendra API: functions, route builder methods, validators and types, by entry point.'
+---
+
+# API reference
+
+Every public API in dendra, with its signature, options and defaults. For how
+the pieces fit together, start with the [Quickstart](/quickstart) and
+[Features](/features).
+
+This reference describes the latest release. Changes on `main` that aren't
+released yet are listed under **Unreleased** in the [release notes](/releases).
+A test in the repository fails if a public export is missing here, so the
+reference can't fall behind the code.
+
+## Entry points
+
+| Import | What's in it | Reference |
+| --- | --- | --- |
+| `dendra` | Routers, validation, servers, clients, real-time, jobs, AI tools and MCP | all pages below except `dendra/adapter` |
+| `dendra/next` | `createServerCaller`, `orPage` for Server Components | [Server](/reference/server) |
+| `dendra/react` | `useJob`, `useAssistant` | [Jobs](/reference/jobs), [Agents](/reference/agents) |
+| `dendra/anthropic` | `runAgent` | [Agents](/reference/agents) |
+| `dendra/memory` | Memory store and helpers | [Agents](/reference/agents) |
+| `dendra/adapter` | The dispatch core, for writing transports | [dendra/adapter](/reference/adapter) |
+
+`dendra/next`, `dendra/react` and `dendra/anthropic` need their peer dependency
+(`next`, `react`, `@anthropic-ai/sdk`). The rest of dendra has no dependencies.
+
+## Pages
+
+- [Router](/reference/router): `initDendra`, the route builder, middleware,
+  after-hooks, errors, files, `inspectRouter`.
+- [Schema](/reference/schema): the `s.*` validators and Standard Schema types.
+- [Server](/reference/server): fetch, Node, REST and Next.js handlers, OpenAPI,
+  the wire protocol, and `dendra/next`.
+- [Client](/reference/client): `createClient`, `urlFor` and the in-process
+  `createCaller`.
+- [Real-time](/reference/realtime): pub/sub (in-memory, Redis, Postgres) and
+  WebSockets.
+- [Jobs](/reference/jobs): background jobs, schedules, job stores, and following
+  a job from the browser.
+- [AI tools & MCP](/reference/ai): toolsets, the tool executor, MCP in both
+  directions, and approvals.
+- [Agents, context & memory](/reference/agents): `runAgent`, `useAssistant`,
+  the context manager and memory.
+- [dendra/adapter](/reference/adapter): for transport authors.
+
+## Stability
+
+APIs marked **Experimental** can change in a minor release. APIs marked
+**Deprecated** name their replacement and the release that removes them. The
+[versioning policy](/versioning) has the details.

@@ -3,7 +3,9 @@
 export const dynamic = 'force-static'
 
 const SITE = 'https://products.techfoundry.io/dendra'
-const PAGES = ['', 'quickstart', 'ai-mcp', 'context', 'features', 'architecture', 'compare', 'releases']
+const PAGES = ['', 'quickstart', 'ai-mcp', 'context', 'features', 'architecture', 'compare', 'releases', 'upgrading', 'versioning', 'reference',
+  'reference/router', 'reference/schema', 'reference/server', 'reference/client', 'reference/realtime',
+  'reference/jobs', 'reference/ai', 'reference/agents', 'reference/adapter']
 
 export default function sitemap() {
   return PAGES.map((p) => ({

@@ -1,0 +1,577 @@
+---
+title: Jobs
+description: 'Background jobs: createJobs, job definitions, retries and backoff, keys, durable schedules, stores (in-memory and Postgres), and following a job from the client.'
+---
+
+# Jobs
+
+Background jobs run work that outlives the request that started it (an AI call,
+an export). A procedure enqueues and returns `{ jobId }` at once; a worker in any
+process runs the job with retries and backoff; status goes out on the pub/sub, so
+the client subscribes instead of polling. For the concepts, see
+[Features → Background jobs](/features#background-jobs).
+
+```ts
+import { createJobs, createInMemoryJobStore, createPgJobStore, followJob } from 'dendra'
+import { useJob } from 'dendra/react'
+```
+
+```ts
+const jobs = createJobs({ store: createPgJobStore(pool), pubsub, context: () => ({ db }) })
+
+const summarize = jobs.define('summarize', {
+  input: s.object({ docId: s.string() }),
+  key: (input) => input.docId, // one queued-or-running job per doc
+  run: async ({ input, ctx, job }) => {
+    await job.progress({ step: 'loading' })
+    return { summary: await ctx.db.summarize(input.docId, { signal: job.signal }) }
+  },
+})
+
+jobs.start() // in every process that should run jobs
+
+export const appRouter = {
+  summarize: {
+    start: authed.input(s.object({ docId: s.string() })).background(summarize), // → { jobId }
+    watch: authed.input(s.object({ jobId: s.string() }))
+      .stream(({ input, signal }) => summarize.watch(input.jobId, { signal })),
+  },
+}
+```
+
+`.background(job, map?)` is a route builder method; see
+[Router](/reference/router). It validates the input, runs the middlewares, and
+enqueues. A job's `ctx` comes from `context()`, never from the request, so use
+`map` to pass what the job needs from the call (tenant, user id) in its input.
+Check that the caller may see a job in the `watch` procedure; `watch` itself
+doesn't check ownership.
+
+## Defining and running jobs
+
+### `createJobs(opts)`
+
+Creates the job system: a registry of named jobs and a worker. Every process
+that enqueues or runs jobs calls it with the same store and pub/sub.
+
+```ts
+function createJobs<Ctx>(opts: JobsOptions<Ctx>): Jobs<Ctx>
+```
+
+Jobs are named, not tied to a procedure path, so a queued job still finds its
+handler after a deploy renames a route.
+
+#### `JobsOptions`
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `store` | `JobStore` | required | Where jobs live. `createInMemoryJobStore()` or `createPgJobStore(pool)`. |
+| `pubsub` | `PubSub` | required | Status events and cross-process wake-ups go out here. Use a multi-process pub/sub (Redis, Postgres) when several processes enqueue, run or watch jobs. |
+| `context` | `() => Ctx \| Promise<Ctx>` | required | The `ctx` a job runs with: your db, pubsub, clients. Called once per attempt. Never the request's. |
+| `pollMs` | `number` | `1000` | How often an idle worker checks the store. An enqueue wakes workers at once through the pub/sub. |
+| `leaseMs` | `number` | `30_000` | How long a claim lasts without renewal. A running job's lease is renewed every `leaseMs / 3`. |
+| `onError` | `(err: unknown, job?: { id: string; name: string; attempt: number }) => void` | `console.error` | Failed attempts and store errors. Errors thrown by `onError` itself are swallowed. |
+
+#### `Jobs`
+
+What `createJobs` returns.
+
+| Member | Type | Description |
+| --- | --- | --- |
+| `define(name, opts)` | `Job<I, O>` | Register a job. `I` is inferred from `opts.input`, `O` from `run`'s return. |
+| `get(id)` | `Promise<JobSnapshot \| null>` | A job's current state, any name. |
+| `watch(id, opts?)` | `AsyncIterable<JobSnapshot>` | As `Job.watch`, for any name. |
+| `unschedule(id)` | `Promise<void>` | Remove a schedule. Jobs it already enqueued are unaffected. |
+| `start()` | `void` | Start running jobs in this process. Without it, the process only enqueues. Calling it again does nothing. |
+| `stop()` | `Promise<void>` | Stop claiming and abort running work. Rejects if work hasn't drained within 30 seconds. |
+| `stop(opts)` | `Promise<JobStopResult>` | Allow `graceMs` for work to finish, then abort; report what's unfinished within `timeoutMs`. |
+
+A worker only claims jobs whose names are defined in its process. Each loop it
+enqueues due schedules (if the store supports them), claims one job whose name
+has free `concurrency`, and goes straight on to the next; when there's nothing
+to claim it waits `pollMs` or until woken.
+
+`define` throws if the name is already defined, if `timeoutMs` isn't a positive
+safe integer, if `onInterrupt` isn't `'retry'` or `'fail'`, or if `timeoutMs` or
+`onInterrupt` is set and the store doesn't advertise `capabilities.executionPolicies`.
+
+`start()` after `stop()` does nothing: a stopped `Jobs` doesn't restart. Create a
+new one.
+
+#### `JobOptions`
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `input` | `StandardSchemaV1` | none | Validated when the job is enqueued (and when a schedule is registered). |
+| `run` | `(o: { input: I; ctx: Ctx; job: JobHandle }) => O \| Promise<O>` | required | The work. Its return value (JSON) is the job's `result`; `undefined` is stored as `null`. |
+| `retries` | `number` | `2` | Retries after the first attempt fails, so `maxAttempts` is `retries + 1`. |
+| `backoff` | `{ initialMs?: number; maxMs?: number }` | `1000` → `60_000` | Delay before retry n: `initialMs · 2^(n-1)`, capped at `maxMs`. |
+| `concurrency` | `number` | `5` | Jobs of this name running at once in each process. |
+| `key` | `(input: I) => string \| null \| undefined` | none | Dedupe: at most one queued-or-running job per key. Enqueueing again returns that job's id. |
+| `timeoutMs` | `number` | none | Per-attempt execution deadline. Needs a store with `executionPolicies`. |
+| `onInterrupt` | `'retry' \| 'fail'` | `'retry'` | What happens to an attempt interrupted by shutdown, a deadline or a lost worker. Use `'fail'` for non-idempotent or paid work. Needs a store with `executionPolicies`. |
+
+**Retries.** When `run` throws, the error goes to `onError`. If attempts remain,
+the job goes back to `"queued"` with the error and runs again after the backoff
+(1 s, 2 s, 4 s, … up to 60 s by default); otherwise it's `"failed"`. The
+snapshot's `error` is `{ code, message }`: a `DendraError` keeps its code and
+message, anything else becomes `INTERNAL: Internal error` (the full error goes
+to `onError`).
+
+**Keys.** With `key`, enqueueing while a job with the same name and key is
+`"queued"` or `"running"` creates nothing and returns the existing `jobId`. Once
+that job succeeds or fails, the key is free again. A key of `null` or
+`undefined` never dedupes.
+
+**Interruptions.** These follow `onInterrupt`:
+
+| Interruption | `'retry'` (default) | `'fail'` |
+| --- | --- | --- |
+| `stop()` aborts the attempt | Requeued at once; the attempt isn't counted. | `"failed"`: `Job interrupted by worker shutdown`. |
+| `timeoutMs` passes | Counts as a failed attempt (retried if attempts remain): `Job execution deadline exceeded`. | `"failed"`: `Job execution deadline exceeded`. |
+| The worker dies or loses its lease | Another worker reclaims it after the lease runs out and runs it again. If that was the last attempt, it fails: `Job was interrupted on its last attempt`. | `"failed"` when reclaimed: `Job was interrupted; replay is disabled`. |
+
+On a deadline or lost lease, `job.signal` aborts. A handler that ignores the
+signal keeps its concurrency slot until it actually returns, but its late
+progress and result are ignored. These errors have code `INTERNAL`.
+
+#### `Job`
+
+What `define` returns. Pass it to `.background()` or call it directly.
+
+| Member | Type | Description |
+| --- | --- | --- |
+| `name` | `string` | The job's name. |
+| `enqueue(input, opts?)` | `Promise<{ jobId: string }>` | Validate and queue. Returns at once; a worker runs the job. `opts.delayMs` delays the first run. |
+| `schedule(id, input, calendar)` | `Promise<void>` | Register or update a durable daily or weekly schedule (see [Schedules](#schedules)). |
+| `get(id)` | `Promise<JobSnapshot<O> \| null>` | The job's current state, or `null`. |
+| `watch(id, opts?)` | `AsyncIterable<JobSnapshot<O>>` | The current state, then every change, ending when the job succeeds or fails. `opts.signal` stops it. |
+
+`enqueue` and `schedule` throw a `DendraError` `BAD_REQUEST` (status 400, with
+the schema issues as `details`) when the input is invalid. `watch` throws
+`NOT_FOUND` when there's no such job. `watch` subscribes before reading the
+store, and drops events whose `version` it has already seen, so each state
+appears once and in order.
+
+```ts
+const { jobId } = await summarize.enqueue({ docId: 'd1' }, { delayMs: 5_000 })
+for await (const snap of summarize.watch(jobId)) console.log(snap.status, snap.progress)
+```
+
+#### `JobHandle`
+
+The `job` argument `run` receives.
+
+| Member | Type | Description |
+| --- | --- | --- |
+| `id` | `string` | The job's id. |
+| `attempt` | `number` | 1 on the first run, 2 on the first retry, … |
+| `signal` | `AbortSignal` | Aborts when the worker stops, the deadline passes, or the lease is lost. Pass it to long work. |
+| `progress(progress)` | `Promise<void>` | Store and publish progress (anything JSON) for watchers. Ignored once the attempt is over. |
+
+#### `JobSnapshot`
+
+What a job looks like from outside: `get`, `watch`, and the pub/sub events.
+`O` is the job's result type.
+
+```ts
+type JobSnapshot<O = unknown> = {
+  id: string
+  name: string
+  version: number // goes up with every change; higher is newer
+  attempt: number
+  maxAttempts: number
+  progress: unknown
+} & (
+  | { status: 'queued' | 'running'; result?: undefined; error: JobError | null }
+  | { status: 'succeeded'; result: O; error: null }
+  | { status: 'failed'; result?: undefined; error: JobError }
+)
+```
+
+A retrying job is `"queued"` with the last attempt's error. Snapshots are
+published on the topic `dendra:job:<id>`; wake-ups use `dendra:jobs`.
+
+#### `JobStatus`
+
+```ts
+type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed'
+```
+
+`succeeded` and `failed` are final.
+
+#### `JobError`
+
+```ts
+interface JobError {
+  code: ErrorCode
+  message: string
+}
+```
+
+#### `JobStopOptions`
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `graceMs` | `number` | `0` | Time to let running work finish before aborting it. |
+| `timeoutMs` | `number` | required | Total budget, including grace and store settlement. |
+
+Both must be safe integers with `0 <= graceMs <= timeoutMs`, or `stop` throws.
+
+#### `JobStopResult`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `drained` | `boolean` | `true` when nothing is left running or unsettled. |
+| `pending` | `number` | Jobs still running or unsettled, plus one for an unfinished worker-loop operation. |
+| `errors` | `JobError[]` | Present when settling a job in the store failed. Full messages, for the operator. |
+
+```ts
+process.on('SIGTERM', async () => {
+  const stopped = await jobs.stop({ graceMs: 6_000, timeoutMs: 8_000 })
+  if (!stopped.drained) console.error('Unfinished jobs', stopped.pending, stopped.errors)
+  process.exit(0)
+})
+```
+
+## Schedules
+
+`job.schedule(id, input, calendar)` registers a durable daily or weekly schedule
+in UTC. It needs a store that supports schedules (both built-in stores do;
+otherwise it throws). The input is validated with the job's schema, and the key
+is computed from it.
+
+```ts
+await sync.schedule('daily-search-sync', { workspaceId: 13 },
+  { kind: 'daily', hourUTC: 2, minuteUTC: 0 })
+await rankCheck.schedule('weekly-rank-check', { workspaceId: 13 },
+  { kind: 'weekly', weekdayUTC: 1, hourUTC: 3, minuteUTC: 0 })
+await jobs.unschedule('weekly-rank-check')
+```
+
+- The first run is the next occurrence strictly after now.
+- Registering the same id with the same configuration keeps its next
+  occurrence, so restarting a process can't postpone a missed run. A changed
+  configuration resets it and gets a new revision.
+- Workers enqueue each occurrence and advance the schedule atomically, so
+  concurrent workers never create duplicates. Each worker loop handles at most
+  100 due schedules.
+- After an outage, missed occurrences coalesce into **one** catch-up job, then
+  the next future occurrence. If a job with the same key is still active, the
+  occurrence is consumed without enqueueing.
+- Removing a schedule doesn't cancel jobs already enqueued.
+
+`schedule` throws if `id` is empty or the calendar is invalid (`RangeError`).
+
+#### `JobCalendar`
+
+Recurring wall-clock times in UTC. Sunday is weekday `0`; Saturday is `6`.
+
+```ts
+type JobCalendar =
+  | { kind: 'daily'; hourUTC: number; minuteUTC: number }
+  | { kind: 'weekly'; weekdayUTC: number; hourUTC: number; minuteUTC: number }
+```
+
+`hourUTC` is an integer 0–23, `minuteUTC` 0–59, `weekdayUTC` 0–6.
+
+#### `ScheduleRecord`
+
+A stored schedule.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | `string` | The schedule id passed to `schedule`. |
+| `name` | `string` | The job name. |
+| `input` | `unknown` | The validated input. |
+| `key` | `string \| null` | The job's key for this input. |
+| `maxAttempts` | `number` | From the job's `retries`. |
+| `timeoutMs` | `number` (optional) | From the job's options. |
+| `onInterrupt` | `'retry' \| 'fail'` (optional) | From the job's options. Omitted means `'retry'`. |
+| `calendar` | `JobCalendar` | When it runs. |
+| `nextRunAt` | `number` | Epoch ms of the next unconsumed occurrence. |
+| `revision` | `number` | Fences configuration changes and delete/recreate. Compare for equality only. |
+
+#### `NewSchedule`
+
+A schedule to store: a `ScheduleRecord` without `revision`.
+
+```ts
+type NewSchedule = Omit<ScheduleRecord, 'revision'>
+```
+
+#### `JobScheduleStore`
+
+The schedule methods a store implements to support schedules. Optional for
+custom stores; advertise it with `capabilities.schedules: true`.
+
+| Method | Returns | Contract |
+| --- | --- | --- |
+| `putSchedule(schedule)` | `Promise<ScheduleRecord>` | Upsert by id. Identical configuration (all fields except `nextRunAt` and `revision`; JSON key order irrelevant; omitted `onInterrupt` means `'retry'`) keeps the cursor and revision. A change, or delete and recreate, gets a new revision. |
+| `removeSchedule(id)` | `Promise<boolean>` | Remove future occurrences; already queued or running jobs are unaffected. |
+| `dueSchedules(names, now, limit?)` | `Promise<ScheduleRecord[]>` | Due records for these job names, ordered by `nextRunAt` then `id`, up to `limit`. |
+| `advanceSchedule(record, nextRunAt, job)` | `Promise<boolean>` | Atomically compare id, revision and `nextRunAt`, enqueue `job`, and advance the cursor. `false` if the record is stale or removed. An active job with the same name and key still consumes the occurrence. Neither write may survive alone; `nextRunAt` must be after the old cursor. |
+
+## Stores
+
+### `createInMemoryJobStore()`
+
+A single-process store for development and tests. Jobs and schedules don't
+survive a restart, and other processes can't see them. Supports execution
+policies and schedules.
+
+```ts
+function createInMemoryJobStore(): JobStore & JobScheduleStore
+```
+
+### `createPgJobStore(pool, opts?)`
+
+A Postgres store: jobs survive deploys and crashes, and any number of worker
+processes share the queue. Workers claim with `FOR UPDATE SKIP LOCKED`, so two
+never take the same job. It takes a structural pool, so a `pg.Pool` drops in.
+Supports execution policies and schedules.
+
+```ts
+function createPgJobStore(pool: PgQueryable, opts?: { table?: string }): PgJobStore
+```
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `table` | `string` | `'dendra_jobs'` | The jobs table name. Must be a plain identifier (letters, digits and `_`, not starting with a digit), or it throws. |
+
+```ts
+const store = createPgJobStore(pool)
+await store.setup() // or copy store.schema into your migration
+```
+
+**Tables.** `store.schema` is a list of additive, idempotent statements. With
+the default table name they create:
+
+| Object | What it is |
+| --- | --- |
+| `dendra_jobs` | The jobs: `id`, `name`, `key`, `input`, `status`, `attempt`, `version`, `max_attempts`, `timeout_ms`, `on_interrupt`, `deadline_at`, `progress`, `result`, `error`, `run_at`, `locked_until`, `token`, `created_at`, `updated_at`. |
+| `dendra_jobs_active_key` | Unique index on `(name, key)` for queued and running jobs with a key. This is what enforces `key`. |
+| `dendra_jobs_runnable` | Index on `(name, run_at)` for queued and running jobs. |
+| `dendra_jobs_schedule_revision` | Sequence for schedule revisions, owned by the schedules table. |
+| `dendra_jobs_schedules` | Schedules: `id`, `name`, `key`, `input`, `max_attempts`, `timeout_ms`, `on_interrupt`, `calendar`, `next_run_at`, `revision`. |
+| `dendra_jobs_schedules_due` | Index on `(name, next_run_at)`. |
+
+The schema also runs `ALTER TABLE … ADD COLUMN IF NOT EXISTS` for `timeout_ms`,
+`on_interrupt` and `deadline_at`, so an existing 0.9 table is upgraded. Apply
+the updated schema as the database owner before deploying new workers, and stop
+old workers before using `timeoutMs` or `onInterrupt`: 0.9 workers don't
+understand them.
+
+Finished jobs stay in the table until you delete them:
+
+```sql
+DELETE FROM dendra_jobs
+WHERE status IN ('succeeded', 'failed') AND updated_at < now() - interval '7 days';
+```
+
+`add` throws if it can't enqueue after three tries (a keyed insert that keeps
+racing with a job that finishes).
+
+#### `PgJobStore`
+
+A `JobStore` plus the `JobScheduleStore` methods and:
+
+| Member | Type | Description |
+| --- | --- | --- |
+| `schema` | `string[]` | The additive `CREATE`/`ALTER` statements, for an owner-run migration. |
+| `setup()` | `Promise<void>` | Run `schema` in order. Idempotent. |
+
+#### `PgQueryable`
+
+What `createPgJobStore` needs from a pool. A `pg.Pool` matches.
+
+```ts
+interface PgQueryable {
+  query(text: string, values?: unknown[]): Promise<{ rows: unknown[] }>
+}
+```
+
+### Writing a store
+
+#### `JobStore`
+
+The interface a store implements. Every write after `claim` carries the claim's
+`token`, and does nothing once another worker has taken the job over (its lease
+ran out).
+
+| Member | Returns | Contract |
+| --- | --- | --- |
+| `capabilities` | `{ executionPolicies?: boolean; schedules?: boolean }` | Optional. Advertise support for `timeoutMs`/`onInterrupt` and for schedules; `define` and `schedule` refuse otherwise. |
+| `add(job)` | `Promise<{ id: string; created: boolean }>` | Insert, unless a queued or running job has the same name and non-null key: then return that one with `created: false`. |
+| `claim(names, token, leaseMs)` | `Promise<JobRecord \| null>` | Take the next runnable job of one of `names`: queued with `runAt` passed, or running with an expired lease (or passed deadline). Set it running, add one to `attempt` and `version`, set the lease and deadline, and set `interrupted` when it was running. |
+| `extend(id, token, leaseMs)` | `Promise<boolean>` | Renew the lease. `false` when the job is no longer ours or its deadline passed. |
+| `progress(id, token, progress)` | `Promise<number \| null>` | Store progress and return the new version, or `null` when the job is no longer ours. |
+| `settle(id, token, outcome)` | `Promise<JobRecord \| null>` | Apply a `JobSettlement` and add one to `version`. `null` when the job is no longer ours. Refuse a success after the deadline. |
+| `get(id)` | `Promise<JobRecord \| null>` | The job, or `null`. |
+
+A store may also implement the `JobScheduleStore` methods.
+
+#### `JobRecord`
+
+A stored job.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `id` | `string` | |
+| `name` | `string` | The job name. |
+| `key` | `string \| null` | Dedupe key. |
+| `input` | `unknown` | The validated input. |
+| `status` | `JobStatus` | |
+| `attempt` | `number` | Attempts started so far (a claim adds one). |
+| `version` | `number` | 1 when added; every visible change (claim, progress, settle) adds one. A lease renewal doesn't. |
+| `maxAttempts` | `number` | `retries + 1`. |
+| `progress` | `unknown` | Last progress, or `null`. |
+| `result` | `unknown` | The result once succeeded. |
+| `error` | `JobError \| null` | The last error. |
+| `runAt` | `number` | Epoch ms; a queued job isn't claimed before it. |
+| `timeoutMs` | `number` (optional) | Per-attempt deadline; absent means none. |
+| `onInterrupt` | `'retry' \| 'fail'` (optional) | Interruption policy. |
+| `deadlineAt` | `number \| null` (optional) | Epoch ms, set on claim and cleared on settlement. |
+| `interrupted` | `boolean` (optional) | Set by `claim` only: this attempt reclaimed a running job. |
+
+#### `NewJob`
+
+A job to insert.
+
+```ts
+interface NewJob {
+  id: string
+  name: string
+  key: string | null
+  input: unknown
+  maxAttempts: number
+  runAt: number
+  timeoutMs?: number
+  onInterrupt?: 'retry' | 'fail'
+}
+```
+
+#### `JobSettlement`
+
+How an attempt ended, passed to `settle`.
+
+```ts
+type JobSettlement =
+  | { status: 'succeeded'; result: unknown }
+  | { status: 'failed'; error: JobError }
+  // back in the queue: a retry, or (refund) an attempt interrupted by stop()
+  | { status: 'queued'; error: JobError | null; runAt: number; refund: boolean }
+```
+
+With `refund: true`, the store subtracts one from `attempt`, so the interrupted
+attempt isn't counted.
+
+## Following a job from the client
+
+A `watch` procedure streams snapshots until the job settles. These helpers keep
+that stream open across drops: when it ends early (network error, a WebSocket
+`UNAVAILABLE`, a proxy closing it) they open it again after a backoff. A fresh
+watch starts with the current state, so nothing is missed, and `version` drops
+states already seen. Don't poll or write this loop yourself.
+
+### `followJob(open, opts?)`
+
+Framework-agnostic. `open` opens the watch stream with the given signal.
+
+```ts
+function followJob<S extends JobSnapshotLike>(
+  open: (signal: AbortSignal) => AsyncIterable<S>,
+  opts?: FollowJobOptions,
+): JobFollower<S>
+```
+
+```ts
+const f = followJob((signal) => api.summarize.watch({ jobId }, { signal }))
+f.subscribe(({ job, connection }) => render(job, connection))
+const final = await f.done // the succeeded or failed snapshot; f.stop() to give up
+```
+
+An error with a string `code` other than `UNAVAILABLE` (e.g. `NOT_FOUND`,
+`UNAUTHORIZED`) won't go away by retrying: following stops and `error` is set.
+Errors without a code, `UNAVAILABLE`, and a stream that ends before a final
+state are retried.
+
+#### `FollowJobOptions`
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `signal` | `AbortSignal` | none | Aborting it is the same as `stop()`. |
+| `backoff` | `{ initialMs?: number; maxMs?: number }` | `500` → `10_000` | Reconnect delay: starts at `initialMs`, doubles up to `maxMs`, ±25% jitter. Resets when a snapshot arrives. |
+| `online` | `Pick<EventTarget, 'addEventListener' \| 'removeEventListener'> \| false` | `globalThis` in browsers | Where to listen for `online` to retry at once. `false` turns it off. |
+
+#### `JobFollower`
+
+| Member | Type | Description |
+| --- | --- | --- |
+| `get()` | `FollowedJob<S>` | The current state. |
+| `subscribe(listener)` | `() => void` | Called with the new state on every change. Returns an unsubscribe. |
+| `stop()` | `void` | Stop following and abort the open watch. |
+| `done` | `Promise<S>` | The succeeded or failed snapshot. Rejects with `error` if following stops first, or with an `AbortError` after `stop()`. |
+
+#### `FollowedJob`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `job` | `S \| null` | The latest snapshot, or `null` before the first arrives. |
+| `connection` | `JobConnection` | How the watch is doing. |
+| `error` | `(Error & { code?: string }) \| null` | Why following stopped before the job settled, e.g. `NOT_FOUND`. A job that ran and failed is `job.status === 'failed'` with `job.error`, not this. |
+
+#### `JobConnection`
+
+```ts
+type JobConnection = 'idle' | 'connecting' | 'live' | 'reconnecting' | 'ended'
+```
+
+| Value | Meaning |
+| --- | --- |
+| `'idle'` | No job to follow (`useJob` without an id). |
+| `'connecting'` | Opening the first watch. |
+| `'live'` | Updates are arriving. |
+| `'reconnecting'` | The watch dropped; trying again after a backoff. |
+| `'ended'` | Stopped: the job settled, `stop()` was called, or `error` is set. |
+
+#### `JobSnapshotLike`
+
+The part of a snapshot `followJob` reads. `JobSnapshot` (and its JSON form on the
+client) matches.
+
+```ts
+interface JobSnapshotLike {
+  status: string
+  version: number
+}
+```
+
+### `useJob(jobId, open, opts?)`
+
+From `dendra/react`. Follows a job by id with `followJob` and returns its state.
+It stops when the job settles, `jobId` changes, or the component unmounts. A
+`null` or `undefined` id returns `connection: 'idle'`.
+
+```ts
+function useJob<S extends JobSnapshotLike>(
+  jobId: string | null | undefined,
+  open: (jobId: string, signal: AbortSignal) => AsyncIterable<S>,
+  opts?: Pick<FollowJobOptions, 'backoff' | 'online'>,
+): FollowedJob<S>
+```
+
+`open` may be an inline function; only a new `jobId` restarts the watch. A new
+id never shows the previous job's state.
+
+```tsx
+import { useJob } from 'dendra/react'
+
+const { job, connection, error } = useJob(jobId, (id, signal) =>
+  api.summarize.watch({ jobId: id }, { signal }),
+)
+if (error) return <p>{error.message}</p>
+if (!job) return <Spinner />
+if (job.status === 'failed') return <p>Failed: {job.error.message}</p>
+if (job.status === 'succeeded') return <Summary text={job.result.summary} />
+return <Progress value={job.progress} reconnecting={connection === 'reconnecting'} />
+```

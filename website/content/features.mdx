@@ -212,4 +212,6 @@ and the context layer are experimental: they may change in a minor release.
 
 Validate with the built-in `s.*` (including `s.file()`), or any Standard Schema
 library — Zod 3 and 4, Valibot, or ArkType — interchangeably. Each is
-type-checked in dendra's test suite, so `input` infers correctly.
+type-checked in dendra's test suite, so `input` infers correctly. Only `s.*`
+schemas appear in OpenAPI and AI tool schemas today, so use `s.*` for the input
+of an `.ai()` tool.

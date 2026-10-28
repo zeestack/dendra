@@ -4,7 +4,7 @@
   "description": "Documentation site for dendra",
   "scripts": {
     "dev": "next dev -p 3200",
-    "build": "node scripts/downloads-badge.mjs && next build",
+    "build": "node scripts/downloads-badge.mjs && next build && node scripts/build-archived.mjs",
     "start": "next start -p 3200"
   },
   "dependencies": {

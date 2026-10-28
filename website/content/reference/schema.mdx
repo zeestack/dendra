@@ -1,0 +1,400 @@
+---
+title: Schema
+description: 'API reference for the built-in s.* validators, their chainable constraints, the JSON Schema they emit, and the Standard Schema types dendra accepts.'
+---
+
+# Schema
+
+`s` is dendra's built-in, zero-dependency validator set. Every `s.*` schema is a
+[Standard Schema](https://standardschema.dev), so `.input()` and `.output()`
+accept it alongside any other Standard Schema library: Zod (3 and 4), Valibot or
+ArkType. Each built-in schema also carries a JSON Schema, which becomes the
+OpenAPI spec and the AI tool parameters. See
+[Features → Standard Schema](/features#standard-schema).
+
+```ts
+import { s } from 'dendra'
+import type { StandardSchemaV1, Schema, InferInput, InferOutput, JSONSchema } from 'dendra'
+```
+
+```ts
+const createNote = s.object({
+  title: s.string().min(1).max(200),
+  body: s.string(),
+  tags: s.optional(s.array(s.string()).max(10)),
+  status: s.enum(['draft', 'published']),
+}).strict()
+```
+
+## How validation and JSON Schema work
+
+- Each constraint method returns a **new** schema; the original is unchanged.
+- Each constraint adds a keyword to the schema's JSON Schema (listed with each
+  method below). `toOpenApiDocument` and the tool builders (`toToolset`,
+  `mcpToolDefinitions`) use it as-is, so a constraint you add is documented in
+  OpenAPI and shown to the model with no extra work.
+- Every constraint takes an optional `message` that replaces its default error
+  message.
+- A scalar (string, number, boolean, literal, enum, null) reports only its first
+  failed check. `s.object()` and `s.record()` report an issue for every bad key;
+  `s.array()` stops at the first bad item.
+- Issues have a `path` (keys and array indexes). A failed `.input()` becomes a
+  `BAD_REQUEST` error whose `details` is that issue list.
+
+### Describing a schema
+
+Every `s.*` schema has `.describe(description)`. It sets the JSON Schema
+`description`, which OpenAPI shows and the model reads as the meaning of a tool
+parameter. Constraints added before or after it are kept.
+
+```ts
+s.string().email().describe('Where we send the receipt')
+```
+
+### Third-party schemas
+
+Zod, Valibot, ArkType or any other Standard Schema validates and types the input
+in `.input()` and `.output()` exactly like `s.*`. dendra reads JSON Schema only
+from a schema's `jsonSchema` property, which the built-in `s.*` schemas have and
+third-party schemas don't. So a procedure with a third-party input schema has no
+input schema in its OpenAPI operation, and as a tool it's described with an empty
+object schema.
+
+## Scalars
+
+### `s.string()`
+
+A string.
+
+```ts
+function string(): StringSchema
+```
+
+JSON Schema: `{ type: 'string' }`.
+
+| Method | Checks | JSON Schema | Default message |
+| --- | --- | --- | --- |
+| `.min(length, message?)` | at least `length` characters | `minLength` | `Must be at least N characters` |
+| `.max(length, message?)` | at most `length` characters | `maxLength` | `Must be at most N characters` |
+| `.length(length, message?)` | exactly `length` characters | `minLength` and `maxLength` | `Must be exactly N characters` |
+| `.pattern(re, message?)` | `re.test(value)` | `pattern: re.source` (flags aren't emitted) | `Must match /re/` |
+| `.email(message?)` | `something@domain.tld`, no whitespace | `format: 'email'` | `Must be a valid email` |
+| `.uuid(message?)` | a version 1–5 UUID, any case | `format: 'uuid'` | `Must be a valid UUID` |
+| `.url(message?)` | `new URL(value)` parses it | `format: 'uri'` | `Must be a valid URL` |
+| `.describe(description)` | | `description` | |
+
+```ts
+s.string().min(1).max(200)
+s.string().pattern(/^[a-z0-9-]+$/, 'Lowercase letters, digits and dashes only')
+```
+
+### `s.number()`
+
+A number. `NaN` is rejected.
+
+```ts
+function number(): NumberSchema
+```
+
+JSON Schema: `{ type: 'number' }`.
+
+| Method | Checks | JSON Schema | Default message |
+| --- | --- | --- | --- |
+| `.min(value, message?)` | `>= value` | `minimum` | `Must be >= N` |
+| `.max(value, message?)` | `<= value` | `maximum` | `Must be <= N` |
+| `.int(message?)` | `Number.isInteger(value)` | `type: 'integer'` | `Must be an integer` |
+| `.describe(description)` | | `description` | |
+
+### `s.integer()`
+
+An integer: the same as `s.number().int()`, and it has the same methods as
+`s.number()`.
+
+```ts
+function integer(): NumberSchema
+```
+
+JSON Schema: `{ type: 'integer' }`. A non-integer fails with
+`Must be an integer`.
+
+```ts
+s.integer().min(1)
+```
+
+### `s.boolean()`
+
+`true` or `false`. Only `.describe()`.
+
+```ts
+function boolean(): Schema<boolean>
+```
+
+JSON Schema: `{ type: 'boolean' }`.
+
+### `s.literal(value)`
+
+Exactly one string, number or boolean value. The output type is the literal
+type. Only `.describe()`.
+
+```ts
+function literal<const V extends string | number | boolean>(value: V): Schema<V>
+```
+
+JSON Schema: `{ const: value }`.
+
+### `s.enum(values)`
+
+One of a fixed list of values. The output type is the union of the values. Only
+`.describe()`.
+
+```ts
+function enum<const T extends readonly [unknown, ...unknown[]]>(values: T): Schema<T[number]>
+```
+
+JSON Schema: `{ enum: [...values] }`.
+
+```ts
+s.enum(['low', 'medium', 'high'])
+```
+
+### `s.null()`
+
+Exactly `null`. Only `.describe()`.
+
+```ts
+function null(): Schema<null>
+```
+
+JSON Schema: `{ type: 'null' }`.
+
+## Combinators
+
+### `s.union(schemas)`
+
+Any of several schemas. Tries them in order and returns the first one that
+passes. Only `.describe()`.
+
+```ts
+function union<T extends Schema<unknown>[]>(schemas: [...T]): Schema<Output of T[number]>
+```
+
+JSON Schema: `{ anyOf: [...] }` of the members' schemas. Fails with
+`Did not match any allowed variant (received <type>)`.
+
+```ts
+s.union([s.literal('auto'), s.integer().min(1)])
+```
+
+### `s.nullable(inner)`
+
+`inner` or `null`. Only `.describe()`.
+
+```ts
+function nullable<T>(inner: Schema<T>): Schema<T | null>
+```
+
+JSON Schema: `{ anyOf: [inner, { type: 'null' }] }`.
+
+### `s.optional(inner)`
+
+`inner` or `undefined`. Inside `s.object()`, an optional key may be missing: it's
+left out of `required` and its type is `key?: T`. Its `.describe()` describes the
+inner schema.
+
+```ts
+function optional<T>(inner: Schema<T>): OptionalSchema<T> // a Schema<T | undefined>
+```
+
+JSON Schema: the same as `inner`'s.
+
+## Collections
+
+### `s.array(inner)`
+
+An array whose items all match `inner`. An item's issue path starts with its
+index.
+
+```ts
+function array<T>(inner: Schema<T>): ArraySchema<T>
+```
+
+JSON Schema: `{ type: 'array', items: inner }`.
+
+| Method | Checks | JSON Schema | Default message |
+| --- | --- | --- | --- |
+| `.min(length, message?)` | at least `length` items | `minItems` | `Must have at least N items` |
+| `.max(length, message?)` | at most `length` items | `maxItems` | `Must have at most N items` |
+| `.describe(description)` | | `description` | |
+
+The length checks run before the items are validated.
+
+### `s.record(value)`
+
+An object with any string keys, every value matching `value`. Only
+`.describe()`.
+
+```ts
+function record<T>(value: Schema<T>): Schema<Record<string, T>>
+```
+
+JSON Schema: `{ type: 'object', additionalProperties: value }`.
+
+### `s.object(shape)`
+
+An object with known keys. Keys whose schema is `s.optional(…)` may be missing;
+all others are required. A key whose validated value is `undefined` is left out
+of the output. Arrays and `null` are rejected.
+
+```ts
+function object<Shape extends Record<string, Schema<unknown>>>(shape: Shape): ObjectSchema<Output of Shape>
+```
+
+JSON Schema: `{ type: 'object', properties, required }`.
+
+By default, unknown keys are **stripped**: they're dropped from the output and
+not reported. Two methods change that:
+
+| Method | Unknown keys | JSON Schema |
+| --- | --- | --- |
+| (default) | stripped from the output | no `additionalProperties` |
+| `.strict()` | rejected, one issue per key: `Unexpected key "k"` | `additionalProperties: false` |
+| `.passthrough()` | kept on the output, unvalidated | `additionalProperties: true` |
+| `.describe(description)` | unchanged | `description` |
+
+```ts
+s.object({ workspaceId: s.integer(), name: s.string().min(1) }).strict()
+```
+
+Two `s.object()` schemas chained with `.input()` merge into one object, and the
+merged one is strict if either was. See [`.input()` in Router](/reference/router).
+
+## Files
+
+### `s.file(options?)`
+
+An uploaded file, inside an `s.object()` input. The handler gets a `File` (a
+plain `Blob` is wrapped in a `File` named `blob`), and the typed client sends the
+call as `multipart/form-data`. Keep file fields at the top level of the input
+object. A procedure with a file input can't be `.ai()`.
+
+```ts
+function file(options?: { types?: string[]; maxBytes?: number }): FileSchema // a Schema<File>
+```
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `types` | `string[]` | any type | Allowed MIME types (`'image/png'`) and/or filename extensions (`'.csv'`), case-insensitive. |
+| `maxBytes` | `number` | no limit | Size cap for this file, in bytes. |
+
+`maxBytes` is per file. The whole request body is also capped by the server's
+`maxBodyBytes` (10 MB by default; see [Server](/reference/server)).
+
+How `types` is checked:
+
+- For PNG, JPEG, GIF, WebP, PDF and ZIP, the declared MIME type must be in
+  `types` **and** the file's leading bytes must match that format. A header can be
+  forged; the bytes can't (cheaply). Listing only the extension (`'.png'`) isn't
+  enough for these types.
+- For any other type, the file passes if its declared MIME type is in `types`, or
+  its name ends with one of the listed extensions.
+
+JSON Schema: `{ type: 'string', format: 'binary' }`, plus `maxLength: maxBytes`,
+plus `contentMediaType` when `types` is exactly one MIME type. OpenAPI documents
+the request body as `multipart/form-data`. `.describe()` is the only method.
+
+```ts
+upload: route
+  .input(s.object({
+    workspaceId: s.integer(),
+    image: s.file({ types: ['image/png', 'image/webp'], maxBytes: 8_000_000 }),
+  }))
+  .handler(({ input }) => store(input.image)) // input.image: File
+```
+
+To return a file, use [`file()`](/reference/router).
+
+## Types
+
+#### `StandardSchemaV1`
+
+The [Standard Schema](https://standardschema.dev) interface. Anything that has a
+`~standard` property shaped like this works in `.input()` and `.output()`.
+
+```ts
+interface StandardSchemaV1<Input = unknown, Output = Input> {
+  readonly '~standard': {
+    readonly version: 1
+    readonly vendor: string
+    readonly validate: (value: unknown) => StandardResult<Output> | Promise<StandardResult<Output>>
+    readonly types?: { readonly input: Input; readonly output: Output }
+  }
+}
+
+type StandardResult<T> =
+  | { readonly value: T; readonly issues?: undefined }
+  | { readonly issues: ReadonlyArray<{ message: string; path?: ReadonlyArray<PropertyKey | { key: PropertyKey }> }> }
+```
+
+Path segments may be bare keys or `{ key }`; dendra turns them into plain keys in
+error `details`.
+
+#### `Schema`
+
+A built-in `s.*` schema: a Standard Schema that also carries its JSON Schema.
+Use it to type your own helpers that take or return `s.*` schemas.
+
+```ts
+interface Schema<T> extends StandardSchemaV1<T, T> {
+  readonly jsonSchema: JSONSchema
+  readonly isOptional?: boolean // true for s.optional(…)
+  describe(description: string): Schema<T>
+}
+```
+
+#### `InferInput`
+
+The input type of a Standard Schema.
+
+```ts
+type InferInput<S> = S extends StandardSchemaV1<infer I, unknown> ? I : never
+```
+
+#### `InferOutput`
+
+The output type of a Standard Schema: what a handler's `input` is typed as.
+
+```ts
+type InferOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never
+```
+
+```ts
+type NoteInput = InferOutput<typeof createNote> // { title: string; body: string; tags?: string[]; … }
+```
+
+#### `JSONSchema`
+
+The subset of JSON Schema the built-in schemas emit. Other keywords are allowed
+through the index signature.
+
+```ts
+interface JSONSchema {
+  type?: string | string[]
+  properties?: Record<string, JSONSchema>
+  required?: ReadonlyArray<string>
+  items?: JSONSchema
+  description?: string
+  enum?: ReadonlyArray<unknown>
+  const?: unknown
+  anyOf?: ReadonlyArray<JSONSchema>
+  additionalProperties?: boolean | JSONSchema
+  minLength?: number
+  maxLength?: number
+  pattern?: string
+  format?: string
+  minimum?: number
+  maximum?: number
+  minItems?: number
+  maxItems?: number
+  [k: string]: unknown
+}
+```

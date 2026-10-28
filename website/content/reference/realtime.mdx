@@ -1,0 +1,611 @@
+---
+title: Real-time
+description: 'Pub/sub (in-memory, Redis, Postgres LISTEN/NOTIFY) and the WebSocket transport: attachWsServer, createWsConnection and the low-level session APIs.'
+---
+
+# Real-time
+
+A streaming procedure plus a pub/sub gives you live subscriptions: a mutation
+`publish`es, a `.stream()` handler yields from `subscribe`. The same procedures
+also run over one WebSocket. For the concepts, see
+[Features → Streaming & real-time](/features#streaming--real-time) and
+[Features → WebSocket transport](/features#websocket-transport).
+
+```ts
+import {
+  createInMemoryPubSub, createPubSub, createRedisPubSub, createPgPubSub,
+  attachWsServer, createWsConnection,
+} from 'dendra'
+```
+
+## Pub/sub
+
+All pub/subs implement the same `PubSub` interface, so procedures don't change
+when you swap the in-memory one for Redis or Postgres.
+
+```ts
+// a mutation publishes
+create: route.post('/notes').input(NoteInput).handler(async ({ input, ctx }) => {
+  const note = await ctx.db.notes.insert(input)
+  ctx.pubsub.publish('notes', { id: note.id })
+  return note
+}),
+// a stream subscribes; `signal` ends the subscription when the client goes away
+watch: route.stream(async function* ({ ctx, signal }) {
+  for await (const ev of ctx.pubsub.subscribe('notes', { signal })) yield ev
+}),
+```
+
+#### `PubSub`
+
+The interface every pub/sub implements.
+
+```ts
+interface PubSub {
+  publish(topic: string, message: unknown): void
+  subscribe(topic: string, opts?: { signal?: AbortSignal }): AsyncIterable<unknown>
+}
+```
+
+| Method | Description |
+| --- | --- |
+| `publish(topic, message)` | Send `message` to every subscriber of `topic`, in every process the transport reaches. |
+| `subscribe(topic, opts?)` | Messages published to `topic` after this call, in order. Ends when `signal` aborts or the loop stops. |
+
+Always pass the stream's `signal`. Aborting it removes the subscription even if
+the iterable was never iterated; without it, a subscription only ends when the
+`for await` loop exits.
+
+### `createInMemoryPubSub()`
+
+A pub/sub for a single process. Messages are passed as-is (no encoding) and
+delivered to local subscribers. Use it in development, tests, or
+an app that runs one server process.
+
+```ts
+function createInMemoryPubSub(): PubSub
+```
+
+### `createPubSub(transport)`
+
+Builds a `PubSub` on any backend. You supply the transport; `createPubSub`
+handles local fan-out. It subscribes upstream once per topic, however many local
+subscribers that topic has, and unsubscribes when the last one leaves. The
+in-memory, Redis and Postgres pub/subs are built the same way (Postgres uses one
+channel for all topics).
+
+```ts
+function createPubSub(transport: PubSubTransport): PubSub
+```
+
+#### `PubSubTransport`
+
+The backend-specific part of a pub/sub: move a message to every process
+subscribed to a topic. Encoding is the transport's job.
+
+```ts
+interface PubSubTransport {
+  publish(topic: string, message: unknown): unknown
+  subscribe(topic: string, onMessage: (message: unknown) => void): unknown
+  unsubscribe(topic: string): unknown
+}
+```
+
+Return values are ignored (a returned promise isn't awaited), so handle the
+transport's own errors inside these methods.
+
+### `createRedisPubSub(client)`
+
+A pub/sub over Redis, for fan-out across server processes. dendra doesn't import
+a Redis package: you pass a small client object. node-redis v4 matches it
+directly; ioredis needs a thin wrapper. Subscribing needs its own connection, so
+use a duplicate for `subscribe`/`unsubscribe`.
+
+```ts
+function createRedisPubSub(client: RedisPubSubClient): PubSub
+```
+
+```ts
+import { createClient } from 'redis'
+
+const pub = createClient()
+const sub = pub.duplicate()
+await pub.connect()
+await sub.connect()
+
+const pubsub = createRedisPubSub({
+  publish: (c, m) => pub.publish(c, m),
+  subscribe: (c, on) => sub.subscribe(c, on),
+  unsubscribe: (c) => sub.unsubscribe(c),
+})
+```
+
+Messages are sent as `JSON.stringify(message)` and parsed on arrival. A payload
+that isn't JSON (say, a string published by another program) is delivered as the
+raw string.
+
+#### `RedisPubSubClient`
+
+```ts
+interface RedisPubSubClient {
+  publish(channel: string, message: string): unknown
+  subscribe(channel: string, onMessage: (message: string) => void): unknown
+  unsubscribe(channel: string): unknown
+}
+```
+
+The topic is used as the Redis channel name.
+
+### `createPgPubSub(pool, opts?)`
+
+A pub/sub over Postgres `LISTEN`/`NOTIFY`, for apps that already run Postgres.
+It takes a structural pool, so a `pg.Pool` drops in. The database itself can
+publish, from a trigger.
+
+```ts
+function createPgPubSub(pool: PgPool, opts?: PgPubSubOptions): PgPubSub
+```
+
+```ts
+import pg from 'pg'
+
+const pubsub = createPgPubSub(new pg.Pool({ connectionString }))
+```
+
+How it works:
+
+- Each process holds **one** listening connection, taken from the pool on the
+  first `subscribe` (or by `listen()`). It runs `LISTEN` on one channel and fans
+  messages out locally by topic.
+- If that connection errors or ends, it is destroyed (not returned to the pool)
+  and a new one is opened with backoff. Messages sent while it was down are lost.
+- Every message travels as `{ "topic": …, "message": … }` JSON on the channel.
+  Notifications whose payload isn't JSON, or has no string `topic`, are reported
+  to `onError` and dropped.
+- Publishes from one process are sent one at a time, so they arrive in the order
+  that process published them.
+
+A trigger publishes in the same shape:
+
+```sql
+PERFORM pg_notify('dendra', json_build_object('topic', 'notes',
+                                              'message', row_to_json(NEW))::text);
+```
+
+**Payload limit.** Postgres rejects `NOTIFY` payloads of 8000 bytes or more.
+`publish` measures the encoded `{ topic, message }` JSON in UTF-8 bytes and
+throws a `RangeError` (synchronously, before sending) when it is over 7999 bytes.
+Publish an id and load the row, not the row itself, when it can be large. A
+trigger calling `pg_notify` directly gets Postgres's own error instead.
+
+Throws at creation if `channel` isn't a plain identifier (letters, digits and
+`_`, not starting with a digit).
+
+#### `PgPubSubOptions`
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `channel` | `string` | `'dendra'` | The `NOTIFY` channel every message travels on. Must be a plain identifier. |
+| `backoff` | `{ initialMs?: number; maxMs?: number }` | `100` → `30_000` | Reconnect delay: starts at `initialMs`, doubles up to `maxMs`. |
+| `onError` | `(err: unknown) => void` | `console.error` | Lost connections, failed publishes, malformed payloads. |
+
+#### `PgPubSub`
+
+A `PubSub` with a few extras.
+
+| Member | Type | Description |
+| --- | --- | --- |
+| `publish(topic, message)` | `Promise<void>` | Resolves once the `NOTIFY` is sent. Rejects if it fails (the failure also goes to `onError`). |
+| `subscribe(topic, opts?)` | `AsyncIterable<unknown>` | As `PubSub`; starts the listening connection if it isn't running. |
+| `listen()` | `Promise<void>` | Connect the listening connection now instead of on the first `subscribe`. Resolves once `LISTEN` is active. Rejects after `close()`. |
+| `close()` | `Promise<void>` | Release the listening connection and stop reconnecting. |
+
+#### `PgPool`
+
+What `createPgPubSub` needs from a pool. A `pg.Pool` matches.
+
+```ts
+interface PgPool {
+  query(text: string, values?: unknown[]): Promise<unknown>
+  connect(): Promise<PgListenClient>
+}
+```
+
+`query` sends `SELECT pg_notify($1, $2)`; `connect` provides the listening
+connection.
+
+#### `PgListenClient`
+
+The connection `createPgPubSub` listens on. A `pg.PoolClient` matches.
+
+```ts
+interface PgListenClient {
+  query(text: string): Promise<unknown>
+  on(event: 'notification', listener: (msg: PgNotification) => void): unknown
+  on(event: 'error', listener: (err: Error) => void): unknown
+  on(event: 'end', listener: () => void): unknown
+  release(destroy?: Error | boolean): void
+}
+```
+
+#### `PgNotification`
+
+A notification as the listening connection delivers it.
+
+```ts
+interface PgNotification {
+  channel: string
+  payload?: string
+}
+```
+
+## WebSocket server
+
+Run the same router over WebSockets on Node with the `ws` package. dendra
+doesn't import `ws`: the types below match it structurally. Next.js can't
+accept upgrades itself; put a small Node server in front of it (see the README
+recipe).
+
+### `attachWsServer(wss, router, opts)`
+
+Accepts upgrades on one path, checks the `Origin`, builds the context once per
+connection before the socket opens, and serves calls and subscriptions on each
+accepted socket. It also enforces message, buffer and subscription limits, runs
+a heartbeat, and can re-check sessions.
+
+```ts
+function attachWsServer<Ctx extends object>(
+  wss: WsServerLike,
+  router: object,
+  opts: WsServerOptions<Ctx>,
+): WsServerHandle<Ctx>
+```
+
+```ts
+import { WebSocketServer } from 'ws'
+
+const wss = new WebSocketServer({ noServer: true, maxPayload: 1_000_000 })
+const live = attachWsServer(wss, appRouter, {
+  path: '/rpc/ws',
+  allowedOrigins: ['https://app.example.com'],
+  createContext: async (req) => ({ user: await getSession(req.headers) }),
+})
+server.on('upgrade', (req, socket, head) => {
+  if (!live.handleUpgrade(req, socket, head)) socket.destroy()
+})
+```
+
+Create the `ws` server with `noServer: true` and a `maxPayload` no larger than
+dendra's `maxPayload`. `ws` buffers a whole message before dendra sees it (up to
+100 MiB by default), so `attachWsServer` **throws at startup** if
+`wss.options.maxPayload` is larger than its own limit.
+
+**Upgrade handling.** For a request on `path`, `handleUpgrade` returns `true`
+and either accepts the socket or refuses it with a plain HTTP response:
+
+| Status | When |
+| --- | --- |
+| `403` | The `Origin` isn't allowed, or is missing and `allowMissingOrigin` is off. |
+| the error's `status` | `createContext` threw a `DendraError` (e.g. `401` for `UNAUTHORIZED`). |
+| `500` | `createContext` (or an `allowedOrigins` function) threw anything else. The error goes to `onError`. |
+| `503` | The server is shutting down (`close()` was called). |
+
+`createContext` receives a `Request` built from the upgrade request (method
+`GET`, its URL and headers), so the same `createContext` as your HTTP handler
+works.
+
+**Close codes.** Accepted connections are closed with these codes:
+
+| Code | Reason | When |
+| --- | --- | --- |
+| `1001` | `Going Away` | `close()` shuts the server down. |
+| `1009` | `Message Too Big` | A message is over `maxPayload`. Only checked by dendra when `wss` has no `options`; otherwise `ws` enforces its own `maxPayload`. |
+| `1013` | `Try Again Later` | More than `maxBufferedBytes` are waiting to be sent (a slow or stalled client). |
+| `4401` | `Unauthorized` | `revalidate.check` returned `false`, or `closeWhere` matched (its default code). |
+
+A socket that doesn't answer the close handshake within `closeGraceMs` is
+terminated. A socket that misses a heartbeat pong is terminated without a close
+frame.
+
+Errors inside a call or subscription reach the client as `{ code, message }`;
+anything that isn't a `DendraError` is sent as `INTERNAL: Internal error` and
+logged. Opening a subscription past `maxSubscriptions` fails that subscription
+with `TOO_MANY_REQUESTS`.
+
+#### `WsServerOptions`
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `path` | `string` | required | Exact pathname to accept (query string ignored). Upgrades on other paths are left alone. |
+| `allowedOrigins` | `string[] \| ((origin: string) => boolean)` | required | Exact origins (`scheme://host[:port]`), or a predicate. There is no "allow all" default. |
+| `allowMissingOrigin` | `boolean` | `false` | Accept upgrades with no `Origin` header (non-browser clients). Only safe when auth isn't cookie-based. |
+| `createContext` | `(req: Request) => Ctx \| Promise<Ctx>` | `{}` | Runs once per connection, before the socket opens. A thrown `DendraError` refuses with its status. |
+| `maxPayload` | `number` | `1_000_000` | Largest message in bytes. |
+| `heartbeatMs` | `number` | `30_000` | Ping interval. A socket that misses one pong is terminated. `0` disables. |
+| `maxBufferedBytes` | `number` | `1_000_000` | Unsent bytes allowed per socket before it is closed with `1013`. |
+| `maxSubscriptions` | `number` | `100` | Open subscriptions per connection. |
+| `revalidate` | `{ everyMs: number; check: (ctx: Ctx) => boolean \| Promise<boolean> }` | none | Re-check each open connection every `everyMs`. Returning `false` closes with `4401`; a throw keeps the connection (and goes to `onError`). |
+| `closeGraceMs` | `number` | `1_000` | How long `close()` and `closeWhere()` wait for the close handshake before terminating. |
+| `onClose` | `(ctx: Ctx, info: { code: number; reason: string }) => void \| Promise<void>` | none | Called once per accepted connection, whatever closed it. |
+| `onError` | `(err: unknown) => void` | `console.error` | Unexpected `createContext` errors, `revalidate` and `onClose` errors, socket errors. |
+
+#### `WsServerHandle`
+
+What `attachWsServer` returns.
+
+| Member | Type | Description |
+| --- | --- | --- |
+| `handleUpgrade(req, socket, head)` | `boolean` | `true` if the upgrade is for `path` (it then accepts or refuses it); `false` leaves it untouched for another handler. |
+| `closeWhere(match, close?)` | `number` | Close every connection whose `ctx` matches, with `close.code` (default `4401`) and `close.reason` (default `'Unauthorized'`). Returns how many. Use it on sign-out. |
+| `close()` | `Promise<void>` | Refuse new upgrades (`503`), close open sockets with `1001`, and resolve once all have closed. Call it on shutdown. |
+| `size` | `number` | Open connections. |
+
+```ts
+// sign-out: drop that user's sockets
+live.closeWhere((ctx) => ctx.user?.id === userId)
+// shutdown
+await live.close()
+```
+
+#### `WsServerLike`
+
+What `attachWsServer` needs from a WebSocket server. A `ws` `WebSocketServer`
+created with `noServer: true` matches.
+
+```ts
+interface WsServerLike {
+  handleUpgrade(req: any, socket: any, head: any, cb: (ws: WsServerSocket) => void): void
+  options?: { maxPayload?: number }
+}
+```
+
+Without `options`, dendra can't tell what limit the server enforces, so it
+checks message size itself.
+
+#### `WsServerSocket`
+
+An accepted socket. A `ws` `WebSocket` matches.
+
+```ts
+interface WsServerSocket extends WsLikeSocket {
+  readonly readyState: number
+  readonly bufferedAmount: number
+  ping(): void
+  terminate(): void
+  close(code?: number, reason?: string): void
+  on(event: 'message', cb: (data: unknown) => void): void
+  on(event: 'close', cb: (code: number, reason: unknown) => void): void
+  on(event: 'pong', cb: () => void): void
+  on(event: 'error', cb: (err: Error) => void): void
+}
+```
+
+#### `WsUpgradeRequest`
+
+The upgrade request. An `http.IncomingMessage` matches.
+
+```ts
+interface WsUpgradeRequest {
+  url?: string
+  headers: Record<string, string | string[] | undefined>
+}
+```
+
+#### `WsUpgradeSocket`
+
+The raw socket of an upgrade. A `stream.Duplex` matches. dendra writes the HTTP
+refusal to it and destroys it.
+
+```ts
+interface WsUpgradeSocket {
+  write(data: string): unknown
+  destroy(): void
+  destroyed?: boolean
+  on(event: 'error', cb: (err: Error) => void): unknown
+  off(event: 'error', cb: (err: Error) => void): unknown
+}
+```
+
+## WebSocket client
+
+### `createWsConnection(open, opts?)`
+
+A typed client over a WebSocket that stays up. It reconnects with backoff,
+retries at once when the browser comes back online, reports its status, stops
+when the server closes with a "signed out" code, and resubscribes open
+subscriptions after a reconnect.
+
+```ts
+function createWsConnection<R extends object>(
+  open: string | (() => WsBrowserSocket),
+  opts?: WsConnectionOptions,
+): WsConnection<R>
+```
+
+`open` is a URL (it uses the global `WebSocket`) or a function that creates the
+socket.
+
+```ts
+const conn = createWsConnection<AppRouter>(`wss://${location.host}/rpc/ws`)
+conn.onStatus((s) => {
+  setBanner(s)
+  if (s === 'connected') refetch() // anything published while down was missed
+})
+for await (const ev of conn.api.notes.watch()) render(ev) // survives reconnects
+```
+
+Behaviour:
+
+- **Calls** made while disconnected fail at once with `UNAVAILABLE`
+  (`Not connected`). They are not queued and replayed. A call in flight when the
+  connection drops fails with `UNAVAILABLE` (`Connection lost`).
+- **Subscriptions** wait for a connection, and resubscribe after a reconnect.
+  Messages published while the socket was down are missed, so treat
+  `"connected"` as the cue to refetch. A subscription ends when the server
+  completes it or `close()` is called; a server error fails it.
+- **Backoff:** the delay starts at `initialMs`, doubles each failed attempt up to
+  `maxMs`, with ±25% jitter. It resets once a socket opens.
+- **Stop codes:** a close with a code in `stopOn` (default `4401`) sets status
+  `"stopped"` and doesn't reconnect. Call `reconnect()` after the user signs
+  back in.
+
+#### `WsConnectionOptions`
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `backoff` | `{ initialMs?: number; maxMs?: number }` | `500` → `10_000` | Reconnect delay: starts at `initialMs`, doubles up to `maxMs`, ±25% jitter. |
+| `stopOn` | `number[]` | `[4401]` | Close codes that stop reconnecting (status `"stopped"`) until `reconnect()`. |
+| `online` | `Pick<EventTarget, 'addEventListener' \| 'removeEventListener'> \| false` | `globalThis` in browsers | Where to listen for `online` to retry at once. `false` turns it off. |
+
+#### `WsConnection`
+
+| Member | Type | Description |
+| --- | --- | --- |
+| `api` | `Client<R>` | The typed client. Same shape as `createClient`'s. |
+| `status` | `WsStatus` | The current status. |
+| `onStatus(cb)` | `() => void` | Calls `cb(status, info?)` on every change, where `info` is `{ code?, reason? }` from the close event. Returns an unsubscribe. |
+| `reconnect()` | `void` | Reconnect now: after `"stopped"`, or to skip a backoff wait. Does nothing when connected or closed. |
+| `close()` | `void` | Close for good (code `1000`): subscriptions end, pending calls fail, no more reconnects. |
+
+#### `WsStatus`
+
+```ts
+type WsStatus = 'connecting' | 'connected' | 'reconnecting' | 'stopped' | 'closed'
+```
+
+A new connection starts as `"connecting"`. After a drop it is `"reconnecting"`
+until a socket opens again.
+
+#### `WsBrowserSocket`
+
+The socket `createWsConnection` drives. A browser or Node global `WebSocket`
+matches.
+
+```ts
+interface WsBrowserSocket {
+  readonly readyState: number
+  send(data: string): void
+  close(code?: number, reason?: string): void
+  addEventListener(event: 'message', cb: (e: { data: unknown }) => void): void
+  addEventListener(event: 'close', cb: (e: { code?: number; reason?: string }) => void): void
+  addEventListener(event: 'open' | 'error', cb: () => void): void
+}
+```
+
+## Low-level WebSocket APIs
+
+These run the protocol over any socket, for runtimes without the `ws` package
+(Bun, Deno, Workers) or an in-memory loopback. They have **no Origin check, size
+limits, heartbeat or reconnect**. On Node use `attachWsServer`; in the browser
+use `createWsConnection`.
+
+Messages are JSON. The client sends `call`, `subscribe` and `unsubscribe`
+messages with an `id`; the server answers with `result`, `error`, `next` and
+`complete`. Malformed messages are ignored.
+
+### `createWsSession(router, send, ctx?, opts?)`
+
+The server side of one connection. Feed it every message the socket receives
+and call `handleClose()` when it closes; it calls `send` with each reply.
+
+```ts
+function createWsSession(
+  router: object,
+  send: (data: string) => void,
+  ctx?: Record<string, unknown>,
+  opts?: { maxSubscriptions?: number },
+): WsSession
+```
+
+| Parameter | Default | Description |
+| --- | --- | --- |
+| `ctx` | `{}` | The context for every call on this connection. Each subscription also gets `ctx.signal`, aborted when it ends. |
+| `opts.maxSubscriptions` | `Infinity` | Open subscriptions allowed. Past it, `subscribe` fails with `TOO_MANY_REQUESTS`. |
+
+An unknown path (or a call to a stream, or a subscribe to a unary procedure)
+fails with `NOT_FOUND`. Errors that aren't `DendraError`s are sent as
+`INTERNAL: Internal error` and logged.
+
+```ts
+// one session per socket, whatever the runtime
+const session = createWsSession(appRouter, (d) => socket.send(d), ctx, { maxSubscriptions: 100 })
+socket.onmessage = (e) => session.handleMessage(String(e.data))
+socket.onclose = () => session.handleClose()
+```
+
+#### `WsSession`
+
+```ts
+interface WsSession {
+  handleMessage(raw: string): void
+  handleClose(): void
+}
+```
+
+`handleClose()` aborts every open subscription.
+
+### `createWsClient(send)`
+
+The client side of one connection, without a socket. Feed it every message
+received with `receive`; it calls `send` with each outgoing message.
+
+```ts
+function createWsClient<R extends object>(send: (data: string) => void): WsClient<R>
+```
+
+#### `WsClient`
+
+| Member | Type | Description |
+| --- | --- | --- |
+| `api` | `Client<R>` | The typed client. Calls resolve on `result`; subscriptions are async iterables that send `unsubscribe` when the loop stops. |
+| `receive(raw)` | `void` | Pass each incoming message. |
+| `close(err?)` | `void` | End open subscriptions and reject pending calls. Without `err`, subscriptions end normally and calls reject with `INTERNAL` (`connection closed`); with `err`, both fail with it. |
+
+### `attachWs(socket, router, ctx?)`
+
+Binds `createWsSession` to a `ws`-style socket (the `ws` package, Bun's
+adapter): it wires `message` and `close`. The context defaults to `{}`, with no
+subscription limit.
+
+```ts
+function attachWs(socket: WsLikeSocket, router: object, ctx?: Record<string, unknown>): void
+```
+
+#### `WsLikeSocket`
+
+```ts
+interface WsLikeSocket {
+  send(data: string): void
+  on(event: 'message', cb: (data: unknown) => void): void
+  on(event: 'close', cb: () => void): void
+}
+```
+
+### `connectWs(socket)`
+
+Binds `createWsClient` to a WHATWG `WebSocket` (browser, Node's global
+`WebSocket`) and returns the typed client. When the socket closes, open
+subscriptions end and pending calls reject. It doesn't wait for the socket to
+open or reconnect; send only after `open`.
+
+```ts
+function connectWs<R extends object>(socket: WhatwgSocket): Client<R>
+```
+
+```ts
+const ws = new WebSocket('wss://api.example.com/ws')
+ws.addEventListener('open', async () => {
+  const api = connectWs<AppRouter>(ws)
+  console.log(await api.add({ a: 1, b: 2 }))
+})
+```
+
+#### `WhatwgSocket`
+
+```ts
+interface WhatwgSocket {
+  send(data: string): void
+  addEventListener(event: 'message', cb: (e: { data: unknown }) => void): void
+  addEventListener(event: 'close', cb: () => void): void
+}
+```
