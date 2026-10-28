@@ -286,11 +286,91 @@ interface McpCallResult {
 
 ## MCP client
 
+dendra can use another MCP server's tools in two ways:
+
+- [`createMcpRouter`](#createmcprouterclient-opts) mounts them in your router as
+  procedures. Use it when a person must approve remote calls, or when your guards
+  and audit hooks should cover them.
+- [`createMcpToolSource`](#createmcptoolsourceclient-opts) gives a `ToolSource`
+  to merge with `mergeToolsets`.
+
+Either way, pass a client that's already connected (the official SDK's `Client`
+fits as is). Transports, connections and OAuth stay in your app.
+
+### External servers are untrusted
+
+A remote server's tool names, descriptions and results go to the model. A
+malicious or compromised server can put instructions in any of them (prompt
+injection, or "tool poisoning"), and a tool can do more than its description
+says. Treat them like any input from outside your app:
+
+- **Allow only the tools you need** with `filter`, by name, rather than
+  everything the server lists.
+- **Mount or prefix them** (`gh.` or `{ gh: … }`) so a remote tool can't take a
+  local tool's name. `mergeToolsets` rejects duplicate names.
+- **Require approval** for anything that writes, sends or spends:
+  `createMcpRouter(client, { confirm })` with `createApprovals`.
+- **Audit them** with an `.after()` hook on the route you pass to
+  `createMcpRouter`.
+- Descriptions are cut to 1,024 characters (`maxDescriptionLength`), which
+  limits how much text a server can put in front of the model on every turn.
+
+### `createMcpRouter(client, opts?)`
+
+Lists an external MCP server's tools and returns them as `.ai()` procedures, to
+mount in your router. From then on they're tools like your own: the tool
+executor, `toToolset`, the MCP bridge and approvals all see them, `.use()`
+guards and after-hooks on `opts.route` run for every call, and
+`inspectRouter` lists them.
+
+```ts
+function createMcpRouter(client: McpClientLike, opts?: McpRouterOptions): Promise<RouterRecord>
+```
+
+```ts
+const gh = await createMcpRouter(githubClient, {
+  filter: (name) => ['search_code', 'create_issue'].includes(name),
+  confirm: (name) => name === 'create_issue', // a person approves each issue
+  route: authed.after(audit),                 // your guard and audit hook
+})
+const router = { ...appRouter, gh }
+const approvals = createApprovals(router, { scope: (ctx) => ctx.tenantId })
+const execute = createToolExecutor(router, ctx, { approvals })
+// the model calls 'gh.create_issue' → { status: 'pending_approval', actionId }
+```
+
+- A tool is mounted at its remote name, and a dotted name nests: `issues.create`
+  mounted at `gh` is the tool `gh.issues.create`. It throws if a name is both a
+  tool and a namespace of other tools (`issues` and `issues.create`), or has an
+  empty segment.
+- Its input schema is the server's `inputSchema`, published to the model and
+  OpenAPI as is. dendra only checks that the input is an object (`BAD_REQUEST`
+  otherwise); the server validates the rest.
+- `meta.mcp.tool` is the server's name for the tool, so a test can assert
+  policy over remote tools:
+  ```ts
+  const remote = inspectRouter(router).filter((r) => r.meta.mcp)
+  expect(remote.filter((r) => !r.confirm).map((r) => r.path)).toEqual(['gh.search_code'])
+  ```
+- A call goes to `callTool` with the remote name. Results and errors work as in
+  `createMcpToolSource`: JSON text is parsed, and `isError` is `BAD_GATEWAY` with
+  the server's text.
+- It lists the tools once, when called. Call it again to pick up new tools.
+
+#### `McpRouterOptions`
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `filter` | `(name: string) => boolean` | — | Keep only tools whose remote name passes. |
+| `confirm` | `boolean \| ((name: string) => boolean)` | `false` | Which tools need a person's approval: `true` for all, or a predicate on the remote name. Calls go through the `approvals` passed to the tool executor. |
+| `maxDescriptionLength` | `number` | `1024` | Longer remote descriptions are cut, ending in `…`. |
+| `route` | a route builder | `initDendra().route` | The builder the tools are defined from, e.g. one with your `.use()` guards and `.after()` hooks. |
+
 ### `createMcpToolSource(client, opts?)`
 
 Turns an external MCP server into a `ToolSource` you can merge with your own tools.
-Pass a client that is already connected; the official SDK's `Client` fits as is.
-dendra handles no transports, connections or OAuth: that stays in your app.
+Its tools don't go through your router, so they get no approvals, guards or
+after-hooks; use [`createMcpRouter`](#createmcprouterclient-opts) for those.
 
 ```ts
 function createMcpToolSource(client: McpClientLike, opts?: McpToolSourceOptions): Promise<ToolSource>
@@ -306,7 +386,8 @@ const github = await createMcpToolSource(client, {
 ```
 
 It calls `listTools()` once, when created; create a new source to pick up new tools.
-Each tool's description falls back to its name, and a missing `inputSchema` to
+Each tool's description falls back to its name and is cut to
+`maxDescriptionLength`. A missing `inputSchema` becomes
 `{ type: 'object', properties: {} }`.
 
 `execute`:
@@ -323,8 +404,8 @@ Each tool's description falls back to its name, and a missing `inputSchema` to
   argument in v1 and v2, so `McpClientLike` doesn't pass one.
 
 Errors thrown by the client itself (a dropped connection) are not wrapped. Remote
-tool names, descriptions and results reach the model as the server sent them, so
-treat them as untrusted input.
+tool names, descriptions and results reach the model as the server sent them; see
+[External servers are untrusted](#external-servers-are-untrusted).
 
 #### `McpToolSourceOptions`
 
@@ -333,6 +414,7 @@ treat them as untrusted input.
 | `format` | `ToolFormat` | `'anthropic'` | Shape of the tool schemas. |
 | `filter` | `(name: string) => boolean` | — | Keep only tools whose remote name passes. |
 | `prefix` | `string` | — | Added to each tool name on the dendra side (e.g. `'gh.'`) to avoid clashes. Stripped before the call reaches the server. |
+| `maxDescriptionLength` | `number` | `1024` | Longer remote descriptions are cut, ending in `…`. |
 
 #### `McpClientLike`
 

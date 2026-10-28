@@ -7,7 +7,7 @@
 import { createToolExecutor, formatTool, toToolset, untilAborted } from "./tools.ts";
 import type { ToolFormat, ToolSource } from "./tools.ts";
 import type { JSONSchema } from "./schema.ts";
-import { resolveProc, type RouterRecord } from "./core.ts";
+import { initDendra, resolveProc, type AnyProc, type RouterRecord } from "./core.ts";
 import type { Approvals } from "./approvals.ts";
 import { DendraError, publicError } from "./errors.ts";
 
@@ -112,6 +112,8 @@ export interface McpToolSourceOptions {
    * server, so the remote never sees the prefix.
    */
   prefix?: string;
+  /** Cut remote descriptions to this many characters (default 1,024). */
+  maxDescriptionLength?: number;
 }
 
 /**
@@ -137,7 +139,8 @@ export async function createMcpToolSource(
       type: "object",
       properties: {},
     };
-    return formatTool(localName, t.description ?? localName, schema, format);
+    const description = capDescription(t.description ?? localName, opts.maxDescriptionLength);
+    return formatTool(localName, description, schema, format);
   });
   return {
     tools,
@@ -146,23 +149,120 @@ export async function createMcpToolSource(
       call.signal?.throwIfAborted();
       const remote = remoteName.get(name);
       if (!remote) throw new DendraError("NOT_FOUND", `Tool '${name}' not found`);
-      // The MCP SDK's callTool takes its signal in a different place in v1 and
-      // v2, so the remote call isn't cancelled; we only stop waiting for it.
-      const res = await untilAborted(
-        client.callTool({ name: remote, arguments: (args as Record<string, unknown>) ?? {} }),
-        call.signal,
-      );
-      const text = (res.content ?? [])
-        .filter((c) => c.type === "text" && typeof c.text === "string")
-        .map((c) => c.text as string)
-        .join("");
-      // The remote server wrote this text for the model, so it passes through.
-      if (res.isError) throw new DendraError("BAD_GATEWAY", text || `MCP tool '${remote}' failed`);
-      try {
-        return JSON.parse(text);
-      } catch {
-        return text; // not JSON — return the raw text
+      return untilAborted(callRemote(client, remote, args), call.signal);
+    },
+  };
+}
+
+// A remote description is text the server wrote for the model: untrusted, and
+// it costs context on every turn. Keep it to a bounded length.
+const DEFAULT_MAX_DESCRIPTION = 1024;
+function capDescription(text: string, max = DEFAULT_MAX_DESCRIPTION): string {
+  return text.length <= max ? text : text.slice(0, max - 1) + "…";
+}
+
+// Call a remote tool. JSON text results are parsed to structured data; an MCP
+// `isError` result becomes BAD_GATEWAY with the server's text (written for the
+// model, so it passes through). The MCP SDK's callTool takes a signal in a
+// different place in v1 and v2, so the remote call itself isn't cancelled.
+async function callRemote(client: McpClientLike, name: string, args: unknown): Promise<unknown> {
+  const res = await client.callTool({ name, arguments: (args as Record<string, unknown>) ?? {} });
+  const text = (res.content ?? [])
+    .filter((c) => c.type === "text" && typeof c.text === "string")
+    .map((c) => c.text as string)
+    .join("");
+  if (res.isError) throw new DendraError("BAD_GATEWAY", text || `MCP tool '${name}' failed`);
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text; // not JSON — return the raw text
+  }
+}
+
+export interface McpRouterOptions {
+  /** Keep only tools whose (remote) name passes this predicate. */
+  filter?: (name: string) => boolean;
+  /**
+   * Which tools need a person's approval before they run: `true` for all, or a
+   * predicate on the remote name. Needs `createApprovals` over the router the
+   * tools are mounted in, passed to the tool executor.
+   */
+  confirm?: boolean | ((name: string) => boolean);
+  /** Cut remote descriptions to this many characters (default 1,024). */
+  maxDescriptionLength?: number;
+  /**
+   * The route builder to define the tools from, e.g. one with your `.use()`
+   * guards and `.after()` audit hook. Default: a plain `initDendra().route`.
+   */
+  route?: { input(schema: unknown): unknown };
+}
+
+/**
+ * An external MCP server's tools as dendra procedures, to mount in your router
+ * (`{ ...appRouter, gh: await createMcpRouter(client) }`). They're `.ai()`
+ * tools like your own: guards and after-hooks run, `confirm` sends calls
+ * through `createApprovals`, and `inspectRouter` lists them (`meta.mcp.tool` is
+ * the server's name). A dotted remote name nests (`issues.create` →
+ * `gh.issues.create`). Lists the server's tools once, when called.
+ */
+export async function createMcpRouter(
+  client: McpClientLike,
+  opts: McpRouterOptions = {},
+): Promise<RouterRecord> {
+  const route = (opts.route ?? initDendra().route) as RemoteBuilder;
+  const router: RouterRecord = {};
+  for (const t of (await client.listTools()).tools) {
+    if (opts.filter && !opts.filter(t.name)) continue;
+    const segments = t.name.split(".");
+    if (segments.some((seg) => seg === "")) {
+      throw new Error(`createMcpRouter: can't mount tool '${t.name}' (empty name segment)`);
+    }
+    const confirm = typeof opts.confirm === "function" ? opts.confirm(t.name) : opts.confirm === true;
+    const proc = route
+      .input(remoteInput(t.inputSchema))
+      .ai({ description: capDescription(t.description ?? t.name, opts.maxDescriptionLength), confirm })
+      .meta({ mcp: { tool: t.name } })
+      .handler(({ input }) => callRemote(client, t.name, input));
+    let node = router;
+    for (const seg of segments.slice(0, -1)) {
+      const next = node[seg];
+      if (next !== undefined && isProc(next)) {
+        throw new Error(`createMcpRouter: tool '${t.name}' is under '${seg}', which is also a tool`);
       }
+      node = (node[seg] ??= {}) as RouterRecord;
+    }
+    const leaf = segments[segments.length - 1];
+    if (node[leaf] !== undefined) {
+      throw new Error(`createMcpRouter: tool '${t.name}' is also a namespace of other tools`);
+    }
+    node[leaf] = proc;
+  }
+  return router;
+}
+
+// Just the builder calls createMcpRouter makes, whatever the app's Ctx/Meta.
+interface RemoteBuilder {
+  input(schema: unknown): RemoteBuilder;
+  ai(cfg: { description: string; confirm: boolean }): RemoteBuilder;
+  meta(meta: { mcp: { tool: string } }): RemoteBuilder;
+  handler(fn: (o: { input: unknown }) => Promise<unknown>): AnyProc;
+}
+
+const isProc = (v: unknown): v is AnyProc =>
+  typeof v === "object" && v !== null && (v as { _dendra?: unknown })._dendra === true;
+
+// The server validates its own input; here we only require an object, and
+// publish the server's JSON Schema to the model and OpenAPI.
+function remoteInput(inputSchema: Record<string, unknown> | undefined) {
+  return {
+    jsonSchema: (inputSchema as JSONSchema) ?? { type: "object", properties: {} },
+    "~standard": {
+      version: 1 as const,
+      vendor: "mcp",
+      validate: (value: unknown) =>
+        typeof value === "object" && value !== null && !Array.isArray(value)
+          ? { value: value as Record<string, unknown> }
+          : { issues: [{ message: "Expected an object" }] },
     },
   };
 }

@@ -4,7 +4,7 @@
   "values": {
     "bundle.client": 4460,
     "bundle.server": 7964,
-    "bundle.full": 25629,
+    "bundle.full": 26012,
     "throughput.unary": 1.126,
     "latency.unary.p50": 1.24,
     "throughput.get": 1.206,

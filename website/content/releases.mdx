@@ -35,6 +35,14 @@ From the AI/MCP security review
   Zod input showed the model no parameters. **Breaking:** an `.ai()` procedure
   whose input has no JSON Schema (Zod 3, plain Valibot, a `z.date()`) now throws
   where it's defined.
+- **`createMcpRouter`** mounts an external MCP server's tools in your router as
+  `.ai()` procedures (`{ ...appRouter, gh: await createMcpRouter(client) }`),
+  so `confirm` (with `createApprovals`), your `.use()` guards, after-hooks and
+  `inspectRouter` cover them like local tools
+  ([#58](https://github.com/zeestack/dendra/issues/58)). Remote descriptions
+  are cut to 1,024 characters there and in `createMcpToolSource`
+  (`maxDescriptionLength`). The AI reference has a new section on treating
+  external servers as untrusted.
 - **Streaming tools are bounded and cancellable.** A `.stream()` procedure
   exposed with `.ai()` stops collecting after 1,000 chunks or 30 s, set per tool
   with `.ai({ maxItems, timeoutMs })`. It answers with what arrived and aborts
