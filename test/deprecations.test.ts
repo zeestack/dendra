@@ -24,8 +24,8 @@ const reached = (v: string) => {
 };
 
 describe("deprecations", () => {
-  it("finds the tags it checks", () => {
-    expect(tags.length).toBeGreaterThan(0);
+  it("reads the sources it checks", () => {
+    expect(readdirSync(src).filter((f) => f.endsWith(".ts")).length).toBeGreaterThan(10);
   });
 
   it("every @deprecated names its removal release", () => {

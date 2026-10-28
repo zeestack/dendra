@@ -471,16 +471,8 @@ The same options as [`LazyToolsetOptions`](#lazytoolsetoptions).
 type LazyToolSourceOptions = LazyToolsetOptions
 ```
 
-### `toolSource(tools, opts?)`
-
-> **Deprecated.** Use `lazyToolSource` (from `dendra`). Removed in 0.13.
-
-The old name of `lazyToolSource`, renamed because it was easy to confuse with
-`toToolSource`.
-
-#### `ToolSourceOptions`
-
-> **Deprecated.** Use `LazyToolSourceOptions` (from `dendra`). Removed in 0.13.
+`lazyToolSource` and `LazyToolSourceOptions` were called `toolSource` and
+`ToolSourceOptions` before 0.12; the old names were removed in 0.13.
 
 ## Lazy toolset
 
@@ -548,11 +540,9 @@ store and the helpers `runAgent` and `memorySource` use. For production, impleme
 `MemoryStore` over a vector store (pgvector, SQLite with embeddings, Redis, a
 managed service); callers don't change.
 
-> **Deprecated.** `createMemoryStore`, `recallMemory`, `rememberFacts` and
-> `formatMemoryBlock` are also exported from `dendra`. Import them from
-> `dendra/memory`; the `dendra` exports are removed in 0.13. The `MemoryStore`,
-> `MemoryRecord` and `RecallOptions` types are exported from both and aren't
-> deprecated.
+Import the functions from `dendra/memory` (before 0.13 they were also exported
+from `dendra`). The `MemoryStore`, `MemoryRecord` and `RecallOptions` types are
+exported from both, so you can type `ctx.memory` without the subpath.
 
 ### `createMemoryStore(seed?)`
 

@@ -276,8 +276,6 @@ export function memorySource(
 }
 
 export type LazyToolSourceOptions = LazyToolsetOptions;
-/** @deprecated Renamed `LazyToolSourceOptions`. Removed in 0.13. */
-export type ToolSourceOptions = LazyToolSourceOptions;
 
 /**
  * A context source that defers a formatted toolset behind `search_tools`
@@ -304,9 +302,3 @@ export function lazyToolSource(
     },
   };
 }
-
-/**
- * @deprecated Renamed `lazyToolSource` (it was easy to confuse with
- * `toToolSource`, which builds `{ tools, execute }` from a router). Removed in 0.13.
- */
-export const toolSource = lazyToolSource;
