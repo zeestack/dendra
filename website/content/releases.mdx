@@ -5,6 +5,32 @@ description: 'dendra release notes: what changed in each version, including brea
 
 # Release notes
 
+## 0.11.0 — SSE streams and job status on the client
+
+- **Server-Sent Events.** `createClient(url, { streamFormat: "sse" })` streams
+  `.stream()` procedures as SSE instead of NDJSON, for proxies and CDNs that
+  buffer NDJSON. The server picks the format from `Accept`, so no server change
+  is needed. Errors still arrive as a typed `DendraClientError`, and stopping
+  the loop still aborts the handler's `signal`. Idle streams send a `: ping`
+  every 15 s (server option `heartbeatMs`). A `.get()` stream also works with a
+  plain browser `EventSource`; close it on the `done` event.
+- **Following a job in the browser.** `useJob(jobId, open)` in `dendra/react`,
+  and `followJob(open)` in core, follow a background job until it succeeds or
+  fails, with no polling. A dropped connection reopens after a backoff and picks
+  up the current state; `NOT_FOUND`, `UNAUTHORIZED` and other coded errors stop
+  it and set `error`.
+- **Streams through proxies.** Stream responses send `Cache-Control: no-cache`
+  and `X-Accel-Buffering: no`, and `toNodeHandler` flushes after each chunk so
+  Express's `compression()` doesn't hold them back. The README's new "Deploying
+  streams" section covers nginx, Caddy, compression, idle timeouts and
+  WebSockets behind a proxy.
+
+**Behaviour change:** if a stream fails before it starts (for example,
+`createContext` throws), the client now throws the error. Before, the loop
+received the error object as an ordinary value.
+
+No upgrade steps are needed.
+
 ## 0.10.0 — job lifecycle, schedules and router tools
 
 - `createServerCaller` in `dendra/next` builds request context from Next.js
