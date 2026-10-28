@@ -49,9 +49,11 @@ jobs:
         working-directory: examples/nextjs-app
       - run: npm install --no-save --no-audit --no-fund "$RUNNER_TEMP"/dendra-*.tgz
         working-directory: examples/nextjs-app
-      - run: npx tsc --noEmit
-        working-directory: examples/nextjs-app
       - run: npm test
         working-directory: examples/nextjs-app
+      # Before tsc: it writes next-env.d.ts (not committed), which types CSS modules.
       - run: npx next build
+        working-directory: examples/nextjs-app
+      # The whole project, including tests and the standalone servers.
+      - run: npx tsc --noEmit
         working-directory: examples/nextjs-app
