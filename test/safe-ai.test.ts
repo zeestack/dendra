@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   initDendra,
   createApprovals,
+  createInMemoryApprovalStore,
   createToolExecutor,
   createMcpBridge,
   toToolset,
@@ -171,6 +172,25 @@ describe(".ai({ confirm: true })", () => {
     expect(await approvals.get(actionId, mallory)).toBeNull();
     await expect(approvals.approve(actionId, mallory)).rejects.toMatchObject({ code: "NOT_FOUND" });
     await expect(approvals.reject(actionId, mallory)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(await approvals.list(alice)).toHaveLength(1);
+  });
+
+  it("lists nothing from other scopes for a ctx with no scope", async () => {
+    reset();
+    const approvals = createApprovals<Ctx>(router, { scope: (ctx) => ctx.tenant || undefined });
+    await createToolExecutor(router, alice, { approvals })("publish", { postId: "p1" });
+    const tenantless: Ctx = { tenant: "", role: "editor" };
+    expect(await approvals.list(tenantless)).toEqual([]);
+    expect(await approvals.list(alice)).toHaveLength(1);
+  });
+
+  it("lists only the caller's scope from a store that returns more", async () => {
+    reset();
+    const inner = createInMemoryApprovalStore();
+    const store = { ...inner, list: () => inner.list() }; // ignores the scope
+    const approvals = createApprovals<Ctx>(router, { store, scope: (ctx) => ctx.tenant });
+    await createToolExecutor(router, alice, { approvals })("publish", { postId: "p1" });
+    expect(await approvals.list({ tenant: "t2", role: "editor" })).toEqual([]);
     expect(await approvals.list(alice)).toHaveLength(1);
   });
 

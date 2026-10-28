@@ -481,6 +481,7 @@ interface ApprovalStore {
 
 `take` must be atomic (e.g. `DELETE … RETURNING`): when two approvers race, only
 one may get the action back; the other gets `null`, which becomes `CONFLICT`.
-`list(scope)` filters by scope. `createApprovals` calls it as `list(undefined)` when
-there's no `scope` option (or `scope(ctx)` returns `undefined`), and the in-memory
-store then returns every action.
+`list(scope)` filters by scope; `list(undefined)` may return every action.
+`createApprovals` passes the caller's scope and then keeps only actions whose
+scope equals it exactly, so a ctx whose `scope(ctx)` is `undefined` sees only
+unscoped actions, whatever the store returns.
