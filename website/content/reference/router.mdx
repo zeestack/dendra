@@ -327,6 +327,46 @@ What an after-hook receives. `ok` tells success (with `result`) from failure
 | `code` | `ErrorCode` | On failure: the `DendraError`'s code, or `'INTERNAL'` for anything else. |
 | `approval` | `Approval` | Only on `.ai({ confirm: true })` tool calls and the decisions on them. |
 
+### `.mapError(fn)`
+
+Maps the app's own errors to `DendraError`s in one place. Only a `DendraError`'s
+message reaches a browser, a WebSocket client or the model; anything else is
+masked as `INTERNAL: Internal error`. With `.mapError()`, a domain error your
+code expects (a payment declined, a remote site refusing a post) becomes a
+sentence the person can act on, without a `try/catch` in every handler.
+
+```ts
+mapError(fn: ErrorMapper): Builder
+```
+
+```ts
+export const authed = route
+  .after(audit)
+  .use(auth)
+  .mapError((e) => {
+    if (e instanceof WpError || e instanceof PublishError) return new DendraError('BAD_REQUEST', e.message)
+    if (e instanceof BudgetError) return new DendraError('TOO_MANY_REQUESTS', 'Monthly limit reached.')
+  })
+```
+
+- Return a `DendraError` to replace the error, or nothing to pass it on. Mappers
+  run in the order they were added, and the first `DendraError` wins.
+- It covers errors from every `.use()` guard and from the handler, wherever it
+  sits in the chain, on every transport: HTTP, REST, WebSockets, the in-process
+  caller, tool calls, the MCP bridge, approved confirm tools, and a stream's error
+  frame. Background jobs run outside the procedure, so it doesn't apply to them.
+- A `DendraError` (including input validation's `BAD_REQUEST`) is never mapped.
+- After-hooks see the mapped error, so `code` is the mapped code, not `INTERNAL`.
+- The original error becomes the mapped error's `cause`, unless you set one.
+- A mapper that throws is logged with `console.error` and skipped; the next one
+  gets the original error.
+
+#### `ErrorMapper`
+
+```ts
+type ErrorMapper = (error: unknown) => DendraError | undefined | void
+```
+
 ### `.input(schema)`
 
 Declares the input schema. Any [Standard Schema](/reference/schema) works: the

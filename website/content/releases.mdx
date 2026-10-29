@@ -8,6 +8,15 @@ description: 'dendra release notes: what changed in each version, including brea
 What counts as breaking, and how long deprecated APIs last, is in the
 [versioning policy](/versioning).
 
+## Unreleased
+
+- **`.mapError()`** maps the app's own errors to `DendraError`s in one place,
+  instead of a `try/catch` in every handler
+  ([#77](https://github.com/zeestack/dendra/issues/77), found running dendra in
+  production). It covers every guard and handler on every transport, after-hooks
+  see the mapped code, and the original is kept as `cause`. New type
+  `ErrorMapper`.
+
 ## 0.13.0 — hardening for 1.0
 
 From the 1.0 milestone: the AI/MCP security review and the bugs the API
