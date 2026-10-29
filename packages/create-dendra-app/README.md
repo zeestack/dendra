@@ -36,6 +36,6 @@ npm create dendra-app@latest [dir] [options]
 - **mcp** — minimal plus `.ai()` tools, an MCP route, and a stdio MCP server, so
   your API is callable by Claude.
 
-Zero-config, near-zero dependencies. Requires Node 18+.
+Zero-config, near-zero dependencies. Requires Node 22+.
 
 Docs: https://products.techfoundry.io/dendra
