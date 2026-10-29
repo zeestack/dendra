@@ -10,6 +10,7 @@ export type {
   Approval,
   AiConfig,
   ToolAnnotations,
+  ErrorMapper,
 } from "./core.ts";
 
 export {

@@ -119,6 +119,8 @@ export interface Proc<
   readonly middlewareNames?: ReadonlyArray<string>;
   readonly meta?: Readonly<Record<string, unknown>>;
   readonly afterHooks?: ReadonlyArray<AfterEntry>;
+  /** From `.mapError()`, in order. */
+  readonly errorMappers?: ReadonlyArray<ErrorMapper>;
   readonly handler: (
     input: In,
     ctx: Ctx,
@@ -189,6 +191,12 @@ export function toolAnnotations(proc: AnyProc): ToolAnnotations {
   return out;
 }
 
+/**
+ * Turns an error the app expects (a domain error) into a `DendraError`, so its
+ * message reaches the caller; return nothing to pass it on. See `.mapError()`.
+ */
+export type ErrorMapper = (error: unknown) => DendraError | undefined | void;
+
 export interface RouterRecord {
   [k: string]: AnyProc | RouterRecord;
 }
@@ -208,6 +216,7 @@ interface State<Ctx, In> {
   middlewareNames?: string[];
   meta?: Record<string, unknown>;
   afterHooks?: AfterEntry[];
+  errorMappers?: ErrorMapper[];
 }
 
 // Models can't send bytes through a tool call, so a file-input tool could only
@@ -478,6 +487,17 @@ class Builder<
     });
   }
   /**
+   * Map the app's own errors to `DendraError`s, so their message reaches the
+   * caller instead of being masked as `INTERNAL`. Return a `DendraError` to
+   * replace the error, or nothing to pass it on to the next mapper. Applies to
+   * errors from every middleware and the handler, on every transport, before
+   * after-hooks run (so they see the mapped code). Mappers run in the order
+   * added; a `DendraError` is never mapped. The original becomes the `cause`.
+   */
+  mapError(fn: ErrorMapper) {
+    return this.next<In>({ errorMappers: [...(this.state.errorMappers ?? []), fn] });
+  }
+  /**
    * Attach an input schema. Any Standard Schema works (Zod/Valibot/built-in).
    * Calling it again EXTENDS the input (both must be objects): every schema
    * validates the call, and a `.use()` sees the input declared above it — so a
@@ -531,6 +551,7 @@ class Builder<
       middlewareNames: s.middlewareNames,
       meta: s.meta,
       afterHooks: s.afterHooks,
+      errorMappers: s.errorMappers,
       handler: async (input: In, ctx: Ctx) => fn({ input, ctx }),
     } as Branded<Proc<Ctx, In, [DOut] extends [never] ? Awaited<Out> : DOut, "unary">, Rd>;
   }
@@ -559,6 +580,7 @@ class Builder<
       middlewareNames: s.middlewareNames,
       meta: s.meta,
       afterHooks: s.afterHooks,
+      errorMappers: s.errorMappers,
       handler: (input: In, ctx: Ctx, signal?: AbortSignal) =>
         fn({ input, ctx, signal: signal ?? new AbortController().signal }),
     } as Branded<Proc<Ctx, In, Out, "stream">, Rd>;
@@ -692,6 +714,27 @@ async function runAfterHooks(
   }
 }
 
+// Apply the procedure's `.mapError()` mappers: the first `DendraError` one
+// returns replaces the error (keeping the original as its `cause`). A mapper
+// that throws is logged and skipped, like an after-hook.
+function mapError(proc: AnyProc, error: unknown, site: CallSite): unknown {
+  if (error instanceof DendraError || !proc.errorMappers?.length) return error;
+  for (const fn of proc.errorMappers) {
+    let mapped: unknown;
+    try {
+      mapped = fn(error);
+    } catch (e) {
+      console.error(`[dendra] mapError for '${site.path ?? ""}' threw:`, e);
+      continue;
+    }
+    if (mapped instanceof DendraError) {
+      if (mapped.cause === undefined) Object.defineProperty(mapped, "cause", { value: error, configurable: true, writable: true });
+      return mapped;
+    }
+  }
+  return error;
+}
+
 /** Run a unary procedure: validate, run middleware, call the handler, then after-hooks. */
 export async function invokeUnary(
   proc: AnyProc,
@@ -722,7 +765,8 @@ export async function invokeWith(
     const ctx2 = await runMiddleware(proc, input, ctx, seen);
     result = await body(input, ctx2);
     rejectFileResult(result, site);
-  } catch (error) {
+  } catch (thrown) {
+    const error = mapError(proc, thrown, site);
     await runAfterHooks(proc, site, input, seen, started, { ok: false, error });
     throw error;
   }
@@ -752,7 +796,8 @@ export async function* invokeStream(
   try {
     const ctx2 = await runMiddleware(proc, input, ctx, seen);
     yield* proc.handler(input, ctx2, ac.signal) as AsyncIterable<unknown>;
-  } catch (error) {
+  } catch (thrown) {
+    const error = mapError(proc, thrown, site);
     failure = { error };
     throw error;
   } finally {
