@@ -2,7 +2,7 @@
 // Static export needs the route forced static.
 export const dynamic = 'force-static'
 
-const SITE = 'https://products.techfoundry.io/dendra'
+const SITE = 'https://products.techfoundry.digital/dendra'
 const PAGES = ['', 'quickstart', 'ai-mcp', 'context', 'features', 'architecture', 'compare', 'releases', 'upgrading', 'versioning', 'reference',
   'reference/router', 'reference/schema', 'reference/server', 'reference/client', 'reference/realtime',
   'reference/jobs', 'reference/ai', 'reference/agents', 'reference/adapter']

@@ -38,4 +38,4 @@ npm create dendra-app@latest [dir] [options]
 
 Zero-config, near-zero dependencies. Requires Node 22+.
 
-Docs: https://products.techfoundry.io/dendra
+Docs: https://products.techfoundry.digital/dendra

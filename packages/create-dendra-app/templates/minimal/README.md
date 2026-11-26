@@ -27,4 +27,4 @@ npm run dev   # http://localhost:3000
   npm create dendra-app@latest my-ai-app -- --template mcp
   ```
 
-Docs: https://products.techfoundry.io/dendra
+Docs: https://products.techfoundry.digital/dendra

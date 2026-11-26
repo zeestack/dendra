@@ -3,7 +3,7 @@ import 'nextra-theme-docs/style.css'
 // "dendra" alone is a crowded search term (an archaeological site, a Pokémon,
 // a sensor-data service), so every title carries what dendra *is*.
 export const metadata = {
-  metadataBase: new URL('https://products.techfoundry.io'),
+  metadataBase: new URL('https://products.techfoundry.digital'),
   title: {
     default: 'dendra — typed RPC & MCP framework for TypeScript',
     template: '%s – dendra, typed RPC & MCP for TypeScript'

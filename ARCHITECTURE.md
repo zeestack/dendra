@@ -3,11 +3,11 @@
 <div align="center">
 <img src="assets/arch-framework.png" alt="dendra framework architecture" width="820">
 <br>
-<sub>The framework · <a href="https://products.techfoundry.io/dendra/architecture/framework.html">interactive</a></sub>
+<sub>The framework · <a href="https://products.techfoundry.digital/dendra/architecture/framework.html">interactive</a></sub>
 <br><br>
 <img src="assets/arch-example.png" alt="dendra example app architecture" width="820">
 <br>
-<sub>The example app · <a href="https://products.techfoundry.io/dendra/architecture/example.html">interactive</a></sub>
+<sub>The example app · <a href="https://products.techfoundry.digital/dendra/architecture/example.html">interactive</a></sub>
 </div>
 
 This repo has two layers, and keeping them separate is the whole design:

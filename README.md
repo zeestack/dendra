@@ -7,7 +7,7 @@
 **The typed API framework where every procedure is also an LLM tool and an MCP server — with zero extra work.**
 
 [![npm](https://img.shields.io/npm/v/dendra?color=7c9cff&label=npm)](https://www.npmjs.com/package/dendra)
-[![downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fproducts.techfoundry.io%2Fdendra%2Fbadges%2Fnpm-downloads-30d.json)](https://www.npmjs.com/package/dendra)
+[![downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fproducts.techfoundry.digital%2Fdendra%2Fbadges%2Fnpm-downloads-30d.json)](https://www.npmjs.com/package/dendra)
 [![CI](https://github.com/zeestack/dendra/actions/workflows/ci.yml/badge.svg)](https://github.com/zeestack/dendra/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-7c9cff.svg)](https://github.com/zeestack/dendra/blob/main/LICENSE)
 [![runtime deps](https://img.shields.io/badge/runtime%20deps-0-5be3b3.svg)](https://github.com/zeestack/dendra/blob/main/package.json)
@@ -61,7 +61,7 @@ table stakes it also happens to get right.
 <div align="center">
 <img src="https://raw.githubusercontent.com/zeestack/dendra/main/assets/arch-framework2.jpg" alt="dendra framework architecture: one definition branches into typed client, REST + OpenAPI, in-process caller, streaming, LLM tools, and an MCP server" width="820">
 <br>
-<sub><a href="https://products.techfoundry.io/dendra/architecture/framework.html">▶ open the interactive diagram</a></sub>
+<sub><a href="https://products.techfoundry.digital/dendra/architecture/framework.html">▶ open the interactive diagram</a></sub>
 </div>
 
 The router is used **twice from one definition**: as a *type* that flows to the
@@ -286,7 +286,7 @@ const { items, input, setInput, busy, send } = useAssistant({
 
 Neither is required — bring your own loop/UI and just use `mergeToolsets`.
 
-`runAgent`, `useAssistant` and the context layer (`createContextManager`, `memorySource`, `lazyToolSource`, `lazyToolset`, `dendra/memory`) are **experimental**: outside the 1.0 stability guarantee, so they may change in a minor release as model APIs move. The tool-shaping core (`.ai()`, `toToolset`, `createToolExecutor`, MCP, approvals) is stable. See the [versioning policy](https://products.techfoundry.io/dendra/versioning).
+`runAgent`, `useAssistant` and the context layer (`createContextManager`, `memorySource`, `lazyToolSource`, `lazyToolset`, `dendra/memory`) are **experimental**: outside the 1.0 stability guarantee, so they may change in a minor release as model APIs move. The tool-shaping core (`.ai()`, `toToolset`, `createToolExecutor`, MCP, approvals) is stable. See the [versioning policy](https://products.techfoundry.digital/dendra/versioning).
 
 **Amazon Bedrock:** `runAgent`'s client type is structural, so Claude on Bedrock
 drops in with no cast — pass an `AnthropicBedrock` client from
@@ -883,7 +883,7 @@ createNote: route
 existing tRPC codebase. **Choose dendra** when your API should be callable by
 agents with no parallel tool layer, kept to one source of truth, and able to both
 *expose* and *consume* MCP. Full side-by-side on the
-[site](https://products.techfoundry.io/dendra/#vs).
+[site](https://products.techfoundry.digital/dendra/#vs).
 
 ## Also in the box
 
@@ -953,7 +953,7 @@ MCP; point any MCP client at its `/api/mcp` or stdio server.)
 <div align="center">
 <img src="https://raw.githubusercontent.com/zeestack/dendra/main/assets/arch-example.png" alt="dendra example app architecture: browser and Claude talk to Next.js routes and the appRouter, which uses SQLite, pub/sub, runAgent, and an MCP connection registry with OAuth" width="820">
 <br>
-<sub><a href="https://products.techfoundry.io/dendra/architecture/example.html">▶ open the interactive diagram</a></sub>
+<sub><a href="https://products.techfoundry.digital/dendra/architecture/example.html">▶ open the interactive diagram</a></sub>
 </div>
 
 - [`examples/demo.ts`](https://github.com/zeestack/dendra/blob/main/examples/demo.ts) — caller, unary, validation, streaming, AI tools, pub/sub.
@@ -1001,16 +1001,16 @@ and a WebSocket server and browser connection with safe defaults.
 > **Breaking in 0.9.0 (types, and chained `.input()`):** client results are typed
 > as what survives JSON (a `Date` is a `string`; `createCaller` keeps real types as
 > `Caller<R>`), and a second `.input()` extends the first instead of replacing it.
-> See the [release notes](https://products.techfoundry.io/dendra/releases).
+> See the [release notes](https://products.techfoundry.digital/dendra/releases).
 
 Published on npm as [`dendra`](https://www.npmjs.com/package/dendra). Docs:
-[products.techfoundry.io/dendra](https://products.techfoundry.io/dendra/), with
-an [API reference](https://products.techfoundry.io/dendra/reference/) for every
-export and an [upgrade guide](https://products.techfoundry.io/dendra/upgrading/)
+[products.techfoundry.digital/dendra](https://products.techfoundry.digital/dendra/), with
+an [API reference](https://products.techfoundry.digital/dendra/reference/) for every
+export and an [upgrade guide](https://products.techfoundry.digital/dendra/upgrading/)
 for each major version. What changed in each version is in the
-[release notes](https://products.techfoundry.io/dendra/releases/). Before 1.0,
+[release notes](https://products.techfoundry.digital/dendra/releases/). Before 1.0,
 breaking changes ship in minor releases, and deprecated names keep working for at
-least one; see the [versioning policy](https://products.techfoundry.io/dendra/versioning). What's planned next is in [`ROADMAP.md`](https://github.com/zeestack/dendra/blob/main/ROADMAP.md).
+least one; see the [versioning policy](https://products.techfoundry.digital/dendra/versioning). What's planned next is in [`ROADMAP.md`](https://github.com/zeestack/dendra/blob/main/ROADMAP.md).
 
 ## License
 

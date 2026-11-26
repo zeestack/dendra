@@ -147,7 +147,7 @@ async function main() {
   }
     ${c.cyan(`${runCmd} dev`)}
 
-  Docs: ${c.dim("https://products.techfoundry.io/dendra")}
+  Docs: ${c.dim("https://products.techfoundry.digital/dendra")}
 `);
 }
 

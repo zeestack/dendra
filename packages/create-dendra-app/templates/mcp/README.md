@@ -105,4 +105,4 @@ tunnel's `https://…/api/mcp` URL.
 - Add more `.ai()` procedures — they show up as tools automatically.
 - Give a procedure a path (`.get`/`.post`) + mount the REST adapter for REST + OpenAPI.
 
-Docs: https://products.techfoundry.io/dendra
+Docs: https://products.techfoundry.digital/dendra

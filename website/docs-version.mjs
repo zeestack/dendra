@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs'
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 const [major, minor] = pkg.version.split('.')
 
-export const SITE_ORIGIN = 'https://products.techfoundry.io'
+export const SITE_ORIGIN = 'https://products.techfoundry.digital'
 export const LATEST_BASE_PATH = '/dendra'
 export const basePath = process.env.DOCS_BASE_PATH || LATEST_BASE_PATH
 export const archived = Boolean(process.env.DOCS_ARCHIVED)

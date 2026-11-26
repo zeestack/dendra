@@ -240,4 +240,4 @@ primitives. See [ARCHITECTURE.md](ARCHITECTURE.md) and the worked example in
 - Don't reach for `runAgent`/`useAssistant` if you already have a loop/UI — `mergeToolsets` is enough.
 - Don't use names marked `@deprecated` — the tag names the replacement and the
   release that removes it. `@experimental` APIs may change in a minor release
-  ([versioning policy](https://products.techfoundry.io/dendra/versioning)).
+  ([versioning policy](https://products.techfoundry.digital/dendra/versioning)).

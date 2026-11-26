@@ -14,11 +14,11 @@ export const metadata = {
   title: { absolute: 'dendra — typed RPC & MCP framework for Next.js and TypeScript' },
   sidebarTitle: 'Home',
   description: homeDescription,
-  alternates: { canonical: 'https://products.techfoundry.io/dendra/' },
+  alternates: { canonical: 'https://products.techfoundry.digital/dendra/' },
   openGraph: {
     title: 'dendra — typed RPC & MCP framework for Next.js and TypeScript',
     description: homeDescription,
-    url: 'https://products.techfoundry.io/dendra/'
+    url: 'https://products.techfoundry.digital/dendra/'
   }
 }
 
